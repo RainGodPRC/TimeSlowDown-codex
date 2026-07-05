@@ -130,12 +130,17 @@ button { cursor: pointer; border: 0; }
 .slice-title { font-family: "Songti SC", serif; font-size: 21px; margin: 8px 0; }
 .slice-meta { display:flex; flex-wrap:wrap; gap: 7px; margin-top: 12px; }
 .meta { font-size: 11px; color: var(--moss); background: rgba(85,116,95,.1); padding: 6px 8px; border-radius: 999px; }
+.gate-badges { display:flex; flex-wrap:wrap; gap: 7px; margin-top: 10px; }
+.gate-badge { font-size: 11px; font-weight: 900; padding: 6px 8px; border-radius: 999px; border: 1px solid transparent; }
+.gate-badge.ok { color: var(--moss); background: rgba(85,116,95,.1); border-color: rgba(85,116,95,.14); }
+.gate-badge.warn { color: #8a5a32; background: rgba(215,168,95,.16); border-color: rgba(215,168,95,.24); }
+.gate-badge.soft { color: var(--muted); background: rgba(32,52,43,.06); border-color: rgba(32,52,43,.08); }
 .source-line { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 11px; line-height:1.5; }
 
 .bottom-nav {
   position: absolute; left: 14px; right: 14px; bottom: 14px; height: 64px; border-radius: 24px;
   background: rgba(255,253,247,.9); border: 1px solid rgba(32,52,43,.12); box-shadow: 0 16px 40px rgba(47,60,50,.13);
-  display:grid; grid-template-columns: repeat(5, 1fr); padding: 6px;
+  display:grid; grid-template-columns: repeat(6, 1fr); padding: 6px;
 }
 .nav-btn { border-radius: 18px; background: transparent; color: var(--muted); font-size: 10px; font-weight: 800; display:flex; flex-direction:column; align-items:center; justify-content:center; gap: 4px; }
 .nav-btn.active { background: var(--ink); color: #fff; }
@@ -178,6 +183,29 @@ button { cursor: pointer; border: 0; }
 .score { font-weight: 900; color: var(--moss); }
 .meter { height: 8px; border-radius:999px; background: rgba(32,52,43,.1); overflow:hidden; margin-top: 8px; }
 .meter > i { display:block; height:100%; background: linear-gradient(90deg,var(--moss), var(--amber)); border-radius:inherit; }
+
+.eval-matrix { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.eval-category {
+  text-align:left; min-height: 92px; padding: 10px; border-radius: 16px; border: 1px solid var(--line);
+  background: rgba(255,255,255,.52); color: var(--ink); display:grid; grid-template-columns: auto 1fr auto; gap: 4px 8px;
+}
+.eval-category strong { width: 26px; height: 26px; display:grid; place-items:center; border-radius: 10px; background: rgba(85,116,95,.13); color: var(--moss); }
+.eval-category span { font-size: 12px; font-weight: 900; align-self:center; }
+.eval-category em { font-size: 11px; font-style: normal; color: var(--rose); font-weight: 900; align-self:center; }
+.eval-category small { grid-column: 1 / -1; color: var(--muted); font-size: 10px; line-height: 1.35; }
+
+.golden-tabs { display:flex; flex-wrap: wrap; gap: 6px; padding-bottom: 6px; margin: 0 -2px 10px; }
+.golden-tab { flex: 1 0 calc(20% - 6px); min-width: 48px; padding: 8px 8px; border-radius: 999px; background: rgba(85,116,95,.1); color: var(--moss); font-size: 11px; font-weight: 900; }
+.golden-tab.active { background: var(--ink); color: #fff; }
+.golden-card { border:1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.56); padding: 13px; }
+.golden-input { margin: 9px 0 12px; color: var(--ink); font-size: 13px; line-height: 1.55; }
+.gate-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.gate-grid > div { border-radius: 15px; background: rgba(244,239,228,.7); padding: 10px; }
+.gate-grid strong { display:block; margin-bottom: 7px; font-size: 12px; }
+.gate-grid span { display:block; color: var(--muted); font-size: 11px; line-height: 1.35; margin-top: 4px; }
+.faithful-output { margin-top: 10px; border-top:1px dashed var(--line); padding-top: 10px; }
+.faithful-output strong { font-size: 12px; }
+.faithful-output p { color: var(--muted); font-size: 12px; line-height: 1.55; margin: 6px 0 0; }
 
 .onboarding { min-height: 710px; display:flex; flex-direction:column; justify-content:space-between; padding: 16px 18px 92px; }
 .onboard-art { height: 260px; border-radius: 30px; background: linear-gradient(180deg,#f9f4e6,#dfead7); position:relative; overflow:hidden; border:1px solid var(--line); }

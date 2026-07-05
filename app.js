@@ -40,12 +40,109 @@ const defaultState = {
   draft: "今天带孩子去公园，他第一次自己爬上滑梯。我在下面有点紧张。",
   moments: seedMoments,
   aiMode: "rules",
+  selectedGolden: "G001",
   weeklyClaimed: ["m1", "m2", "m3"],
   age: 36,
   quietMode: false
 };
 
 let state = loadState();
+
+const evalCategories = [
+  ["A", "普通日常", 10, "平淡日子能否具体化"],
+  ["B", "高光瞬间", 8, "保留成就感但不过度升华"],
+  ["C", "低落压力", 8, "不鸡汤、不强行正能量"],
+  ["D", "家庭亲密", 8, "不乱猜关系和意义"],
+  ["E", "模糊时间", 6, "年、月、人生阶段锚点"],
+  ["F", "照片占位", 6, "不描述未解析照片内容"],
+  ["G", "信息稀少", 5, "克制生成，转为轻追问"],
+  ["H", "矛盾输入", 4, "标记冲突，请用户确认"],
+  ["I", "周期编译", 3, "多切片总结与来源绑定"],
+  ["J", "风格反馈", 2, "学习叙述偏好而非人格画像"]
+];
+
+const goldenSamples = [
+  {
+    id: "G001",
+    title: "公园滑梯",
+    input: "今天带孩子去公园，他第一次自己爬上滑梯。我在下面有点紧张。",
+    must: ["公园", "孩子第一次自己爬上滑梯", "用户紧张"],
+    forbid: ["学会放手", "孩子长大了", "人生转折"],
+    output: "今天带孩子去公园，他第一次自己爬上滑梯。我在下面有点紧张。"
+  },
+  {
+    id: "G002",
+    title: "第一个 5 公里",
+    input: "晚上跑了第一个5公里，最后一公里很想停，但还是跑完了。",
+    must: ["第一个 5 公里", "最后一公里想停", "还是跑完了"],
+    forbid: ["战胜自己", "人生从此不同", "长期坚持跑步"],
+    output: "晚上跑完了第一个 5 公里。最后一公里很想停，但还是跑完了。"
+  },
+  {
+    id: "G003",
+    title: "工作压力",
+    input: "今天开会被怼了，回家路上一直很烦，不想说话。",
+    must: ["开会被怼", "回家路上烦", "不想说话"],
+    forbid: ["成长机会", "明天会更好", "需要原谅别人"],
+    output: "今天开会被怼了，回家路上一直很烦，不想说话。"
+  },
+  {
+    id: "G004",
+    title: "父亲吃饭",
+    input: "晚上和爸爸吃了碗面，他说最近睡得还行。我发现他头发又白了一点。",
+    must: ["和爸爸吃面", "最近睡得还行", "头发白了一点"],
+    forbid: ["害怕失去父亲", "亲情的重量", "岁月无情"],
+    output: "晚上和爸爸吃了碗面。他说最近睡得还行，我发现他头发又白了一点。"
+  },
+  {
+    id: "G005",
+    title: "20 岁学骑车",
+    input: "我好像20岁那年才学会骑自行车，具体哪天忘了。",
+    must: ["age_anchor=20", "模糊时间", "保留原句"],
+    forbid: ["童年缺失", "迟来的自由", "比较别人"],
+    output: "我好像 20 岁那年才学会骑自行车，具体哪天忘了。时间先保存为“20 岁那年”。"
+  },
+  {
+    id: "G006",
+    title: "照片占位",
+    input: "上传了一张照片，备注：今天这杯咖啡很好喝。",
+    must: ["只引用备注", "不看图时不描述画面"],
+    forbid: ["拉花", "咖啡馆", "下午氛围"],
+    output: "你上传了一张照片，并备注：今天这杯咖啡很好喝。"
+  },
+  {
+    id: "G007",
+    title: "只有还行",
+    input: "今天还行。",
+    must: ["朴素记录", "最多一个轻追问"],
+    forbid: ["强行故事", "人生意义", "复杂总结"],
+    output: "今天先记为：还行。要不要补一句，是哪件小事让它还行？"
+  },
+  {
+    id: "G008",
+    title: "时间冲突",
+    input: "昨天晚上和朋友吃火锅，应该是今天中午吧，记不清了。",
+    must: ["time_conflict=true", "请用户确认"],
+    forbid: ["替用户确定时间", "删除冲突"],
+    output: "这条记忆的时间有冲突：可能是昨天晚上，也可能是今天中午。先保存为待确认。"
+  },
+  {
+    id: "G009",
+    title: "周期编译",
+    input: "周一加班买烤红薯；周三和妈妈通话；周六第一次跑完 5 公里。",
+    must: ["每句绑定来源", "三件事都保留"],
+    forbid: ["重新找回生活", "妈妈是最大支撑", "跑步治愈压力"],
+    output: "这一周有三个被你认领的瞬间：加班后买了烤红薯；周三和妈妈通了电话；周六第一次跑完 5 公里。"
+  },
+  {
+    id: "G010",
+    title: "风格反馈",
+    input: "用户把“这一刻像一束光照进生活”改成“这件事我想记一下”。",
+    must: ["少用强比喻", "少用治愈系句子"],
+    forbid: ["性格冷淡", "不重视情绪"],
+    output: "叙述偏好已记录：更朴素，少用强比喻和治愈系句子。"
+  }
+];
 
 function loadState() {
   try {
@@ -69,13 +166,15 @@ function addMoment() {
   const text = state.draft.trim() || "今天有一个还没说清楚、但想先占位的瞬间。";
   const title = deriveTitle(text);
   const tags = state.activeTags.length ? state.activeTags : ["普通但值得"];
+  const gates = analyzeMemory(text, tags);
   const moment = {
     id: `m${Date.now()}`,
     date: "今天",
     title,
-    text: faithfulEdit(text, tags),
+    text: faithfulEdit(text, tags, gates),
     tags,
     strength: tags.includes("第一次") || tags.includes("成就") ? "strong" : "memory",
+    gates,
     sources: ["用户原话", "L0 规则层", state.aiMode === "deepseek" ? "DeepSeek PoC 草稿" : "本地模板"]
   };
   setState({ moments: [moment, ...state.moments], view: "slice", draft: "" });
@@ -89,10 +188,22 @@ function deriveTitle(text) {
   return text.replace(/[，。,.！!]/g, " ").trim().slice(0, 14);
 }
 
-function faithfulEdit(text, tags) {
+function analyzeMemory(text, tags) {
+  const compact = text.trim();
+  return {
+    timeConflict: /应该是|记不清|忘了|可能是|好像/.test(compact) && /昨天|今天|上周|上个月|那年|哪天/.test(compact),
+    sparse: compact.length <= 8,
+    photoPlaceholder: tags.includes("照片") || /上传.*照片|照片/.test(compact),
+    sensitiveHint: /孩子|儿童|医院|病|位置|住址|亲密/.test(compact),
+    forbids: ["新增无来源事实", "替用户总结人生意义", "强行正能量"]
+  };
+}
+
+function faithfulEdit(text, tags, gates = analyzeMemory(text, tags)) {
   const safe = text.replace(/我突然意识到|人生从此|学会放手/g, "");
-  if (safe.length < 8) return `今天先留下一个很短的标记：“${safe}”。你可以周末再补一句为什么。`;
-  if (tags.includes("照片")) return `你留下了一张照片，并写下：“${safe}”。TSD 不会描述没有被解析的照片内容。`;
+  if (gates.timeConflict) return `这条记忆的时间有些不确定，TSD 先原样保存：“${safe}”。周末回顾时再请你确认归属时间。`;
+  if (gates.sparse) return `今天先留下一个很短的标记：“${safe}”。你可以周末再补一句为什么。`;
+  if (gates.photoPlaceholder) return `你留下了一张照片，并写下：“${safe}”。TSD 不会描述没有被解析的照片内容。`;
   return safe.endsWith("。") ? safe : `${safe}。`;
 }
 
@@ -126,6 +237,8 @@ function bindEvents() {
     const active = state.activeTags.includes(value);
     setState({ activeTags: active ? state.activeTags.filter(t => t !== value) : [...state.activeTags, value] });
   }));
+  $$("[data-golden]").forEach(sample => sample.addEventListener("click", () => setState({ selectedGolden: sample.dataset.golden })));
+  $$("[data-category-sample]").forEach(sample => sample.addEventListener("click", () => setState({ selectedGolden: sample.dataset.categorySample })));
 }
 
 function shell(content) {
@@ -219,8 +332,21 @@ function latestSliceCard() {
     <h2 class="slice-title">${m.title}</h2>
     <p class="hero-subtitle">${m.text}</p>
     <div class="slice-meta">${m.tags.map(t => `<span class="meta">${t}</span>`).join("")}</div>
+    ${gateBadges(m.gates)}
     <div class="source-line">来源：${m.sources.join(" · ")}。无来源的漂亮句子不会进入最终故事。</div>
   </section>`;
+}
+
+function gateBadges(gates) {
+  if (!gates) return "";
+  const badges = [
+    gates.timeConflict && ["时间待确认", "warn"],
+    gates.sparse && ["信息稀少", "soft"],
+    gates.photoPlaceholder && ["不猜照片", "soft"],
+    gates.sensitiveHint && ["敏感默认谨慎", "warn"]
+  ].filter(Boolean);
+  if (!badges.length) badges.push(["事实门通过", "ok"], ["语气门通过", "ok"]);
+  return `<div class="gate-badges">${badges.map(([label, tone]) => `<span class="gate-badge ${tone}">${label}</span>`).join("")}</div>`;
 }
 
 function meadowView() {
@@ -257,6 +383,7 @@ function chapterView() {
 }
 
 function aiView() {
+  const selected = goldenSamples.find(sample => sample.id === state.selectedGolden) || goldenSamples[0];
   return `
     <div class="topline"><div><div class="brand">AI 忠实编辑器</div><div class="micro">不是代写日记，是把线索整理成可认领草稿。</div></div></div>
     <section class="ai-card">
@@ -270,12 +397,33 @@ function aiView() {
       </div>
     </section>
     <section class="ai-card">
+      <h2 class="section-title">60 条 PoC 样本分类</h2>
+      <div class="eval-matrix">
+        ${evalCategories.map(([code, title, count, focus]) => `<button class="eval-category" data-category-sample="${goldenSamples[Math.min(goldenSamples.length - 1, Math.max(0, code.charCodeAt(0) - 65))].id}"><strong>${code}</strong><span>${title}</span><em>${count} 条</em><small>${focus}</small></button>`).join("")}
+      </div>
+    </section>
+    <section class="ai-card">
+      <h2 class="section-title">10 条黄金样本 <span class="micro">可点击检查</span></h2>
+      <div class="golden-tabs">
+        ${goldenSamples.map(sample => `<button class="golden-tab ${sample.id === selected.id ? "active" : ""}" data-golden="${sample.id}">${sample.id}</button>`).join("")}
+      </div>
+      <div class="golden-card">
+        <div class="eyebrow">${selected.id} · ${selected.title}</div>
+        <p class="golden-input">${selected.input}</p>
+        <div class="gate-grid">
+          <div><strong>必须保留</strong>${selected.must.map(item => `<span>${item}</span>`).join("")}</div>
+          <div><strong>禁止生成</strong>${selected.forbid.map(item => `<span>${item}</span>`).join("")}</div>
+        </div>
+        <div class="faithful-output"><strong>L0/L2 期望草稿</strong><p>${selected.output}</p></div>
+      </div>
+    </section>
+    <section class="ai-card">
       <h2 class="section-title">Faithful Memory Editing Eval</h2>
       ${evalRow("事实忠实", "≥ 4.6 / 5", 92)}
       ${evalRow("无来源句子", "进入最终故事 = 0", 100)}
       ${evalRow("过度煽情率", "< 10%", 84)}
       ${evalRow("JSON Schema", "≥ 98%", 98)}
-      <p class="source-line">黄金样本 G001：公园滑梯。禁止 AI 写“学会放手”。</p>
+      <p class="source-line">所有黄金样本都遵守事实门、语气门、隐私门和认领门；漂亮但无来源的句子默认视为风险。</p>
     </section>
   `;
 }
@@ -318,7 +466,8 @@ function bottomNav() {
     ["slice", "切片", "◉"],
     ["meadow", "旷野", "♧"],
     ["chapter", "章节", "☰"],
-    ["ai", "AI", "◇"]
+    ["ai", "AI", "◇"],
+    ["settings", "我的", "◎"]
   ];
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${state.view === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
