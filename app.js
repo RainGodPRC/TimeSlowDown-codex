@@ -400,6 +400,70 @@ async function copyShareText() {
   }
 }
 
+function studioAssets() {
+  const claimed = getClaimedMoments().slice(0, 3);
+  const title = state.chapterTitle || deriveChapterTitle(claimed);
+  const story = state.chapterStory || buildChapterStory(claimed);
+  const publicMode = state.shareMode === "public";
+  const tellable = quarterStats().candidates.slice(0, 4);
+  return [
+    {
+      id: "week",
+      eyebrow: "Weekly Poster",
+      title,
+      badge: "本周 3 个瞬间",
+      className: "week",
+      body: publicMode
+        ? "这一周留下了几个被认领的瞬间。具体人名、地点和原文已隐藏，只分享时间长出花的样子。"
+        : story.split("\n").slice(0, 4).join("\n"),
+      footer: publicMode ? "公开风景 · 可发朋友圈" : "讲给亲友 · 保留细节"
+    },
+    {
+      id: "quarter",
+      eyebrow: "90-Day Card",
+      title: "过去三个月，有些瞬间还亮着",
+      badge: `${tellable.length} 个可讲述片段`,
+      className: "quarter",
+      body: publicMode
+        ? tellable.map(moment => `• ${moment.title}`).join("\n")
+        : tellable.map(moment => `• ${moment.title}｜${moment.text}`).join("\n"),
+      footer: "自由回忆 + 线索唤回"
+    },
+    {
+      id: "meadow",
+      eyebrow: "Life Meadow",
+      title: "让走过的时间，长成你的人生",
+      badge: `${state.moments.length} 张切片 · ${state.weeklyClaimed.length} 个认领`,
+      className: "meadow-card",
+      body: publicMode
+        ? "有些日子长出花丛，有些日子只有浅浅青草。TSD 记录的是完整旷野，不只记录高光。"
+        : `${state.moments.slice(0, 3).map(moment => moment.title).join("、")}，正在成为这片旷野里能被指认的地方。`,
+      footer: "人生旷野 · 语义缩放"
+    }
+  ];
+}
+
+function makeStudioText(assetId = "week") {
+  const asset = studioAssets().find(item => item.id === assetId) || studioAssets()[0];
+  return [
+    `【${asset.title}】`,
+    asset.body,
+    "",
+    `${asset.footer}｜来自 TimeSlowDown`
+  ].join("\n");
+}
+
+async function copyStudioCard(event) {
+  const assetId = event?.currentTarget?.dataset.studioCopy || "week";
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(makeStudioText(assetId));
+    setState({ toast: state.shareMode === "public" ? "已复制公开版视觉卡文案。" : "已复制私密版视觉卡文案。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请直接查看分享工作室卡片。" });
+  }
+}
+
 async function copyDemoLink() {
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -415,7 +479,7 @@ async function copyPrivacySummary() {
     "TimeSlowDown Codex Demo 隐私摘要：",
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
-    "3. v12 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
+    "3. v13 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
     "4. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "5. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -649,6 +713,7 @@ function bindEvents() {
   $("[data-add]")?.addEventListener("click", addMoment);
   $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
+  $$("[data-studio-copy]").forEach(btn => btn.addEventListener("click", copyStudioCard));
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
   $("[data-copy-review]")?.addEventListener("click", copyReviewPacket);
@@ -737,7 +802,7 @@ function shell(content) {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, guide: guideView, review: reviewView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -790,7 +855,7 @@ function nowView() {
         ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
         ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
         ${journeyStep("04", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${journeyStep("05", "给朋友试用", "看 3 分钟导览、隐私和 PoC 边界。", "guide")}
+        ${journeyStep("05", "生成视觉成品", "把周章节、季度回忆和人生旷野变成可分享卡片。", "studio")}
       </div>
     </section>
   `;
@@ -1006,7 +1071,7 @@ function chapterView() {
         <button class="${state.shareMode === "public" ? "active" : ""}" data-share-mode="public">分享一幅风景</button>
       </div>
       <div class="share-preview">${escapeHtml(shareText).replace(/\n/g, "<br/>")}</div>
-      <div class="action-row"><button class="primary" data-copy-share>复制分享文案</button><button class="secondary" data-view="ai">检查 AI 四道门</button></div>
+      <div class="action-row"><button class="primary" data-copy-share>复制分享文案</button><button class="secondary" data-view="studio">生成视觉卡</button><button class="secondary" data-view="ai">检查 AI 四道门</button></div>
     </section>
     <section class="chapter-card ritual-teaser">
       <div class="eyebrow">90-Day Recall</div>
@@ -1052,6 +1117,56 @@ function ritualView() {
   `;
 }
 
+function studioView() {
+  const assets = studioAssets();
+  return `
+    <div class="topline"><div><div class="brand">分享工作室</div><div class="micro">把记录变成可转述、可截图、可分享的视觉成品。</div></div></div>
+    <section class="guide-card studio-hero">
+      <div class="eyebrow">Visual Share Studio · v13</div>
+      <h1 class="hero-title">不是发日记，<br/>是递出一张时间明信片。</h1>
+      <p class="hero-subtitle">TSD 的分享不追求炫耀连续打卡，而是把“这一周/这一季/这一片旷野”整理成一个可讲述入口。公开版隐藏具体人名、地点和原文；私密版适合讲给亲友。</p>
+      <div class="share-mode studio-mode" aria-label="分享隐私模式">
+        <button class="${state.shareMode === "private" ? "active" : ""}" data-share-mode="private">讲给一个人</button>
+        <button class="${state.shareMode === "public" ? "active" : ""}" data-share-mode="public">分享一幅风景</button>
+      </div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">成品预览 <span class="micro">${state.shareMode === "public" ? "公开风景" : "私密叙述"}</span></h2>
+      <div class="poster-grid">
+        ${assets.map(asset => posterCard(asset)).join("")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">分享边界 <span class="micro">产品原则</span></h2>
+      <div class="chapter-list">
+        <div class="chapter-line"><strong>分享是用户主动行为</strong><span>TSD 不自动发布、不默认公开、不用社交压力逼用户连续记录。</span></div>
+        <div class="chapter-line"><strong>公开版先去细节</strong><span>适合朋友圈/小红书/群聊，只展示时间风景和主题，不暴露具体人名、地点、原文。</span></div>
+        <div class="chapter-line"><strong>私密版保留可讲述性</strong><span>适合发给家人朋友，帮助用户把“最近都做了什么”讲得出来。</span></div>
+      </div>
+      <div class="action-row"><button class="secondary" data-view="chapter">回到周章节</button><button class="secondary" data-view="guide">试用指南</button><button class="secondary" data-copy-privacy>复制隐私摘要</button></div>
+    </section>
+  `;
+}
+
+function posterCard(asset) {
+  return `
+    <article class="poster-card ${asset.className}">
+      <div class="poster-art" aria-hidden="true">
+        <i></i><i></i><i></i><span></span>
+      </div>
+      <div class="poster-copy">
+        <div class="eyebrow">${asset.eyebrow}</div>
+        <h3>${escapeHtml(asset.title)}</h3>
+        <div class="poster-badge">${escapeHtml(asset.badge)}</div>
+        <p>${escapeHtml(asset.body).replace(/\n/g, "<br/>")}</p>
+        <footer>${escapeHtml(asset.footer)}</footer>
+      </div>
+      <button class="secondary poster-action" data-studio-copy="${asset.id}">复制这张卡</button>
+    </article>
+  `;
+}
+
 function guideView() {
   return `
     <div class="topline"><div><div class="brand">试用指南</div><div class="micro">给第一次打开 TSD 的人：怎么试、试什么、哪些还只是 PoC。</div></div></div>
@@ -1069,8 +1184,9 @@ function guideView() {
         ${trialStep("02", "编译一篇周章节", "认领 3 个瞬间，看它变成可编辑故事。", "chapter")}
         ${trialStep("03", "缩放人生旷野", "从月度花丛看到一生周格。", "meadow")}
         ${trialStep("04", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${trialStep("05", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
-        ${trialStep("06", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
+        ${trialStep("05", "生成视觉成品", "看周章节海报、季度卡和人生旷野卡。", "studio")}
+        ${trialStep("06", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
+        ${trialStep("07", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
       </div>
     </section>
     <section class="guide-card">
@@ -1080,6 +1196,7 @@ function guideView() {
           "Quick Mark 与今日切片",
           "可编辑周章节与隐私分享预览",
           "人生旷野五档语义缩放",
+          "分享工作室三类视觉成品",
           "记忆保险箱导出/导入/清空",
           "同步控制台与数据离机账本",
           "90 天回忆仪式"
@@ -1088,7 +1205,7 @@ function guideView() {
           "AI 分层与 DeepSeek 模式为演示开关",
           "规则门禁用于模拟忠实编辑",
           "季度风景使用本地样例与当前切片",
-          "分享仅生成文案，不发布到社交平台"
+          "分享卡仅生成视觉预览和文案，不发布到社交平台"
         ], "soft")}
         ${boundaryColumn("生产待做", [
           "真实账户、E2EE 密钥恢复与服务端同步",
@@ -1108,7 +1225,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v12</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v13</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1116,7 +1233,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v12 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台和审核中心说明数据、权限、合规材料的边界。</p>
+      <p class="source-line">v13 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心和分享工作室说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1127,8 +1244,9 @@ function guideView() {
         ${readiness("安装体验", "待做", "受不新建文件约束，本轮未添加 manifest/icon。")}
         ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
+        ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
       </div>
-      <div class="action-row"><button class="secondary" data-view="review">打开审核中心</button></div>
+      <div class="action-row"><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button></div>
     </section>
   `;
 }
@@ -1435,12 +1553,12 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v12 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v13 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
       </div>
-      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
@@ -1566,7 +1684,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : ["guide", "review"].includes(state.view) ? "settings" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : ["guide", "studio", "review"].includes(state.view) ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -1594,7 +1712,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v12 聚焦审核中心：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台和审核材料雏形已经可以在公网试用。下一步继续补安装资产、真实模型网关或更完整的视觉成品导出。</p>
+      <p>当前 v13 聚焦视觉分享工作室：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台、审核材料雏形和三类分享卡片已经可以在公网试用。下一步继续补安装资产、真实模型网关或真正图片导出。</p>
     </section>
   </aside>`;
 }
