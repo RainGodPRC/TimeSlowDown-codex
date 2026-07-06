@@ -13,6 +13,15 @@ const seedMoments = [
     text: "最后一公里很想停，但还是跑完了。不是人生从此改变，只是这件事我想记一下。",
     tags: ["第一次", "运动", "成就"],
     strength: "strong",
+    media: {
+      kind: "video",
+      url: "https://example.com/first-5k-finish.mp4",
+      label: "first-5k-finish.mp4",
+      note: "短视频里能看到最后一公里结束时的喘气和路灯。",
+      storage: "external-link",
+      source: "Demo 影像线索",
+      attachedAt: "2026-07-06T00:00:00.000Z"
+    },
     sources: ["用户原话", "T1 忠实整理"]
   },
   {
@@ -22,6 +31,15 @@ const seedMoments = [
     text: "他说最近睡得还行。我发现他头发又白了一点。TSD 没有替我总结，只把这一幕留住。",
     tags: ["家人", "普通但值得", "晚饭"],
     strength: "memory",
+    media: {
+      kind: "image",
+      url: "https://example.com/noodle-dinner.jpg",
+      label: "noodle-dinner.jpg",
+      note: "那碗面和桌上的纸巾，比完整日记更能把晚饭带回来。",
+      storage: "external-link",
+      source: "Demo 影像线索",
+      attachedAt: "2026-07-06T00:00:00.000Z"
+    },
     sources: ["用户确认切片"]
   },
   {
@@ -48,6 +66,7 @@ const defaultState = {
   chapterStory: "",
   shareMode: "private",
   meadowScale: "month",
+  mediaFilter: "all",
   toast: "",
   age: 36,
   quietMode: false,
@@ -333,6 +352,7 @@ function vaultPayload() {
       chapterStory: state.chapterStory,
       shareMode: state.shareMode,
       meadowScale: state.meadowScale,
+      mediaFilter: state.mediaFilter,
       age: state.age,
       quietMode: state.quietMode,
       activeTags: state.activeTags,
@@ -364,6 +384,27 @@ function vaultStats() {
     claimed: state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length,
     chapters: state.chapterTitle || state.chapterStory ? 1 : 0,
     bytes
+  };
+}
+
+function mediaMoments() {
+  return state.moments.filter(moment => moment.media);
+}
+
+function filteredMediaMoments() {
+  const items = mediaMoments();
+  if (state.mediaFilter === "all") return items;
+  if (state.mediaFilter === "link") return items.filter(moment => moment.media?.storage === "external-link" || moment.media?.kind === "link");
+  return items.filter(moment => moment.media?.kind === state.mediaFilter);
+}
+
+function mediaStats() {
+  const items = mediaMoments();
+  return {
+    total: items.length,
+    image: items.filter(moment => moment.media?.kind === "image").length,
+    video: items.filter(moment => moment.media?.kind === "video").length,
+    link: items.filter(moment => moment.media?.storage === "external-link" || moment.media?.kind === "link").length
   };
 }
 
@@ -849,6 +890,7 @@ function bindEvents() {
   $("[data-ai-mode]")?.addEventListener("click", () => setState({ aiMode: state.aiMode === "rules" ? "deepseek" : "rules" }));
   $("[data-quiet]")?.addEventListener("click", () => setState({ quietMode: !state.quietMode }));
   $$("[data-scale]").forEach(btn => btn.addEventListener("click", () => setState({ meadowScale: btn.dataset.scale })));
+  $$("[data-media-filter]").forEach(btn => btn.addEventListener("click", () => setState({ mediaFilter: btn.dataset.mediaFilter })));
   $$("[data-claim]").forEach(btn => btn.addEventListener("click", () => toggleClaim(btn.dataset.claim)));
   $$("[data-share-mode]").forEach(btn => btn.addEventListener("click", () => setState({ shareMode: btn.dataset.shareMode })));
   $("[data-age]")?.addEventListener("input", (e) => setState({ age: Number(e.target.value || 36) }));
@@ -930,7 +972,7 @@ function shell(content) {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -982,8 +1024,9 @@ function nowView() {
         ${journeyStep("01", "留下一张切片", "用 Quick Mark 写一句今天不同的地方。", "slice")}
         ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
         ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
-        ${journeyStep("04", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${journeyStep("05", "生成视觉成品", "把周章节、季度回忆和人生旷野变成可分享卡片。", "studio")}
+        ${journeyStep("04", "打开媒体记忆墙", "看照片、视频如何把切片串成时间线。", "media")}
+        ${journeyStep("05", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
+        ${journeyStep("06", "生成视觉成品", "把周章节、季度回忆和人生旷野变成可分享卡片。", "studio")}
       </div>
     </section>
   `;
@@ -1100,6 +1143,7 @@ function meadowView() {
       <div class="eyebrow">Semantic Zoom</div>
       <h1 class="hero-title">这不是相册，<br/>是一片会生长的草原。</h1>
       <p class="hero-subtitle">今天、月、年、十年以后，同一批记忆会在不同尺度下显影。</p>
+      <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button></div>
     </section>
     <section class="zoom-card">
       <div class="scale-tabs">
@@ -1158,8 +1202,9 @@ function monthLandscapePanel() {
     </div>
     <div class="month-ritual-card">
       <strong>${escapeHtml(state.monthName)}</strong>
-      <span>这个月开始了什么、结束了什么、悄悄改变了什么？</span>
+      <span>这个月开始了什么、结束了什么、悄悄改变了什么？影像层能帮你从照片和视频找回入口。</span>
       <button class="secondary" data-view="ritual">进入月度 / 季度仪式</button>
+      <button class="secondary" data-view="media">查看媒体记忆墙</button>
     </div>
     <p class="source-line">月度风景来自周章节和切片主题；平淡日子仍是草地，不因未记录而变成空白。</p>
   </section>`;
@@ -1207,6 +1252,100 @@ function yearFocusCells() {
   return Array.from({ length: 52 }, (_, i) => {
     const cls = [4, 18, 31, 37].includes(i) ? "memory" : i === 27 ? "now" : "";
     return `<i class="week-cell ${cls}" title="week ${i + 1}"></i>`;
+  }).join("");
+}
+
+function mediaView() {
+  const stats = mediaStats();
+  const items = filteredMediaMoments();
+  return `
+    <div class="topline"><div><div class="brand">媒体记忆墙</div><div class="micro">照片和视频不是附件，它们是能把回忆带回来的光。</div></div></div>
+    <section class="guide-card media-hero">
+      <div class="eyebrow">Media Memory Wall · v15</div>
+      <h1 class="hero-title">影像让时间，<br/>重新有了入口。</h1>
+      <p class="hero-subtitle">这里不是普通相册。TSD 只展示已经绑定到切片的照片/视频线索：它们有时间、有一句话、有来源，也能回到章节和人生旷野。</p>
+      <div class="media-stats">
+        ${mediaStat("影像", stats.total, "个")}
+        ${mediaStat("照片", stats.image, "张")}
+        ${mediaStat("视频", stats.video, "段")}
+        ${mediaStat("链接", stats.link, "条")}
+      </div>
+      <div class="action-row"><button class="primary" data-view="slice">添加影像切片</button><button class="secondary" data-view="chapter">回到周章节</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">影像筛选 <span class="micro">${items.length} 条</span></h2>
+      <div class="media-filter-row">
+        ${mediaFilterButton("all", "全部")}
+        ${mediaFilterButton("image", "照片")}
+        ${mediaFilterButton("video", "视频")}
+        ${mediaFilterButton("link", "链接")}
+      </div>
+      ${items.length ? `<div class="media-wall">${items.map(mediaWallCard).join("")}</div>` : emptyMediaWall()}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">回忆时间线 <span class="micro">影像 → 切片 → 章节</span></h2>
+      <div class="media-timeline">
+        ${mediaTimeline(items)}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">生产边界 <span class="micro">不是普通云相册</span></h2>
+      <div class="chapter-list">
+        <div class="chapter-line"><strong>只展示被用户绑定过的影像</strong><span>TSD 不自动扫相册、不替用户判断哪张照片重要。影像必须和切片、备注或章节发生关系。</span></div>
+        <div class="chapter-line"><strong>原始影像权利属于用户</strong><span>生产版需要原图/视频导出、删除、仅设备保存、E2EE 同步和缩略图边界。</span></div>
+        <div class="chapter-line"><strong>AI 不默认看图</strong><span>没有用户授权和任务单，模型不能读取原始影像；最多先处理用户写下的影像备注和最小元信息。</span></div>
+      </div>
+      <div class="action-row"><button class="secondary" data-view="review">查看审核中心</button><button class="secondary" data-view="settings">记忆保险箱</button></div>
+    </section>
+  `;
+}
+
+function mediaStat(label, value, unit) {
+  return `<div class="media-stat"><strong>${value}</strong><span>${label} · ${unit}</span></div>`;
+}
+
+function mediaFilterButton(filter, label) {
+  return `<button class="tag ${state.mediaFilter === filter ? "active" : ""}" data-media-filter="${filter}">${label}</button>`;
+}
+
+function emptyMediaWall() {
+  return `<div class="empty-media-wall">
+    <strong>这一类暂时没有影像线索</strong>
+    <span>先去 Quick Mark 里添加一张照片或一段视频。TSD 会把它和那天的切片绑在一起。</span>
+    <button class="secondary" data-view="slice">添加影像线索</button>
+  </div>`;
+}
+
+function mediaWallCard(moment) {
+  const media = moment.media;
+  return `<article class="media-wall-card">
+    <div class="media-wall-thumb">
+      ${media.previewUrl ? `<img src="${media.previewUrl}" alt="${escapeHtml(moment.title)} 影像预览" />` : `<span>${media.kind === "video" ? "▶" : media.kind === "image" ? "▧" : "↗"}</span>`}
+    </div>
+    <div class="media-wall-copy">
+      <div class="eyebrow">${mediaKindLabel(media.kind)} · ${escapeHtml(moment.date)}</div>
+      <h3>${escapeHtml(moment.title)}</h3>
+      <p>${escapeHtml(media.note || moment.text)}</p>
+      <div class="media-wall-tags">
+        ${moment.tags.slice(0, 3).map(tag => `<span>${escapeHtml(tag)}</span>`).join("")}
+      </div>
+      <small>${escapeHtml(media.label || "未命名影像")} · source: ${escapeHtml(moment.id)}</small>
+    </div>
+  </article>`;
+}
+
+function mediaTimeline(items) {
+  if (!items.length) return `<div class="media-timeline-empty">没有可展示的影像时间线。</div>`;
+  return items.map((moment, index) => {
+    const media = moment.media;
+    return `<div class="media-time-row">
+      <span>${String(index + 1).padStart(2, "0")}</span>
+      <div>
+        <strong>${escapeHtml(moment.date)} · ${escapeHtml(moment.title)}</strong>
+        <em>${mediaKindLabel(media.kind)}锚点：${escapeHtml(media.note || media.label || "已绑定影像线索")}</em>
+      </div>
+    </div>`;
   }).join("");
 }
 
@@ -1353,10 +1492,11 @@ function guideView() {
         ${trialStep("01", "留下一张切片", "写一句今天不同的地方。", "slice")}
         ${trialStep("02", "编译一篇周章节", "认领 3 个瞬间，看它变成可编辑故事。", "chapter")}
         ${trialStep("03", "缩放人生旷野", "从月度花丛看到一生周格。", "meadow")}
-        ${trialStep("04", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${trialStep("05", "生成视觉成品", "看周章节海报、季度卡和人生旷野卡。", "studio")}
-        ${trialStep("06", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
-        ${trialStep("07", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
+        ${trialStep("04", "看媒体记忆墙", "照片/视频如何把切片串成回忆时间线。", "media")}
+        ${trialStep("05", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
+        ${trialStep("06", "生成视觉成品", "看周章节海报、季度卡和人生旷野卡。", "studio")}
+        ${trialStep("07", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
+        ${trialStep("08", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
       </div>
     </section>
     <section class="guide-card">
@@ -1364,6 +1504,7 @@ function guideView() {
       <div class="boundary-grid">
         ${boundaryColumn("已可试用", [
           "Quick Mark 与今日切片",
+          "影像线索与媒体记忆墙",
           "可编辑周章节与隐私分享预览",
           "人生旷野五档语义缩放",
           "分享工作室三类视觉成品",
@@ -1395,7 +1536,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v14</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v15</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1403,7 +1544,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v14 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心、分享工作室和影像线索说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v15 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索和媒体记忆墙说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1416,8 +1557,9 @@ function guideView() {
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
         ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
+        ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
       </div>
-      <div class="action-row"><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button></div>
+      <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button></div>
     </section>
   `;
 }
@@ -1442,7 +1584,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v14</div>
+      <div class="eyebrow">Review Packet · v15</div>
       <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
       <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -1724,12 +1866,12 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v14 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v15 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
       </div>
-      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
@@ -1856,7 +1998,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : ["guide", "studio", "review"].includes(state.view) ? "settings" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : state.view === "media" ? "meadow" : ["guide", "studio", "review"].includes(state.view) ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -1884,7 +2026,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v14 聚焦影像线索：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台、审核材料雏形、三类分享卡片和照片/视频记忆锚点已经进入同一个体验。下一步继续恢复公网部署、补安装资产、真实模型网关或真正图片导出。</p>
+      <p>当前 v15 聚焦媒体记忆墙：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台、审核材料雏形、三类分享卡片、照片/视频记忆锚点和影像时间线已经进入同一个体验。下一步继续补安装资产、真实模型网关、真实图片导出或媒体库生产假面。</p>
     </section>
   </aside>`;
 }
