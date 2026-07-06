@@ -625,9 +625,9 @@ function mediaLibraryManifest() {
   const stats = mediaLibraryStats();
   return {
     product: "TimeSlowDown Media Vault Path",
-    version: "v25-demo",
+    version: "v26-demo",
     generatedAt: new Date().toISOString(),
-    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v25 keeps the media vault path and adds app-like install boundaries.",
+    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v26 makes photo/video entry first-class while keeping the media vault path and app-like install boundaries.",
     vaultState: {
       permission: state.mediaPermissionReviewAt ? "limited-picker-reviewed" : "single-picker-only",
       sealedAt: state.mediaVaultSealedAt || "",
@@ -1131,7 +1131,7 @@ async function requestInstallDemo() {
 async function copyInstallGuide() {
   const manifest = installManifestState();
   const text = [
-    "TimeSlowDown Codex 安装说明（Demo v25）：",
+    "TimeSlowDown Codex 安装说明（Demo v26）：",
     `公网地址：${PUBLIC_DEMO_URL}`,
     "",
     "iPhone / iPad：用 Safari 打开 → 点分享按钮 → 添加到主屏幕。",
@@ -1139,7 +1139,7 @@ async function copyInstallGuide() {
     "桌面 Chrome / Edge：打开地址栏右侧安装图标，或菜单 → 安装 TimeSlowDown。",
     "",
     `当前检测：manifest=${manifest.hasManifest ? "yes" : "no"}；apple-meta=${manifest.hasAppleMeta ? "yes" : "no"}；standalone=${manifest.standalone ? "yes" : "no"}；prompt=${manifest.promptReady ? "ready" : "manual"}.`,
-    "边界：v25 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
+    "边界：v26 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
   ].join("\n");
   const stamp = new Date().toLocaleString("zh-CN");
   try {
@@ -1166,9 +1166,10 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v25 已支持生产隐私中心、模型网关控制台、分享工作室 PNG 导出、媒体入口、媒体保险箱路径、安装中心和 Demo QA Console。",
-    "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由、媒体导出/删除审计和地区数据边界完成后，才允许处理真实用户记忆。",
-    "6. AI 只做忠实编辑，不替用户决定人生意义。"
+    "4. v26 已支持生产隐私中心、模型网关控制台、分享工作室 PNG 导出、媒体入口、媒体保险箱路径、安装中心和 Demo QA Console。",
+    "5. 媒体策略：照片/视频是切片入口，不是事后附件；v26 已把全局影像入口、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、旧切片补影像串成主路径。",
+    "6. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由、媒体导出/删除审计和地区数据边界完成后，才允许处理真实用户记忆。",
+    "7. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -1186,7 +1187,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v25 保留从首次进入就选择照片/视频作为切片锚点，也允许给已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v26 把照片/视频入口提升为主路径：全局影像入口、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -1201,7 +1202,7 @@ async function copyReviewPacket() {
 
 async function copyComplianceReport() {
   const text = [
-    "TimeSlowDown 生产隐私报告（Demo v25）：",
+    "TimeSlowDown 生产隐私报告（Demo v26）：",
     "1. 当前 Demo：静态站点 + localStorage；不登录、不云同步、不调用真实模型、不请求持久相册/定位/通讯录/麦克风/通知。",
     "2. 数据生命周期：用户主动输入/选择 → 设备本地保存 → 可选 AI/同步任务单 → 导出/删除 → 分享包去隐私。",
     "3. 权限升级梯子：先单次选择；只有批量整理、同步、提醒等明确动作出现时才解释并请求更多权限。",
@@ -1224,14 +1225,14 @@ function qaSnapshot() {
   const mediaCount = mediaMoments().length;
   const claimedCount = state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length;
   return {
-    version: "v25",
+    version: "v26",
     publicUrl: PUBLIC_DEMO_URL,
-    resources: "styles.css?v=25 / app.js?v=25",
+    resources: "styles.css?v=26 / app.js?v=26",
     moments: state.moments.length,
     mediaCount,
     claimedCount,
     gatewayStatus: gatewayStatusLabel(),
-    privacyCenter: "v25",
+    privacyCenter: "v26",
     qaReportAt: state.lastQaReportAt || "尚未复制",
     checks: qaChecks(mediaCount, claimedCount)
   };
@@ -1254,8 +1255,14 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
     {
       area: "影像锚点",
       status: mediaCount ? "pass" : "warn",
-      route: "切片 / 章节 / 媒体墙",
-      evidence: `${mediaCount} 个切片已绑定照片/视频/链接；已有切片可事后补影像。`
+      route: "全局影像入口 / 切片 / 章节 / 媒体墙",
+      evidence: `${mediaCount} 个切片已绑定照片/视频/链接；v26 把照片/视频入口放到全局 Dock、此刻页、Quick Mark、媒体墙和旧切片补影像。`
+    },
+    {
+      area: "影像入口可见性",
+      status: "pass",
+      route: "顶部影像入口 → 今日切片",
+      evidence: "用户不必先写文字：点击“照片/视频”即可选择文件并进入今日切片，文字和备注可后补。"
     },
     {
       area: "媒体保险箱",
@@ -1267,7 +1274,7 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "安装体验",
       status: "poc",
       route: "安装中心",
-      evidence: "v25 已加入 inline manifest、Apple web app meta、touch icon、安装中心、standalone 检测和可复制安装说明；仍无 service worker/offline。"
+      evidence: "v26 保留 inline manifest、Apple web app meta、touch icon、安装中心、standalone 检测和可复制安装说明；仍无 service worker/offline。"
     },
     {
       area: "周章节",
@@ -1320,7 +1327,7 @@ function qaScore() {
 async function copyQaReport() {
   const snapshot = qaSnapshot();
   const text = [
-    "TimeSlowDown Demo QA Console（v25）：",
+    "TimeSlowDown Demo QA Console（v26）：",
     `公网：${snapshot.publicUrl}`,
     `资源：${snapshot.resources}`,
     `本地样本：${snapshot.moments} 张切片 / ${snapshot.mediaCount} 个影像锚点 / ${snapshot.claimedCount} 个周认领`,
@@ -1735,11 +1742,25 @@ function shell(content) {
     <div class="phone">
       <div class="screen">
         <div class="statusbar"><span>9:41</span><span class="status-dots"><i class="dot"></i><i class="dot"></i><i class="dot"></i> 100%</span></div>
+        ${state.onboarded ? mediaDock() : ""}
         <div class="screen-body">${content}</div>
         ${bottomNav()}
       </div>
     </div>
     ${sidePanel()}
+  </div>`;
+}
+
+function mediaDock() {
+  return `<div class="media-dock" aria-label="快速添加照片或视频">
+    <div class="media-dock-copy">
+      <strong>影像入口</strong>
+      <span>拍了照片？先把它钉到今天，文字可以以后补。</span>
+    </div>
+    <label class="media-dock-button">
+      <span>照片/视频</span>
+      <input data-media-file data-after-view="slice" type="file" accept="image/*,video/*" />
+    </label>
   </div>`;
 }
 
@@ -1794,6 +1815,7 @@ function nowView() {
       <h1 class="hero-title">今天有什么，<br/>不太一样？</h1>
       <p class="hero-subtitle">不需要完整日记。可以先拍下/选中一个画面，再补一句话；影像本身就是回忆的入口。</p>
       <div class="action-row"><button class="primary" data-view="slice">开始 Quick Mark</button><button class="secondary" data-view="media">看媒体记忆墙</button></div>
+      <p class="media-dock-note">如果你已经拍了照片，不用先想文字：点上方“照片/视频”，TSD 会把它作为今日切片的记忆锚点。</p>
     </section>
     <section class="media-first-strip">
       <div>
@@ -2070,7 +2092,7 @@ function mediaView() {
   return `
     <div class="topline"><div><div class="brand">媒体记忆墙</div><div class="micro">照片和视频不是附件，它们是能把回忆带回来的光。</div></div></div>
     <section class="guide-card media-hero">
-      <div class="eyebrow">Media Memory Wall · v17</div>
+      <div class="eyebrow">Media Memory Wall · v26</div>
       <h1 class="hero-title">影像让时间，<br/>重新有了入口。</h1>
       <p class="hero-subtitle">这里不是普通相册。TSD 只展示已经绑定到切片的照片/视频线索：它们有时间、有一句话、有来源，也能回到章节和人生旷野。</p>
       <div class="media-stats">
@@ -2079,7 +2101,16 @@ function mediaView() {
         ${mediaStat("视频", stats.video, "段")}
         ${mediaStat("链接", stats.link, "条")}
       </div>
-      <div class="action-row"><button class="primary" data-view="slice">添加影像切片</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="chapter">回到周章节</button></div>
+      <div class="action-row">
+        <label class="primary media-inline-file">
+          <span>直接选择照片/视频</span>
+          <input data-media-file data-after-view="slice" type="file" accept="image/*,video/*" />
+        </label>
+        <button class="secondary" data-view="slice">写一句切片</button>
+        <button class="secondary" data-view="lens">人物地点镜头</button>
+        <button class="secondary" data-view="library">媒体库生产</button>
+        <button class="secondary" data-view="chapter">回到周章节</button>
+      </div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="guide-card">
@@ -2495,9 +2526,9 @@ function installView() {
   return `
     <div class="topline"><div><div class="brand">安装中心</div><div class="micro">让公网 Demo 更像一个能放到主屏幕的 App。</div></div></div>
     <section class="guide-card install-hero">
-      <div class="eyebrow">Install Center · v25</div>
+      <div class="eyebrow">Install Center · v26</div>
       <h1 class="hero-title">把 TSD 放到主屏幕，<br/>像 App 一样试用。</h1>
-      <p class="hero-subtitle">v25 在不新增文件的前提下加入 inline manifest、iOS Web App meta、安装说明和 standalone 检测。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
+      <p class="hero-subtitle">v26 在不新增文件的前提下保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
       <div class="install-badges">
         ${installBadge("Manifest", install.hasManifest ? "ready" : "missing")}
         ${installBadge("iOS Meta", install.hasAppleMeta ? "ready" : "missing")}
@@ -2520,7 +2551,7 @@ function installView() {
     <section class="guide-card">
       <h2 class="section-title">App-like Shell <span class="micro">边界说明</span></h2>
       <div class="processing-ledger">
-        ${processingBoundary("已做", "v25", "inline manifest、Apple web app meta、touch icon、主屏安装说明、standalone 检测、QA 路线。", "safe")}
+        ${processingBoundary("已做", "v26", "inline manifest、Apple web app meta、touch icon、主屏安装说明、standalone 检测、QA 路线。", "safe")}
         ${processingBoundary("未做", "生产待做", "未新增 service worker；不承诺离线缓存、后台同步、推送或原生权限弹窗。", "warn")}
         ${processingBoundary("App Store", "未来", "真实上架仍需 iOS 原生壳、正式图标资产、权限文案、隐私政策和审核材料。", "warn")}
       </div>
@@ -2603,7 +2634,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v25</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v26</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -2611,7 +2642,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v25 仍不调用真实模型和真实账户；它把“照片/视频优先”、事后补影像锚点、媒体保险箱路径、安装中心、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v26 仍不调用真实模型和真实账户；它把“照片/视频优先”从隐藏能力提升为可见入口：全局影像 Dock、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、事后补影像锚点、媒体保险箱路径、安装中心、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -2619,7 +2650,7 @@ function guideView() {
         ${readiness("产品灵魂", "完成", "时间切片机、人生旷野、90 天可讲述。")}
         ${readiness("数据权利", "Demo 覆盖", "导出、导入、清空已可点击；生产需账户与恢复。")}
         ${readiness("AI 边界", "PoC 覆盖", "分层架构和黄金样本已可看；生产需真实网关。")}
-        ${readiness("安装体验", "v25 PoC", "inline manifest、iOS meta、touch icon、安装中心和 standalone 检测已加入；离线缓存仍待做。")}
+        ${readiness("安装体验", "v26 PoC", "inline manifest、iOS meta、touch icon、安装中心和 standalone 检测已加入；离线缓存仍待做。")}
         ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
@@ -2628,7 +2659,7 @@ function guideView() {
         ${readiness("切片补影像", "v22", "已有切片可事后补照片/视频或影像链接，周末回顾时也能把真实影像贴回记忆。")}
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
-        ${readiness("QA Console", "v25", "核心试用路径、安装体验、PoC 边界、媒体保险箱和生产待做被整理成可复制验收报告。")}
+        ${readiness("QA Console", "v26", "核心试用路径、安装体验、PoC 边界、媒体入口、媒体保险箱和生产待做被整理成可复制验收报告。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
         ${readiness("媒体保险箱", "v24", "相册权限、E2EE 分层、缩略图清除、导出包、删除审计和家庭/儿童影像复核。")}
@@ -2658,7 +2689,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v25</div>
+      <div class="eyebrow">Review Packet · v26</div>
       <h1 class="hero-title">记忆产品的信任，<br/>必须能被看见。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里把权限、数据生命周期、AI、影像、同步和删除权做成可读的生产隐私中心雏形。</p>
       <div class="action-row"><button class="primary" data-copy-compliance>复制生产隐私报告</button><button class="secondary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -2732,7 +2763,7 @@ function reviewView() {
         ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
         ${readiness("模型网关", "v21 假面", "Provider 状态、限流预算、任务队列、失败降级和撤销日志已产品化；真实 API/密钥仍待接入。")}
         ${readiness("合规文本", "v22 雏形", "生产隐私中心、生命周期、权限升级和处理边界已产品化；正式法律文本仍待复核。")}
-        ${readiness("审核材料", "v22/v25 雏形", "本页可复制生产隐私报告，QA Console 可复制 Demo 验收报告；不代表已通过法务或上架审核。")}
+        ${readiness("审核材料", "v22/v26 雏形", "本页可复制生产隐私报告，QA Console 可复制 Demo 验收报告；不代表已通过法务或上架审核。")}
       </div>
     </section>
   `;
@@ -2744,7 +2775,7 @@ function qaView() {
   return `
     <div class="topline"><div><div class="brand">QA Console</div><div class="micro">把当前公网 Demo 的可靠性和边界摊开给试用者看。</div></div></div>
     <section class="guide-card qa-hero">
-      <div class="eyebrow">Demo QA Console · v25</div>
+      <div class="eyebrow">Demo QA Console · v26</div>
       <h1 class="hero-title">这不是口头说“能用”，<br/>而是把证据放出来。</h1>
       <p class="hero-subtitle">TSD 的 demo 越接近商品级，越需要让用户、测试者和其他 agent 清楚知道：哪些路径已经可以点击验证，哪些仍只是 PoC，哪些上架前必须补完。</p>
       <div class="qa-scoreboard">
@@ -2791,7 +2822,7 @@ function qaView() {
         ${processingBoundary("真实模型", "待接入", "DeepSeek V4 Flash 目前仍是 PoC 假面；生产需密钥管理、限流、供应商审查和任务回放。", "warn")}
         ${processingBoundary("真实同步", "待接入", "账户、E2EE、密钥恢复、设备管理、地区数据边界仍未实现。", "warn")}
         ${processingBoundary("相册权限", "PoC 边界", "v24 已有媒体保险箱路径；真实系统 Photos Picker、E2EE 文件库和删除回执仍待接入。", "warn")}
-        ${processingBoundary("安装资产", "PoC 边界", "v25 已加入 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
+        ${processingBoundary("安装资产", "PoC 边界", "v26 已加入 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
       </div>
     </section>
   `;
@@ -3123,7 +3154,7 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v25 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v26 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -3283,7 +3314,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v25 已把媒体优先入口、事后补影像锚点、媒体保险箱路径、安装中心、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 串起来：用户可以从照片/视频开始，也可以周末把照片/视频补到已有切片，再进入媒体墙、章节和人生旷野；试用者还能看到权限、导出、删除、家庭影像、安装说明和 PoC 边界。</p>
+      <p>当前 v26 已把媒体优先入口做成显性主路径：用户可以从全局“照片/视频”入口、首次进入、Quick Mark 或媒体墙直接选择影像；也可以周末把照片/视频补到已有切片，再进入媒体墙、章节和人生旷野；试用者还能看到权限、导出、删除、家庭影像、安装说明和 PoC 边界。</p>
     </section>
   </aside>`;
 }
