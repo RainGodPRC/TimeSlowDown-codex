@@ -62,7 +62,14 @@ const defaultState = {
   quarterRecallDraft: "5 公里、和爸爸吃面、开会后那段沉默的回家路。",
   quarterRevealed: false,
   lastAiTaskAt: "",
-  aiDraftRevokedAt: ""
+  aiDraftRevokedAt: "",
+  accountMode: "guest",
+  syncMode: "local",
+  lastSyncAt: "",
+  syncPausedAt: "",
+  recoveryUntil: "",
+  subscriptionState: "free",
+  connectedDevices: 1
 };
 
 let state = loadState();
@@ -226,7 +233,14 @@ function vaultPayload() {
       quarterRecallDraft: state.quarterRecallDraft,
       quarterRevealed: state.quarterRevealed,
       lastAiTaskAt: state.lastAiTaskAt,
-      aiDraftRevokedAt: state.aiDraftRevokedAt
+      aiDraftRevokedAt: state.aiDraftRevokedAt,
+      accountMode: state.accountMode,
+      syncMode: state.syncMode,
+      lastSyncAt: state.lastSyncAt,
+      syncPausedAt: state.syncPausedAt,
+      recoveryUntil: state.recoveryUntil,
+      subscriptionState: state.subscriptionState,
+      connectedDevices: state.connectedDevices
     }
   };
 }
@@ -401,7 +415,7 @@ async function copyPrivacySummary() {
     "TimeSlowDown Codex Demo 隐私摘要：",
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
-    "3. v10 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
+    "3. v11 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
     "4. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "5. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -448,6 +462,52 @@ async function copyAiTaskSheet() {
   } catch {
     setState({ toast: "浏览器不允许自动复制；请直接查看 AI 任务单。" });
   }
+}
+
+function futureDate(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toLocaleDateString("zh-CN");
+}
+
+function simulateEncryptedBackup() {
+  setState({
+    accountMode: "signed-in-demo",
+    syncMode: "encrypted-backup",
+    subscriptionState: "plus-demo",
+    connectedDevices: Math.max(2, state.connectedDevices),
+    lastSyncAt: new Date().toLocaleString("zh-CN"),
+    syncPausedAt: "",
+    recoveryUntil: futureDate(30),
+    toast: "已模拟加密备份：2 台设备可见，服务端只保存加密盒，Demo 不上传真实数据。"
+  });
+}
+
+function pauseSync() {
+  setState({
+    syncMode: "paused",
+    syncPausedAt: new Date().toLocaleString("zh-CN"),
+    toast: "同步已暂停。你仍可在本机记录、查看和导出已有记忆。"
+  });
+}
+
+function resumeSync() {
+  setState({
+    syncMode: state.accountMode === "guest" ? "local" : "encrypted-backup",
+    lastSyncAt: state.accountMode === "guest" ? state.lastSyncAt : new Date().toLocaleString("zh-CN"),
+    syncPausedAt: "",
+    toast: state.accountMode === "guest" ? "当前仍是访客模式：记录保存在本机。" : "已恢复加密同步演示。"
+  });
+}
+
+function cancelSubscriptionDemo() {
+  setState({
+    subscriptionState: "cancelled-demo",
+    syncMode: "paused",
+    syncPausedAt: new Date().toLocaleString("zh-CN"),
+    recoveryUntil: futureDate(30),
+    toast: "已模拟退订：已有记忆仍可查看、编辑、导出；云同步进入 30 天取回窗口。"
+  });
 }
 
 function saveQuarterRecall() {
@@ -575,6 +635,10 @@ function bindEvents() {
   $$("[data-simulate-ai-task]").forEach(btn => btn.addEventListener("click", simulateAiTask));
   $$("[data-revoke-ai-draft]").forEach(btn => btn.addEventListener("click", revokeAiDraft));
   $$("[data-copy-ai-task]").forEach(btn => btn.addEventListener("click", copyAiTaskSheet));
+  $$("[data-simulate-backup]").forEach(btn => btn.addEventListener("click", simulateEncryptedBackup));
+  $$("[data-pause-sync]").forEach(btn => btn.addEventListener("click", pauseSync));
+  $$("[data-resume-sync]").forEach(btn => btn.addEventListener("click", resumeSync));
+  $$("[data-cancel-subscription]").forEach(btn => btn.addEventListener("click", cancelSubscriptionDemo));
   $("[data-save-recall]")?.addEventListener("click", saveQuarterRecall);
   $("[data-reveal-quarter]")?.addEventListener("click", revealQuarter);
   $("[data-reset-ritual]")?.addEventListener("click", resetQuarterRitual);
@@ -996,6 +1060,7 @@ function guideView() {
           "可编辑周章节与隐私分享预览",
           "人生旷野五档语义缩放",
           "记忆保险箱导出/导入/清空",
+          "同步控制台与数据离机账本",
           "90 天回忆仪式"
         ], "ok")}
         ${boundaryColumn("PoC 模拟", [
@@ -1005,7 +1070,7 @@ function guideView() {
           "分享仅生成文案，不发布到社交平台"
         ], "soft")}
         ${boundaryColumn("生产待做", [
-          "账户、同步、E2EE 与恢复窗口",
+          "真实账户、E2EE 密钥恢复与服务端同步",
           "真实模型网关与成本/额度策略",
           "App Store 隐私营养标签",
           "PWA manifest / iOS 原生壳与图标资产"
@@ -1022,7 +1087,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v10</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v11</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1030,7 +1095,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v10 仍不调用真实模型；它把未来生产路径写清楚，并用 AI 任务单说明每次离机前会发什么、不发什么。</p>
+      <p class="source-line">v11 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单与同步控制台说明数据何时离机、何时暂停、退订后如何取回。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1206,7 +1271,7 @@ function aiView() {
       <p class="source-line">所有黄金样本都遵守事实门、语气门、隐私门和认领门；漂亮但无来源的句子默认视为风险。</p>
     </section>
     <section class="ai-card">
-      <h2 class="section-title">AI 任务单 <span class="micro">v10 · 离机前确认</span></h2>
+      <h2 class="section-title">AI 任务单 <span class="micro">v11 · 离机前确认</span></h2>
       <div class="task-sheet">
         <div class="task-head">
           <span>模拟请求</span>
@@ -1232,7 +1297,7 @@ function aiView() {
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="ai-card">
-      <h2 class="section-title">模型路由与降级 <span class="micro">v10 生产边界</span></h2>
+      <h2 class="section-title">模型路由与降级 <span class="micro">v11 生产边界</span></h2>
       <div class="route-stack">
         ${routeStep("L0", "本地规则", "免费底座；时间冲突、信息稀少、照片占位、敏感提示先在本地处理。", "已在 Demo 中模拟")}
         ${routeStep("L1", "免费云额度", "只处理非敏感轻任务；失败时静默退回 L0，不让记录中断。", "生产待接入")}
@@ -1246,7 +1311,7 @@ function aiView() {
         <span>无来源不成章</span>
         <span>敏感默认谨慎</span>
       </div>
-      <p class="source-line">v10 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、任务单、门禁和降级策略。</p>
+      <p class="source-line">v11 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、任务单、门禁和降级策略。</p>
     </section>
   `;
 }
@@ -1263,13 +1328,25 @@ function routeStep(level, title, copy, status) {
   return `<div class="route-step"><span>${level}</span><strong>${title}</strong><em>${copy}</em><small>${status}</small></div>`;
 }
 
+function syncModeLabel() {
+  if (state.syncMode === "encrypted-backup") return "加密备份演示";
+  if (state.syncMode === "paused") return "同步已暂停";
+  return "仅本机";
+}
+
+function subscriptionLabel() {
+  if (state.subscriptionState === "plus-demo") return "Plus 演示";
+  if (state.subscriptionState === "cancelled-demo") return "已退订演示";
+  return "Free / 访客";
+}
+
 function settingsView() {
   const stats = vaultStats();
   const sheet = aiTaskSheet();
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v10 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v11 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -1278,7 +1355,7 @@ function settingsView() {
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
-      <h2 class="section-title">记忆保险箱 <span class="micro">v10 · 本地优先</span></h2>
+      <h2 class="section-title">记忆保险箱 <span class="micro">v11 · 本地优先</span></h2>
       <div class="vault-grid">
         ${vaultStat("切片", stats.moments, "条")}
         ${vaultStat("认领", stats.claimed, "个")}
@@ -1319,7 +1396,29 @@ function settingsView() {
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
-      <h2 class="section-title">数据离机账本 <span class="micro">v10 · 可撤销</span></h2>
+      <h2 class="section-title">同步控制台 <span class="micro">v11 · 多设备保险箱</span></h2>
+      <div class="sync-console">
+        ${syncStateCard("账户", state.accountMode === "guest" ? "访客模式" : "已登录演示", "不登录也能本地记录；登录只用于加密备份和多设备。")}
+        ${syncStateCard("同步", syncModeLabel(), state.syncMode === "paused" ? "暂停后本机继续可用，云端不再接收新变化。" : "同步是可选增强，不是核心记录门槛。")}
+        ${syncStateCard("设备", `${state.connectedDevices} 台`, "生产版应展示设备名、最后活动时间和移除入口。")}
+        ${syncStateCard("订阅", subscriptionLabel(), "退订不能扣留已有记忆；导出、查看和本地记录继续可用。")}
+      </div>
+      <div class="sync-timeline">
+        ${ledgerLine("最近同步", state.lastSyncAt || "尚未同步", state.syncMode === "encrypted-backup" ? "加密" : "本地")}
+        ${ledgerLine("暂停时间", state.syncPausedAt || "未暂停", state.syncMode === "paused" ? "已暂停" : "无")}
+        ${ledgerLine("取回窗口", state.recoveryUntil || "未开启", state.subscriptionState === "cancelled-demo" ? "30 天" : "待触发")}
+      </div>
+      <div class="action-row">
+        <button class="primary" data-simulate-backup>模拟加密备份</button>
+        <button class="secondary" data-pause-sync>暂停同步</button>
+        <button class="secondary" data-resume-sync>恢复同步</button>
+        <button class="ghost danger" data-cancel-subscription>模拟退订</button>
+      </div>
+      <p class="source-line">这里验证的是商品级信任承诺：换手机可以找回，暂停同步不会丢本机记录，退订后仍能查看、编辑、导出已有记忆。</p>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="settings-card">
+      <h2 class="section-title">数据离机账本 <span class="micro">v11 · 可撤销</span></h2>
       <div class="ledger-panel">
         ${ledgerLine("最近 AI 任务", state.lastAiTaskAt || "尚未模拟", state.lastAiTaskAt ? "已记录" : "待触发")}
         ${ledgerLine("最近撤销", state.aiDraftRevokedAt || "尚未撤销", state.aiDraftRevokedAt ? "已撤销" : "无")}
@@ -1355,6 +1454,10 @@ function vaultStat(label, value, unit) {
 
 function syncItem(title, copy, status) {
   return `<div class="sync-item"><strong>${title}</strong><span>${copy}</span><em>${status}</em></div>`;
+}
+
+function syncStateCard(title, value, copy) {
+  return `<div class="sync-state-card"><span>${title}</span><strong>${escapeHtml(value)}</strong><em>${escapeHtml(copy)}</em></div>`;
 }
 
 function ledgerLine(title, value, status) {
@@ -1402,7 +1505,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v10 聚焦可信 AI：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单和数据离机账本已经可以在公网试用。下一步继续补安装资产、账户同步状态机或真实模型网关。</p>
+      <p>当前 v11 聚焦可信同步：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本和同步控制台已经可以在公网试用。下一步继续补安装资产、真实模型网关或更完整的 App Store 审核材料。</p>
     </section>
   </aside>`;
 }

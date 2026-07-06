@@ -16,3 +16,4 @@ Current demo focus:
 - Public trial guide: what to try, what is PoC, and what remains production work
 - AI/sync boundary map: local rules, DeepSeek PoC, BYOK, E2EE, export/delete rights
 - AI task sheet and off-device ledger: what leaves, what never leaves, fallback, revoke
+- Sync console: encrypted-backup demo, pause/resume sync, cancellation recovery window
