@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>55</string>"), "Info.plist should carry v55 build number")
+check(infoPlistText.contains("<string>56</string>"), "Info.plist should carry v56 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -432,6 +432,91 @@ check(mockGatewayReceipt.auditEventID != nil, "Mock gateway receipt may return a
 check(!mockGatewayReceipt.responseContainsProviderCredential, "Mock gateway response should not contain provider credential")
 check(!mockGatewayReceipt.responseContainsRawMedia, "Mock gateway response should not contain raw media")
 check(!mockGatewayReceipt.responseContainsFullMemoryArchive, "Mock gateway response should not contain full memory archive")
+
+let deployedGatewayEnvironment = DeepSeekGatewayValidationEnvironment(
+    backendBaseURL: "https://api.timeslowdown.example",
+    hasServerRuntime: true,
+    hasServerSecretManager: true,
+    hasProviderCredentialOnServer: true,
+    canReachProvider: true
+)
+check(deployedGatewayEnvironment.canRunProviderValidation, "Deployed gateway environment should be provider-validation capable when server prerequisites exist")
+
+let deployedGatewayValidationPlan = DeepSeekGatewayIntegrationScaffold.plan(
+    environment: deployedGatewayEnvironment,
+    gateway: serverGateway
+)
+check(deployedGatewayValidationPlan.isReadyForProviderValidation, "Deployed gateway validation plan should be ready for provider round trip")
+check(!deployedGatewayValidationPlan.requiresExternalBackendWork, "Deployed gateway validation plan should not require missing external backend work")
+
+let providerTestRequest = DeepSeekGatewayIntegrationTestRunner.request(
+    for: deployedGatewayValidationPlan,
+    mode: .providerGateway
+)
+check(providerTestRequest.mode == .providerGateway, "Provider test request should be in provider gateway mode")
+check(providerTestRequest.backendBaseURL == "https://api.timeslowdown.example", "Provider test request should use deployed backend base URL")
+check(providerTestRequest.endpointPath == "/v1/ai/tasks/weekly-chapter", "Provider test request should target weekly chapter backend endpoint")
+check(providerTestRequest.headers["X-TSD-Gateway-Test-Mode"] == "providerGateway", "Provider test request should carry test mode header")
+check(providerTestRequest.headers["Authorization"] == nil, "Provider test request must not carry Authorization provider credentials")
+check(providerTestRequest.headers["X-DeepSeek-API-Key"] == nil, "Provider test request must not carry DeepSeek API key")
+check(!providerTestRequest.containsProviderCredential, "Provider test request should not contain provider credential")
+check(!providerTestRequest.containsRawMedia, "Provider test request should not contain raw media")
+check(!providerTestRequest.containsFullMemoryArchive, "Provider test request should not contain full archive")
+check(providerTestRequest.allowedResponseKeys.contains("editable_draft"), "Provider test request should expect editable draft response key")
+check(providerTestRequest.forbiddenResponseKeys.contains("provider_api_key"), "Provider test request should forbid provider key echo")
+check(providerTestRequest.forbiddenResponseKeys.contains("raw_media_binary"), "Provider test request should forbid raw media echo")
+check(providerTestRequest.redactedCurlCommand.contains("<minimal-weekly-chapter-task-body-redacted>"), "Provider test request should expose only a redacted command")
+check(providerTestRequest.requiresTLS, "Provider test request should require TLS")
+check(providerTestRequest.backendBaseURL.hasPrefix("https://"), "Provider test request should use https backend URL")
+check(providerTestRequest.routesThroughTSDBackend, "Provider test request should route through TSD backend")
+check(providerTestRequest.usesServerCredentialProxy, "Provider test request should use server credential proxy")
+check(!providerTestRequest.redactedCurlCommand.localizedCaseInsensitiveContains("Authorization: Bearer"), "Provider test request should not include bearer authorization in redacted command")
+check(!providerTestRequest.redactedCommandContainsProviderSecretToken, "Provider test request should not include provider-secret-shaped tokens in redacted command")
+check(providerTestRequest.isSafeToExecuteAgainstBackend, "Provider test request should be safe to execute against TSD backend")
+
+let providerTestResultDigest = TrustDigest.checksum([
+    providerTestRequest.id,
+    providerTestRequest.bodyDigest,
+    "provider-result"
+])
+let providerTestResult = DeepSeekGatewayIntegrationTestResult(
+    id: "deepseek-provider-result-\(providerTestResultDigest.prefix(12))",
+    request: providerTestRequest,
+    statusCode: providerTestRequest.expectedStatusCode,
+    gatewayJobID: "job-\(providerTestResultDigest.prefix(8))",
+    auditEventID: "audit-\(providerTestResultDigest.prefix(8))",
+    costEstimateCents: 2,
+    retentionHours: 1,
+    responseDigest: providerTestResultDigest,
+    requestWasMocked: false,
+    providerCallPerformed: true
+)
+check(providerTestResult.isSafeProviderRoundTripEvidence, "Provider test result should qualify as safe provider round-trip evidence")
+
+let providerPassReceipt = DeepSeekGatewayIntegrationTestRunner.providerPassedReceipt(
+    for: deployedGatewayValidationPlan,
+    result: providerTestResult
+)
+check(providerPassReceipt.status == .providerPassed, "Provider result should promote to providerPassed receipt")
+check(providerPassReceipt.isProviderPassReceipt, "Provider pass receipt should satisfy production provider pass requirements")
+check(providerPassReceipt.canBeUsedForProductionAIGate, "Provider pass receipt should unlock production AI gate")
+check(providerPassReceipt.canBeUsedForAppStoreGate, "Provider pass receipt should unlock App Store AI gate")
+check(providerPassReceipt.stepReceipts.allSatisfy { $0.status == .providerPassed }, "Provider pass receipt steps should all be providerPassed")
+check(providerPassReceipt.costEstimateCents == 2, "Provider pass receipt should preserve cost estimate")
+
+let mockIntegrationRequest = DeepSeekGatewayIntegrationTestRunner.request(
+    for: deployedGatewayValidationPlan,
+    mode: .mockGateway
+)
+let mockIntegrationResult = DeepSeekGatewayIntegrationTestRunner.mockResult(for: mockIntegrationRequest)
+check(!mockIntegrationResult.isSafeProviderRoundTripEvidence, "Mock integration result should not qualify as provider evidence")
+let failedProviderReceipt = DeepSeekGatewayIntegrationTestRunner.providerPassedReceipt(
+    for: deployedGatewayValidationPlan,
+    result: mockIntegrationResult
+)
+check(failedProviderReceipt.status == .failed, "Mock result should fail provider receipt promotion")
+check(!failedProviderReceipt.canBeUsedForProductionAIGate, "Failed provider receipt should not unlock production AI")
+check(!failedProviderReceipt.canBeUsedForAppStoreGate, "Failed provider receipt should not unlock App Store gate")
 
 let archivePlan = ExportArchivePlan.zipPlan(for: exportManifest)
 check(archivePlan.fileName.hasSuffix(".zip"), "Export archive should use a zip file name")
@@ -782,7 +867,7 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "55", "TestFlight build notes should match v55")
+check(buildNotes.buildNumber == "56", "TestFlight build notes should match v56")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -798,8 +883,10 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("fileExporter"), "Test
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion audit"), "TestFlight build notes should mention deletion audit envelope")
 check(buildNotes.summary.localizedCaseInsensitiveContains("server gateway"), "TestFlight build notes should mention server gateway envelope")
 check(buildNotes.summary.localizedCaseInsensitiveContains("provider validation scaffold"), "TestFlight build notes should mention DeepSeek provider validation scaffold")
+check(buildNotes.summary.localizedCaseInsensitiveContains("integration test runner contract"), "TestFlight build notes should mention DeepSeek integration test runner contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion service"), "TestFlight build notes should mention deletion service boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("mock gateway"), "TestFlight build notes should disclose mock/provider validation split")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("redacted backend integration test"), "TestFlight build notes should disclose redacted backend integration test boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -819,4 +906,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, and v55 DeepSeek provider validation scaffold are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, and v56 DeepSeek integration test runner contract are aligned.")

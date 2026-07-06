@@ -610,6 +610,285 @@ public enum DeepSeekGatewayIntegrationScaffold {
     }
 }
 
+public enum DeepSeekGatewayIntegrationTestMode: String, Codable, Equatable, Sendable {
+    case mockGateway
+    case providerGateway
+}
+
+public struct DeepSeekGatewayIntegrationTestRequest: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var planID: String
+    public var mode: DeepSeekGatewayIntegrationTestMode
+    public var method: String
+    public var backendBaseURL: String
+    public var endpointPath: String
+    public var headers: [String: String]
+    public var bodyDigest: String
+    public var expectedStatusCode: Int
+    public var timeoutSeconds: Int
+    public var requiresTLS: Bool
+    public var routesThroughTSDBackend: Bool
+    public var usesServerCredentialProxy: Bool
+    public var containsProviderCredential: Bool
+    public var containsRawMedia: Bool
+    public var containsFullMemoryArchive: Bool
+    public var allowedResponseKeys: [String]
+    public var forbiddenResponseKeys: [String]
+    public var redactedCurlCommand: String
+
+    public init(
+        id: String,
+        planID: String,
+        mode: DeepSeekGatewayIntegrationTestMode,
+        method: String = "POST",
+        backendBaseURL: String,
+        endpointPath: String = "/v1/ai/tasks/weekly-chapter",
+        headers: [String: String],
+        bodyDigest: String,
+        expectedStatusCode: Int,
+        timeoutSeconds: Int = 30,
+        requiresTLS: Bool = true,
+        routesThroughTSDBackend: Bool = true,
+        usesServerCredentialProxy: Bool = true,
+        containsProviderCredential: Bool = false,
+        containsRawMedia: Bool = false,
+        containsFullMemoryArchive: Bool = false,
+        allowedResponseKeys: [String],
+        forbiddenResponseKeys: [String],
+        redactedCurlCommand: String
+    ) {
+        self.id = id
+        self.planID = planID
+        self.mode = mode
+        self.method = method
+        self.backendBaseURL = backendBaseURL
+        self.endpointPath = endpointPath
+        self.headers = headers
+        self.bodyDigest = bodyDigest
+        self.expectedStatusCode = expectedStatusCode
+        self.timeoutSeconds = timeoutSeconds
+        self.requiresTLS = requiresTLS
+        self.routesThroughTSDBackend = routesThroughTSDBackend
+        self.usesServerCredentialProxy = usesServerCredentialProxy
+        self.containsProviderCredential = containsProviderCredential
+        self.containsRawMedia = containsRawMedia
+        self.containsFullMemoryArchive = containsFullMemoryArchive
+        self.allowedResponseKeys = allowedResponseKeys
+        self.forbiddenResponseKeys = forbiddenResponseKeys
+        self.redactedCurlCommand = redactedCurlCommand
+    }
+
+    public var isSafeToExecuteAgainstBackend: Bool {
+        requiresTLS &&
+        backendBaseURL.hasPrefix("https://") &&
+        method == "POST" &&
+        endpointPath == "/v1/ai/tasks/weekly-chapter" &&
+        routesThroughTSDBackend &&
+        usesServerCredentialProxy &&
+        !containsProviderCredential &&
+        !containsRawMedia &&
+        !containsFullMemoryArchive &&
+        headers["Authorization"] == nil &&
+        headers["X-DeepSeek-API-Key"] == nil &&
+        headers["Idempotency-Key"] != nil &&
+        headers["X-TSD-AI-Consent"] != nil &&
+        headers["X-TSD-Task-Digest"] != nil &&
+        forbiddenResponseKeys.contains("provider_api_key") &&
+        forbiddenResponseKeys.contains("raw_media_binary") &&
+        forbiddenResponseKeys.contains("full_memory_archive") &&
+        !redactedCurlCommand.localizedCaseInsensitiveContains("Authorization: Bearer") &&
+        !redactedCommandContainsProviderSecretToken
+    }
+
+    public var redactedCommandContainsProviderSecretToken: Bool {
+        redactedCurlCommand
+            .split { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "_" }
+            .contains {
+                let token = $0.lowercased()
+                return token.hasPrefix("sk-") && token.count >= 20
+            }
+    }
+}
+
+public struct DeepSeekGatewayIntegrationTestResult: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var request: DeepSeekGatewayIntegrationTestRequest
+    public var statusCode: Int
+    public var gatewayJobID: String?
+    public var auditEventID: String?
+    public var model: String
+    public var costEstimateCents: Int?
+    public var retentionHours: Int
+    public var responseDigest: String
+    public var requestWasMocked: Bool
+    public var providerCallPerformed: Bool
+    public var providerCredentialVisibleToClient: Bool
+    public var responseContainsProviderCredential: Bool
+    public var responseContainsRawMedia: Bool
+    public var responseContainsFullMemoryArchive: Bool
+    public var responsePreservesEditableDraft: Bool
+    public var completedWithUserConsent: Bool
+
+    public init(
+        id: String,
+        request: DeepSeekGatewayIntegrationTestRequest,
+        statusCode: Int,
+        gatewayJobID: String?,
+        auditEventID: String?,
+        model: String = "deepseek-v4-flash",
+        costEstimateCents: Int?,
+        retentionHours: Int,
+        responseDigest: String,
+        requestWasMocked: Bool,
+        providerCallPerformed: Bool,
+        providerCredentialVisibleToClient: Bool = false,
+        responseContainsProviderCredential: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        responseContainsFullMemoryArchive: Bool = false,
+        responsePreservesEditableDraft: Bool = true,
+        completedWithUserConsent: Bool = true
+    ) {
+        self.id = id
+        self.request = request
+        self.statusCode = statusCode
+        self.gatewayJobID = gatewayJobID
+        self.auditEventID = auditEventID
+        self.model = model
+        self.costEstimateCents = costEstimateCents
+        self.retentionHours = retentionHours
+        self.responseDigest = responseDigest
+        self.requestWasMocked = requestWasMocked
+        self.providerCallPerformed = providerCallPerformed
+        self.providerCredentialVisibleToClient = providerCredentialVisibleToClient
+        self.responseContainsProviderCredential = responseContainsProviderCredential
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.responseContainsFullMemoryArchive = responseContainsFullMemoryArchive
+        self.responsePreservesEditableDraft = responsePreservesEditableDraft
+        self.completedWithUserConsent = completedWithUserConsent
+    }
+
+    public var isSafeProviderRoundTripEvidence: Bool {
+        request.mode == .providerGateway &&
+        request.isSafeToExecuteAgainstBackend &&
+        statusCode == request.expectedStatusCode &&
+        gatewayJobID != nil &&
+        auditEventID != nil &&
+        model == "deepseek-v4-flash" &&
+        retentionHours <= 24 &&
+        !requestWasMocked &&
+        providerCallPerformed &&
+        !providerCredentialVisibleToClient &&
+        !responseContainsProviderCredential &&
+        !responseContainsRawMedia &&
+        !responseContainsFullMemoryArchive &&
+        responsePreservesEditableDraft &&
+        completedWithUserConsent &&
+        !responseDigest.isEmpty
+    }
+}
+
+public enum DeepSeekGatewayIntegrationTestRunner {
+    public static func request(
+        for plan: DeepSeekGatewayIntegrationPlan,
+        mode: DeepSeekGatewayIntegrationTestMode
+    ) -> DeepSeekGatewayIntegrationTestRequest {
+        let backendBaseURL = plan.environment.backendBaseURL ?? "https://backend-required.invalid"
+        let digest = TrustDigest.checksum([
+            plan.id,
+            plan.gateway.id,
+            backendBaseURL,
+            mode.rawValue,
+            plan.gateway.requestBodyDigest
+        ])
+        let headers = [
+            "Content-Type": "application/json",
+            "Idempotency-Key": plan.gateway.request.idempotencyKey,
+            "X-TSD-AI-Consent": plan.gateway.consentReceiptID,
+            "X-TSD-Task-Digest": plan.gateway.request.task.minimalPayloadDigest,
+            "X-TSD-Gateway-Test-Mode": mode.rawValue
+        ]
+        let redactedCurl = [
+            "curl",
+            "-X POST",
+            "\(backendBaseURL)\(plan.gateway.request.endpointPath)",
+            "-H 'Content-Type: application/json'",
+            "-H 'Idempotency-Key: \(plan.gateway.request.idempotencyKey)'",
+            "-H 'X-TSD-AI-Consent: \(plan.gateway.consentReceiptID)'",
+            "-H 'X-TSD-Task-Digest: \(plan.gateway.request.task.minimalPayloadDigest)'",
+            "-H 'X-TSD-Gateway-Test-Mode: \(mode.rawValue)'",
+            "--data '<minimal-weekly-chapter-task-body-redacted>'"
+        ].joined(separator: " ")
+        return DeepSeekGatewayIntegrationTestRequest(
+            id: "deepseek-test-\(digest.prefix(12))",
+            planID: plan.id,
+            mode: mode,
+            backendBaseURL: backendBaseURL,
+            endpointPath: plan.gateway.request.endpointPath,
+            headers: headers,
+            bodyDigest: plan.gateway.requestBodyDigest,
+            expectedStatusCode: plan.gateway.responseContract.completedStatusCode,
+            allowedResponseKeys: ["gateway_job_id", "audit_event_id", "model", "cost_estimate_cents", "editable_draft", "response_digest"],
+            forbiddenResponseKeys: ["provider_api_key", "raw_media_binary", "full_memory_archive", "contacts", "gps_trace", "face_embeddings"],
+            redactedCurlCommand: redactedCurl
+        )
+    }
+
+    public static func mockResult(for request: DeepSeekGatewayIntegrationTestRequest) -> DeepSeekGatewayIntegrationTestResult {
+        let digest = TrustDigest.checksum([request.id, request.bodyDigest, "mock-result"])
+        return DeepSeekGatewayIntegrationTestResult(
+            id: "deepseek-mock-result-\(digest.prefix(12))",
+            request: request,
+            statusCode: request.expectedStatusCode,
+            gatewayJobID: "mock-job-\(digest.prefix(8))",
+            auditEventID: "mock-audit-\(digest.prefix(8))",
+            costEstimateCents: 0,
+            retentionHours: 1,
+            responseDigest: digest,
+            requestWasMocked: true,
+            providerCallPerformed: false
+        )
+    }
+
+    public static func providerPassedReceipt(
+        for plan: DeepSeekGatewayIntegrationPlan,
+        result: DeepSeekGatewayIntegrationTestResult
+    ) -> DeepSeekGatewayIntegrationReceipt {
+        let canPass = plan.isReadyForProviderValidation && result.isSafeProviderRoundTripEvidence
+        return DeepSeekGatewayIntegrationReceipt(
+            id: "deepseek-provider-\(result.id.suffix(12))",
+            planID: plan.id,
+            status: canPass ? .providerPassed : .failed,
+            model: result.model,
+            gatewayJobID: result.gatewayJobID,
+            auditEventID: result.auditEventID,
+            responseStatusCode: result.statusCode,
+            costEstimateCents: result.costEstimateCents,
+            retentionHours: result.retentionHours,
+            requestWasMocked: result.requestWasMocked,
+            providerCallPerformed: result.providerCallPerformed,
+            providerCredentialVisibleToClient: result.providerCredentialVisibleToClient,
+            responseContainsProviderCredential: result.responseContainsProviderCredential,
+            responseContainsRawMedia: result.responseContainsRawMedia,
+            responseContainsFullMemoryArchive: result.responseContainsFullMemoryArchive,
+            canBeUsedForProductionAIGate: canPass,
+            canBeUsedForAppStoreGate: canPass,
+            validationNotes: canPass ? [
+                "Provider gateway round trip passed through the TSD backend with server-side DeepSeek credentials.",
+                "Receipt contains only job, audit, model, cost, retention, and response digest evidence."
+            ] : [
+                "Provider gateway round trip evidence was incomplete or unsafe; production AI remains locked."
+            ],
+            stepReceipts: plan.steps.map {
+                DeepSeekGatewayValidationStepReceipt(
+                    kind: $0.kind,
+                    status: canPass ? .providerPassed : .failed,
+                    evidence: canPass ? "Provider validation evidence supplied by integration test result." : "Provider validation evidence missing or unsafe."
+                )
+            }
+        )
+    }
+}
+
 public enum ExportArchiveEntryKind: String, Codable, Equatable, Sendable {
     case manifest
     case slices
@@ -2539,7 +2818,7 @@ public enum DeletionServiceIntegrationPlan {
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
-        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, and v55 adds pending/mock/provider validation receipts so mock success cannot satisfy the production AI gate."),
+        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, and v56 adds redacted integration test request/result contracts so only real provider evidence can promote to production AI gate."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),
