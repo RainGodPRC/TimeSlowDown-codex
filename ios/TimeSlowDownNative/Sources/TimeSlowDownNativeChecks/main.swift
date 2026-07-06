@@ -44,6 +44,7 @@ check(NativeHandoffLedger.rows.map(\.id).contains("photos-picker"), "Native Hand
 check(NativeHandoffLedger.rows.map(\.id).contains("keychain-e2ee"), "Native Handoff should include Keychain/E2EE")
 check(SubmissionPacket.rows.map(\.id).contains("privacy-questionnaire"), "Submission Packet should include privacy questionnaire")
 check(SubmissionPacket.rows.map(\.id).contains("subscription-copy"), "Submission Packet should include subscription wording")
+check(NativeHandoffLedger.rows.first { $0.id == "swiftui-shell" }?.status == .poc, "SwiftUI shell should be promoted to PoC after v37 Xcode project skeleton")
 
 let boundary = PrivacyBoundary()
 check(boundary.isAppStoreSafeDefault, "Default privacy boundary should be App Store safe")
@@ -74,4 +75,34 @@ check(shell.weeklyPreviewTitle() == "本周没有消失", "Native shell should e
 let requiredRoutes = ["此刻", "切片", "旷野", "上架", "我的"]
 check(NativeShellRoute.allCases.map(\.title) == requiredRoutes, "Native shell route titles should match the App Store shell")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, and app target contract are aligned.")
+let packageRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+let requiredXcodePaths = [
+    XcodeProjectContract.projectPath,
+    XcodeProjectContract.appSourcePath,
+    XcodeProjectContract.launchScreenPath,
+    XcodeProjectContract.assetCatalogPath,
+    XcodeProjectContract.appIconPath,
+    XcodeProjectContract.accentColorPath,
+    XcodeProjectContract.infoPlistPath,
+    XcodeProjectContract.privacyManifestPath,
+    XcodeProjectContract.entitlementsPath
+]
+for path in requiredXcodePaths {
+    let url = packageRoot.appendingPathComponent(path)
+    check(FileManager.default.fileExists(atPath: url.path), "Expected Xcode project asset to exist: \(path)")
+}
+
+let projectText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.projectPath), encoding: .utf8)
+for token in XcodeProjectContract.requiredProjectTokens {
+    check(projectText.contains(token), "Xcode project should contain required token: \(token)")
+}
+
+let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
+check(appSourceText.contains("@main"), "Xcode app source should declare @main")
+check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
+
+let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
+check(infoPlistText.contains("<string>37</string>"), "Info.plist should carry v37 build number")
+check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
+
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, and Xcode project skeleton are aligned.")

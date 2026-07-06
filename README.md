@@ -34,6 +34,7 @@ Current demo focus:
 - Native handoff ledger: SwiftUI shell, PhotosPicker, Keychain/E2EE, DeepSeek gateway, App Privacy Details, Privacy Manifest, required reason API, and TestFlight packet checklist
 - App Store submission packet: product page copy, screenshot/app preview plan, privacy questionnaire, age rating, review notes, support/privacy URLs, and subscription wording
 - Native Core Kit: a Swift package under `ios/TimeSlowDownNative` that starts the real iOS core with memory slices, media anchors, weekly chapters, privacy boundaries, SwiftUI shell state, PhotosPicker bridge, Native Handoff rows, and Submission Packet rows
+- Xcode project skeleton: `ios/TimeSlowDownNative/TimeSlowDown.xcodeproj` wires a native iOS app target to `TimeSlowDownKit`, Info.plist, Privacy Manifest, entitlements, launch screen, and App Icon asset catalog for the next Xcode/TestFlight handoff
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
@@ -46,5 +47,11 @@ cd ios/TimeSlowDownNative
 swift build
 swift run TimeSlowDownNativeChecks
 swift build --product TimeSlowDownAppPreview
-plutil -lint AppStore/Info.plist AppStore/PrivacyInfo.xcprivacy AppStore/TimeSlowDown.entitlements
+plutil -lint TimeSlowDown.xcodeproj/project.pbxproj AppStore/Info.plist AppStore/PrivacyInfo.xcprivacy AppStore/TimeSlowDown.entitlements
+python3 -m json.tool TimeSlowDownApp/Assets.xcassets/Contents.json >/dev/null
+python3 -m json.tool TimeSlowDownApp/Assets.xcassets/AppIcon.appiconset/Contents.json >/dev/null
+python3 -m json.tool TimeSlowDownApp/Assets.xcassets/AccentColor.colorset/Contents.json >/dev/null
+xmllint --noout TimeSlowDownApp/Base.lproj/LaunchScreen.storyboard
 ```
+
+Current native limitation: this machine has Swift CLI but not full Xcode, so the repository can verify SwiftPM, plist/project syntax, and static Xcode handoff contracts here; archive, signing, simulator, and TestFlight must run on a full Xcode installation with an Apple Developer team.
