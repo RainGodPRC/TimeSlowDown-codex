@@ -60,7 +60,9 @@ const defaultState = {
   monthEnded: "不再把所有普通日子都当成空白。",
   monthChanged: "我开始承认：晴天雨天加在一起，才是完整。",
   quarterRecallDraft: "5 公里、和爸爸吃面、开会后那段沉默的回家路。",
-  quarterRevealed: false
+  quarterRevealed: false,
+  lastAiTaskAt: "",
+  aiDraftRevokedAt: ""
 };
 
 let state = loadState();
@@ -222,7 +224,9 @@ function vaultPayload() {
       monthEnded: state.monthEnded,
       monthChanged: state.monthChanged,
       quarterRecallDraft: state.quarterRecallDraft,
-      quarterRevealed: state.quarterRevealed
+      quarterRevealed: state.quarterRevealed,
+      lastAiTaskAt: state.lastAiTaskAt,
+      aiDraftRevokedAt: state.aiDraftRevokedAt
     }
   };
 }
@@ -397,8 +401,9 @@ async function copyPrivacySummary() {
     "TimeSlowDown Codex Demo 隐私摘要：",
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
-    "3. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
-    "4. AI 只做忠实编辑，不替用户决定人生意义。"
+    "3. v10 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
+    "4. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
+    "5. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -406,6 +411,42 @@ async function copyPrivacySummary() {
     setState({ toast: "隐私摘要已复制，可发给试用者或审核者。" });
   } catch {
     setState({ toast: "浏览器不允许自动复制；请手动查看隐私摘要。" });
+  }
+}
+
+function simulateAiTask() {
+  setState({
+    lastAiTaskAt: new Date().toLocaleString("zh-CN"),
+    aiDraftRevokedAt: "",
+    toast: "已模拟一次 AI 周章节任务：仅发送 3 个被认领切片的最小摘要，失败会退回本地模板。"
+  });
+}
+
+function revokeAiDraft() {
+  setState({
+    aiDraftRevokedAt: new Date().toLocaleString("zh-CN"),
+    toast: "AI 草稿已撤销。原始切片仍在本机，章节会回到用户可编辑状态。"
+  });
+}
+
+async function copyAiTaskSheet() {
+  const sheet = aiTaskSheet();
+  const text = [
+    "TimeSlowDown AI 任务单（Demo 模拟）：",
+    `任务：${sheet.title}`,
+    `目的：${sheet.purpose}`,
+    `模型路径：${sheet.route}`,
+    `允许发送：${sheet.allowed.join("；")}`,
+    `禁止发送：${sheet.blocked.join("；")}`,
+    `失败降级：${sheet.fallback}`,
+    `用户权利：${sheet.rights.join("；")}`
+  ].join("\n");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ toast: "AI 任务单已复制：它说明了本次任务会发什么、不发什么。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请直接查看 AI 任务单。" });
   }
 }
 
@@ -531,6 +572,9 @@ function bindEvents() {
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
+  $$("[data-simulate-ai-task]").forEach(btn => btn.addEventListener("click", simulateAiTask));
+  $$("[data-revoke-ai-draft]").forEach(btn => btn.addEventListener("click", revokeAiDraft));
+  $$("[data-copy-ai-task]").forEach(btn => btn.addEventListener("click", copyAiTaskSheet));
   $("[data-save-recall]")?.addEventListener("click", saveQuarterRecall);
   $("[data-reveal-quarter]")?.addEventListener("click", revealQuarter);
   $("[data-reset-ritual]")?.addEventListener("click", resetQuarterRitual);
@@ -978,7 +1022,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v9</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v10</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -986,7 +1030,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v9 仍不调用真实模型；它把未来生产路径写清楚，避免试用者误以为 Demo 已经上传或处理真实记忆。</p>
+      <p class="source-line">v10 仍不调用真实模型；它把未来生产路径写清楚，并用 AI 任务单说明每次离机前会发什么、不发什么。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1092,8 +1136,34 @@ function claimCard(moment) {
   </button>`;
 }
 
+function aiTaskSheet() {
+  const claimed = getClaimedMoments().slice(0, 3);
+  const safeTitles = claimed.map(moment => `${moment.date} · ${moment.title}`);
+  return {
+    title: "本周章节忠实编译",
+    purpose: "把用户已经认领的 3 个瞬间整理成可编辑草稿。",
+    route: state.aiMode === "deepseek" ? "L2 DeepSeek V4 Flash（Demo 仅模拟）" : "L0 本地规则层",
+    allowed: [
+      `${claimed.length} 个被认领切片标题与日期`,
+      "用户确认过的切片正文",
+      "来源 ID 与标签",
+      "当前任务目的：周章节编译"
+    ],
+    blocked: [
+      "完整人生档案",
+      "未认领的敏感记忆",
+      "原始照片文件与位置轨迹",
+      "联系人、设备通讯录或社交账号"
+    ],
+    fallback: "模型失败或用户关闭云 AI 时，退回本地模板，不中断记录。",
+    rights: ["查看发送内容", "复制任务单", "撤销 AI 草稿", "导出/删除本地数据"],
+    samples: safeTitles
+  };
+}
+
 function aiView() {
   const selected = goldenSamples.find(sample => sample.id === state.selectedGolden) || goldenSamples[0];
+  const sheet = aiTaskSheet();
   return `
     <div class="topline"><div><div class="brand">AI 忠实编辑器</div><div class="micro">不是代写日记，是把线索整理成可认领草稿。</div></div></div>
     <section class="ai-card">
@@ -1136,7 +1206,33 @@ function aiView() {
       <p class="source-line">所有黄金样本都遵守事实门、语气门、隐私门和认领门；漂亮但无来源的句子默认视为风险。</p>
     </section>
     <section class="ai-card">
-      <h2 class="section-title">模型路由与降级 <span class="micro">v9 生产边界</span></h2>
+      <h2 class="section-title">AI 任务单 <span class="micro">v10 · 离机前确认</span></h2>
+      <div class="task-sheet">
+        <div class="task-head">
+          <span>模拟请求</span>
+          <strong>${sheet.title}</strong>
+          <em>${sheet.route}</em>
+        </div>
+        <div class="task-grid">
+          ${taskColumn("允许发送", sheet.allowed, "ok")}
+          ${taskColumn("禁止发送", sheet.blocked, "warn")}
+        </div>
+        <div class="task-purpose"><strong>任务目的</strong><span>${sheet.purpose}</span></div>
+        <div class="sample-strip">${sheet.samples.map(item => `<span>${escapeHtml(item)}</span>`).join("")}</div>
+        <div class="rights-strip">
+          ${sheet.rights.map(item => `<span>${escapeHtml(item)}</span>`).join("")}
+        </div>
+        <div class="action-row">
+          <button class="primary" data-simulate-ai-task>模拟一次 AI 请求</button>
+          <button class="secondary" data-copy-ai-task>复制任务单</button>
+          <button class="ghost danger" data-revoke-ai-draft>撤销 AI 草稿</button>
+        </div>
+      </div>
+      <p class="source-line">这不是弹一个吓人的合规窗，而是把“数据离机前发生了什么”做成用户能读懂、能撤销、能带走的任务单。</p>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="ai-card">
+      <h2 class="section-title">模型路由与降级 <span class="micro">v10 生产边界</span></h2>
       <div class="route-stack">
         ${routeStep("L0", "本地规则", "免费底座；时间冲突、信息稀少、照片占位、敏感提示先在本地处理。", "已在 Demo 中模拟")}
         ${routeStep("L1", "免费云额度", "只处理非敏感轻任务；失败时静默退回 L0，不让记录中断。", "生产待接入")}
@@ -1150,7 +1246,7 @@ function aiView() {
         <span>无来源不成章</span>
         <span>敏感默认谨慎</span>
       </div>
-      <p class="source-line">v9 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、门禁和降级策略。</p>
+      <p class="source-line">v10 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、任务单、门禁和降级策略。</p>
     </section>
   `;
 }
@@ -1159,16 +1255,21 @@ function evalRow(title, copy, value) {
   return `<div class="eval-row"><div><strong>${title}</strong><div class="micro">${copy}</div><div class="meter"><i style="width:${value}%"></i></div></div><div class="score">${value}%</div></div>`;
 }
 
+function taskColumn(title, items, tone) {
+  return `<div class="task-column ${tone}"><strong>${title}</strong>${items.map(item => `<span>${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
 function routeStep(level, title, copy, status) {
   return `<div class="route-step"><span>${level}</span><strong>${title}</strong><em>${copy}</em><small>${status}</small></div>`;
 }
 
 function settingsView() {
   const stats = vaultStats();
+  const sheet = aiTaskSheet();
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v8 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v10 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -1177,7 +1278,7 @@ function settingsView() {
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
-      <h2 class="section-title">记忆保险箱 <span class="micro">v8 · 本地优先</span></h2>
+      <h2 class="section-title">记忆保险箱 <span class="micro">v10 · 本地优先</span></h2>
       <div class="vault-grid">
         ${vaultStat("切片", stats.moments, "条")}
         ${vaultStat("认领", stats.claimed, "个")}
@@ -1218,6 +1319,25 @@ function settingsView() {
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
+      <h2 class="section-title">数据离机账本 <span class="micro">v10 · 可撤销</span></h2>
+      <div class="ledger-panel">
+        ${ledgerLine("最近 AI 任务", state.lastAiTaskAt || "尚未模拟", state.lastAiTaskAt ? "已记录" : "待触发")}
+        ${ledgerLine("最近撤销", state.aiDraftRevokedAt || "尚未撤销", state.aiDraftRevokedAt ? "已撤销" : "无")}
+        ${ledgerLine("当前任务路径", sheet.route, state.aiMode === "deepseek" ? "云 PoC" : "本地")}
+      </div>
+      <div class="task-grid compact">
+        ${taskColumn("本次会离机", sheet.allowed.slice(0, 3), "ok")}
+        ${taskColumn("本次不离机", sheet.blocked.slice(0, 3), "warn")}
+      </div>
+      <div class="action-row">
+        <button class="secondary" data-view="ai">查看 AI 任务单</button>
+        <button class="secondary" data-simulate-ai-task>模拟请求</button>
+        <button class="ghost danger" data-revoke-ai-draft>撤销草稿</button>
+      </div>
+      <p class="source-line">生产版应把这里升级为真实审计日志：谁在什么时间、为了什么目的、处理了哪些最小字段，以及用户如何撤销和删除。</p>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="settings-card">
       <h2 class="section-title">价值阶梯</h2>
       <div class="paywall-grid">
         ${plan("记住 Free", "核心记录永久可用，不是残缺试用版。")}
@@ -1235,6 +1355,10 @@ function vaultStat(label, value, unit) {
 
 function syncItem(title, copy, status) {
   return `<div class="sync-item"><strong>${title}</strong><span>${copy}</span><em>${status}</em></div>`;
+}
+
+function ledgerLine(title, value, status) {
+  return `<div class="ledger-line"><span>${title}</span><strong>${escapeHtml(value)}</strong><em>${escapeHtml(status)}</em></div>`;
 }
 
 function plan(name, copy) {
@@ -1278,7 +1402,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v9 聚焦生产边界：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由和同步/隐私边界已经可以在公网试用。下一步继续补安装资产或真实模型网关。</p>
+      <p>当前 v10 聚焦可信 AI：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单和数据离机账本已经可以在公网试用。下一步继续补安装资产、账户同步状态机或真实模型网关。</p>
     </section>
   </aside>`;
 }
