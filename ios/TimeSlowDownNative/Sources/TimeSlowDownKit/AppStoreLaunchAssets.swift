@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "52",
-        summary: String = "TimeSlowDown v52 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, deletion service boundary, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "53",
+        summary: String = "TimeSlowDown v53 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, deletion service boundary, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -69,7 +69,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
         ],
         knownLimitations: [String] = [
             "No production backend, account sync, or DeepSeek provider call is bundled in this build.",
-            "No real Secure Enclave private-key generation, signed-device Keychain validation, signed-device Photos import validation, or production E2EE media vault validation is claimed yet.",
+            "Secure Enclave generation request and reference receipt are now Swift-verifiable contracts, but no signed-device Secure Enclave/Keychain validation, signed-device Photos import validation, or production E2EE media vault validation is claimed yet.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"

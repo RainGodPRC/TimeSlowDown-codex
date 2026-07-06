@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>52</string>"), "Info.plist should carry v52 build number")
+check(infoPlistText.contains("<string>53</string>"), "Info.plist should carry v53 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -241,10 +241,52 @@ check(keychainStore.canUseProductionKeychain, "Keychain store should compile wit
 
 let secureEnclavePlan = SecureEnclaveDeviceKeyPlan()
 check(secureEnclavePlan.preservesTSDKeyBoundary, "Secure Enclave plan should preserve non-extractable private key boundary")
+check(secureEnclavePlan.keyType == "SecureEnclave.P256.KeyAgreement.PrivateKey", "Secure Enclave plan should use P256 key agreement for media vault encryption")
+check(secureEnclavePlan.accessControlPolicy == "private-key-usage-biometry-current-set-or-device-passcode", "Secure Enclave plan should require a private-key usage access-control policy")
+check(secureEnclavePlan.keychainAccessiblePolicy == .whenUnlockedThisDeviceOnly, "Secure Enclave plan should use when-unlocked-this-device-only Keychain accessibility")
+check(secureEnclavePlan.keyUsage == "media-vault-key-agreement", "Secure Enclave plan should scope the key to media vault key agreement")
+check(secureEnclavePlan.keySizeBits == 256, "Secure Enclave plan should use a 256-bit P256 key")
+check(secureEnclavePlan.publicKeyExportAllowed, "Secure Enclave plan should allow public-key export for wrapping/verification")
 check(!secureEnclavePlan.storesPrivateKeyBytesInAppData, "Secure Enclave plan should forbid app data private key bytes")
+check(!secureEnclavePlan.storesPrivateKeyBytesInKeychainPayload, "Secure Enclave plan should forbid private key bytes in Keychain metadata payloads")
+check(!secureEnclavePlan.allowsSoftwareFallback, "Secure Enclave plan should forbid software key fallback for production media vault keys")
+check(secureEnclavePlan.requiresBiometryOrDevicePasscode, "Secure Enclave plan should require biometry or device passcode")
 check(secureEnclavePlan.requiresRealDeviceForValidation, "Secure Enclave plan should require signed-device validation")
+check(secureEnclavePlan.requiresSignedBuildForValidation, "Secure Enclave plan should require a signed build before validation is claimed")
 
-let cryptoKitMediaVaultPlan = CryptoKitMediaVaultImplementationPlan.plan(for: deviceKey)
+let secureEnclaveKeyRequest = SecureEnclaveDeviceKeyFactory.generationRequest(
+    accountID: deviceKey.accountID,
+    deviceName: deviceKey.deviceName,
+    createdAt: fixedDate
+)
+check(SecureEnclaveDeviceKeyFactory.canCompileSecureEnclaveContract, "Secure Enclave key factory contract should compile with Security/CryptoKit on supported Apple platforms")
+check(secureEnclaveKeyRequest.isTSDProductionKeyGenerationSafe, "Secure Enclave key generation request should preserve TSD production boundaries")
+check(secureEnclaveKeyRequest.keychainPlan.account.hasPrefix("tsd-device-"), "Secure Enclave key request should target a TSD device-key account")
+check(secureEnclaveKeyRequest.keychainPlan.requiresUserPresence, "Secure Enclave key request should require user presence")
+check(secureEnclaveKeyRequest.keychainPlan.accessible == .whenUnlockedThisDeviceOnly, "Secure Enclave key request should use when-unlocked-this-device-only Keychain accessibility")
+check(!secureEnclaveKeyRequest.storesPrivateKeyBytesInRequest, "Secure Enclave key request should not carry private key bytes")
+check(!secureEnclaveKeyRequest.storesPrivateKeyBytesInRepo, "Secure Enclave key request should not persist private key bytes in repo")
+check(secureEnclaveKeyRequest.requiresLocalAuthenticationPrompt, "Secure Enclave key request should require local authentication prompt")
+check(secureEnclaveKeyRequest.signedDeviceValidationStatus == "required-before-testflight", "Secure Enclave key request should keep signed-device validation pending")
+let secureEnclaveKeyReceipt = try SecureEnclaveDeviceKeyFactory.referenceReceipt(
+    for: secureEnclaveKeyRequest,
+    publicKeyDigest: "public-key-digest-demo"
+)
+check(secureEnclaveKeyReceipt.isTSDProductionKeyReferenceSafe, "Secure Enclave key reference receipt should preserve TSD production key boundaries")
+check(secureEnclaveKeyReceipt.record.trustLevel == .productionRequired, "Secure Enclave receipt should mark the key as production-required")
+check(secureEnclaveKeyReceipt.record.storageClass == "secure-enclave-this-device-only", "Secure Enclave receipt should use secure-enclave-this-device-only storage class")
+check(secureEnclaveKeyReceipt.keychainService == "com.raingodprc.timeslowdown.device-key", "Secure Enclave receipt should preserve the TSD Keychain service")
+check(secureEnclaveKeyReceipt.keychainAccount == secureEnclaveKeyReceipt.record.keyID, "Secure Enclave receipt should bind Keychain account to key ID")
+check(secureEnclaveKeyReceipt.publicKeyDigest == "public-key-digest-demo", "Secure Enclave receipt should preserve public-key digest evidence")
+check(secureEnclaveKeyReceipt.generatedInsideSecureEnclave, "Secure Enclave receipt should require Secure Enclave generation")
+check(!secureEnclaveKeyReceipt.privateKeyExtractable, "Secure Enclave receipt should forbid private-key extraction")
+check(!secureEnclaveKeyReceipt.containsPrivateKeyBytes, "Secure Enclave receipt should not contain private key bytes")
+check(!secureEnclaveKeyReceipt.keychainPayloadContainsPrivateKeyBytes, "Secure Enclave receipt should not put private key bytes in metadata payload")
+check(secureEnclaveKeyReceipt.storesOnlyReferenceMetadata, "Secure Enclave receipt should store only key reference metadata")
+check(!secureEnclaveKeyReceipt.allowsSoftwareFallback, "Secure Enclave receipt should forbid software fallback")
+check(secureEnclaveKeyReceipt.requiresSignedDeviceValidation, "Secure Enclave receipt should still require signed-device validation")
+
+let cryptoKitMediaVaultPlan = CryptoKitMediaVaultImplementationPlan.plan(for: secureEnclaveKeyReceipt.record)
 check(cryptoKitMediaVaultPlan.isTSDProductionCryptoPlanSafe, "CryptoKit media vault plan should preserve TSD production crypto boundaries")
 check(cryptoKitMediaVaultPlan.contentEncryptionAlgorithm == "CryptoKit.AES.GCM", "CryptoKit media vault should use AES.GCM content encryption")
 check(cryptoKitMediaVaultPlan.keyAgreementAlgorithm == "SecureEnclave.P256.KeyAgreement.PrivateKey", "CryptoKit media vault should plan Secure Enclave P256 key agreement")
@@ -257,10 +299,11 @@ check(!cryptoKitMediaVaultPlan.allowsCloudUpload, "CryptoKit media vault should 
 check(!cryptoKitMediaVaultPlan.allowsAIProviderAccess, "CryptoKit media vault should not allow AI/provider access")
 check(cryptoKitMediaVaultPlan.requiresSignedDeviceValidation, "CryptoKit media vault should still require signed-device validation")
 
-check(KeychainProductionChecklist.rows.count == 4, "Keychain production checklist should track four rows after v52")
+check(KeychainProductionChecklist.rows.count == 4, "Keychain production checklist should track four rows after v53")
 check(KeychainProductionChecklist.rows.first { $0.id == "keychain-record-store" }?.status == .poc, "Keychain record store adapter should be PoC after v41")
 check(KeychainProductionChecklist.rows.first { $0.id == "cryptokit-media-vault-plan" }?.status == .poc, "CryptoKit media vault plan should be PoC after v52")
-check(KeychainProductionChecklist.rows.filter { $0.status == .todo }.count == 2, "Secure Enclave and signed-device tests should remain todo")
+check(KeychainProductionChecklist.rows.first { $0.id == "secure-enclave-key-plan" }?.status == .poc, "Secure Enclave key plan should be PoC after v53")
+check(KeychainProductionChecklist.rows.filter { $0.status == .todo }.count == 1, "Signed-device Keychain test should remain todo")
 
 let gatewayRequest = DeepSeekGatewayClientPlan.request(for: aiEnvelope, accountID: deviceKey.accountID)
 check(gatewayRequest.endpointPath == "/v1/ai/tasks/weekly-chapter", "Gateway request should target the TSD backend task endpoint")
@@ -655,11 +698,12 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "52", "TestFlight build notes should match v52")
+check(buildNotes.buildNumber == "53", "TestFlight build notes should match v53")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("CryptoKit"), "TestFlight build notes should mention CryptoKit media vault envelope")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Secure Enclave device-key"), "TestFlight build notes should mention Secure Enclave device-key contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -688,4 +732,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, and v52 CryptoKit media vault envelope contract are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, and v53 Secure Enclave device-key contract are aligned.")
