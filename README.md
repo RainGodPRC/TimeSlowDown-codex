@@ -14,3 +14,4 @@ Current demo focus:
 - Memory vault: local-first export, demo import, and delete controls
 - 90-day recall ritual: free recall, quarter landscape, tellable moments
 - Public trial guide: what to try, what is PoC, and what remains production work
+- AI/sync boundary map: local rules, DeepSeek PoC, BYOK, E2EE, export/delete rights

@@ -392,6 +392,23 @@ async function copyDemoLink() {
   }
 }
 
+async function copyPrivacySummary() {
+  const text = [
+    "TimeSlowDown Codex Demo 隐私摘要：",
+    "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
+    "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
+    "3. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
+    "4. AI 只做忠实编辑，不替用户决定人生意义。"
+  ].join("\n");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ toast: "隐私摘要已复制，可发给试用者或审核者。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请手动查看隐私摘要。" });
+  }
+}
+
 function saveQuarterRecall() {
   setState({ toast: "已保存自由回忆。现在可以揭开季度风景，对照哪些是主动想起、哪些是被线索唤回。" });
 }
@@ -513,6 +530,7 @@ function bindEvents() {
   $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
+  $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
   $("[data-save-recall]")?.addEventListener("click", saveQuarterRecall);
   $("[data-reveal-quarter]")?.addEventListener("click", revealQuarter);
   $("[data-reset-ritual]")?.addEventListener("click", resetQuarterRitual);
@@ -957,6 +975,18 @@ function guideView() {
         <div class="chapter-line"><strong>AI 是忠实编辑，不是人生意义作者</strong><span>漂亮但没有来源的句子不得进入最终故事；低落、压力和普通日子也允许被记录。</span></div>
         <div class="chapter-line"><strong>生产版会先解决数据边界</strong><span>真实用户记忆进入云端前，需要 E2EE、地区数据边界、删除/导出权和清晰的模型处理条款。</span></div>
       </div>
+      <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">真实产品边界图 <span class="micro">v9</span></h2>
+      <div class="production-map">
+        ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
+        ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
+        ${productionNode("云模型", "DeepSeek V4 Flash 只应处理用户允许的摘要或非敏感草稿。", "poc")}
+        ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
+        ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
+      </div>
+      <p class="source-line">v9 仍不调用真实模型；它把未来生产路径写清楚，避免试用者误以为 Demo 已经上传或处理真实记忆。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -981,6 +1011,10 @@ function boundaryColumn(title, items, tone) {
 
 function readiness(label, stateLabel, copy) {
   return `<div class="readiness-item"><span>${label}</span><strong>${stateLabel}</strong><em>${copy}</em></div>`;
+}
+
+function productionNode(title, copy, tone) {
+  return `<div class="production-node ${tone}"><strong>${title}</strong><span>${copy}</span></div>`;
 }
 
 function monthPrompt(label, attr, value) {
@@ -1101,11 +1135,32 @@ function aiView() {
       ${evalRow("JSON Schema", "≥ 98%", 98)}
       <p class="source-line">所有黄金样本都遵守事实门、语气门、隐私门和认领门；漂亮但无来源的句子默认视为风险。</p>
     </section>
+    <section class="ai-card">
+      <h2 class="section-title">模型路由与降级 <span class="micro">v9 生产边界</span></h2>
+      <div class="route-stack">
+        ${routeStep("L0", "本地规则", "免费底座；时间冲突、信息稀少、照片占位、敏感提示先在本地处理。", "已在 Demo 中模拟")}
+        ${routeStep("L1", "免费云额度", "只处理非敏感轻任务；失败时静默退回 L0，不让记录中断。", "生产待接入")}
+        ${routeStep("L2", "DeepSeek V4 Flash", "Plus/PoC 主力；只可处理用户授权的草稿或摘要，不默认上传原始记忆。", "当前为演示开关")}
+        ${routeStep("L3", "BYOK", "高级用户自带模型 Key，自担成本，适合长章节和年度图册。", "生产待接入")}
+        ${routeStep("L4", "未来本地 AI", "高端设备增强；不是 v1 上线前提，也不能承诺所有手机可跑。", "方向保留")}
+      </div>
+      <div class="rights-strip">
+        <span>无模型也能记录</span>
+        <span>失败自动降级</span>
+        <span>无来源不成章</span>
+        <span>敏感默认谨慎</span>
+      </div>
+      <p class="source-line">v9 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、门禁和降级策略。</p>
+    </section>
   `;
 }
 
 function evalRow(title, copy, value) {
   return `<div class="eval-row"><div><strong>${title}</strong><div class="micro">${copy}</div><div class="meter"><i style="width:${value}%"></i></div></div><div class="score">${value}%</div></div>`;
+}
+
+function routeStep(level, title, copy, status) {
+  return `<div class="route-step"><span>${level}</span><strong>${title}</strong><em>${copy}</em><small>${status}</small></div>`;
 }
 
 function settingsView() {
@@ -1150,11 +1205,17 @@ function settingsView() {
         <div class="chapter-line"><strong>每条敏感记忆可设为仅设备</strong><span>儿童、健康、位置和亲密关系默认更谨慎。</span></div>
         <div class="chapter-line"><strong>AI 草稿可撤销</strong><span>事实不对、不像我、太煽情，都可以直接反馈。</span></div>
       </div>
+      <div class="sync-map">
+        ${syncItem("本机", "localStorage Demo", "当前已可用")}
+        ${syncItem("加密盒", "E2EE 记忆保险箱", "生产待做")}
+        ${syncItem("模型网关", "DeepSeek / BYOK 路由", "PoC 边界")}
+        ${syncItem("删除权", "导出、清空、撤销草稿", "Demo 已覆盖")}
+      </div>
       <div class="privacy-toggle">
         <span><strong>${state.deviceOnlyMode ? "仅设备优先" : "允许同步演示"}</strong><em>${state.deviceOnlyMode ? "敏感记忆默认留在本机，AI 只处理必要摘要。" : "当前只是演示开关，生产同步必须另有加密和条款。"}</em></span>
         <button class="secondary" data-device-only>${state.deviceOnlyMode ? "切到同步演示" : "切回仅设备"}</button>
       </div>
-      <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="ghost" data-reset>重置 Demo</button></div>
+      <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
       <h2 class="section-title">价值阶梯</h2>
@@ -1170,6 +1231,10 @@ function settingsView() {
 
 function vaultStat(label, value, unit) {
   return `<div class="vault-stat"><strong>${value}</strong><span>${label} · ${unit}</span></div>`;
+}
+
+function syncItem(title, copy, status) {
+  return `<div class="sync-item"><strong>${title}</strong><span>${copy}</span><em>${status}</em></div>`;
 }
 
 function plan(name, copy) {
@@ -1213,7 +1278,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v8 聚焦外部试用：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆和试用指南已经可以在公网试用。下一步继续补安装资产、真实同步/AI 边界与 App Store 级合规文本。</p>
+      <p>当前 v9 聚焦生产边界：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由和同步/隐私边界已经可以在公网试用。下一步继续补安装资产或真实模型网关。</p>
     </section>
   </aside>`;
 }
