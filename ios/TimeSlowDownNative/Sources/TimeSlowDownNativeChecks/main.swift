@@ -131,7 +131,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>48</string>"), "Info.plist should carry v48 build number")
+check(infoPlistText.contains("<string>49</string>"), "Info.plist should carry v49 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -387,6 +387,61 @@ let unsafeOriginalPath = unsafeLabelExport.manifestItems.first?.originalPath ?? 
 check(!unsafeOriginalPath.contains("/park raw"), "Raw media original path should not embed unsafe user label path separators")
 check(unsafeOriginalPath.contains("2026-park-raw.heic"), "Raw media original path should sanitize user labels into safe filenames")
 
+let photoThumbnailBytes = Data("thumb-photo-demo".utf8)
+let photoOriginalBytes = Data("RAW_ORIGINAL_PHOTO_BYTES_DO_NOT_INCLUDE_BY_DEFAULT".utf8)
+let videoThumbnailBytes = Data("thumb-video-demo".utf8)
+let videoOriginalBytes = Data("RAW_ORIGINAL_VIDEO_BYTES_UNSELECTED".utf8)
+let rawMediaAssets = [
+    RawMediaAssetPayload(anchorID: photo.id.uuidString, thumbnailData: photoThumbnailBytes, originalData: photoOriginalBytes),
+    RawMediaAssetPayload(anchorID: video.id.uuidString, thumbnailData: videoThumbnailBytes, originalData: videoOriginalBytes)
+]
+
+let thumbnailStagePackage = try RawMediaStagedExportBuilder.package(
+    for: thumbnailsOnlyMediaExport,
+    assets: rawMediaAssets
+)
+check(thumbnailStagePackage.fileName.hasSuffix(".zip"), "Raw media staged export should use a ZIP filename")
+check(thumbnailStagePackage.hasZIPMagic, "Raw media staged export should start with ZIP magic")
+check(thumbnailStagePackage.hasEndOfCentralDirectory, "Raw media staged export should include end-of-central-directory")
+check(thumbnailStagePackage.entries.map(\.path).contains("media/raw-media-manifest.json"), "Raw media staged export should include the media manifest")
+check(thumbnailStagePackage.entries.map(\.path).contains("rights/raw-media-export-receipt.json"), "Raw media staged export should include an export receipt")
+check(thumbnailStagePackage.entries.filter { $0.path.hasPrefix("media/thumbnails/") }.count == 2, "Thumbnail-only staged export should write two thumbnail files")
+check(thumbnailStagePackage.entries.filter(\.containsRawMedia).isEmpty, "Thumbnail-only staged export should not mark raw media entries")
+check(!thumbnailStagePackage.containsRawOriginals, "Thumbnail-only staged export should not contain raw originals")
+check(!thumbnailStagePackage.containsAITranscripts, "Raw media staged export should not contain AI transcripts")
+check(thumbnailStagePackage.data.range(of: photoOriginalBytes) == nil, "Thumbnail-only staged export must not contain provided photo original bytes")
+check(thumbnailStagePackage.data.range(of: videoOriginalBytes) == nil, "Thumbnail-only staged export must not contain provided video original bytes")
+check(thumbnailStagePackage.data.range(of: photoThumbnailBytes) != nil, "Thumbnail-only staged export should contain provided photo thumbnail bytes")
+check(thumbnailStagePackage.centralDirectoryRecordCount == thumbnailStagePackage.entries.count, "Thumbnail-only staged export should list every staged file in central directory")
+check(thumbnailStagePackage.receipt.rawOriginalCount == 0, "Thumbnail-only staged export receipt should record zero raw originals")
+check(thumbnailStagePackage.receipt.encryptedStagingPolicy == "device-key-encrypted-staging", "Raw media staged export receipt should preserve encrypted staging policy")
+check(thumbnailStagePackage.data.range(of: Data(thumbnailStagePackage.receipt.id.utf8)) != nil, "Raw media staged export ZIP should contain the returned receipt ID")
+check(thumbnailStagePackage.isTSDRawMediaRightsSafe, "Thumbnail-only staged export should preserve TSD raw media rights")
+
+let selectedOriginalsStagePackage = try RawMediaStagedExportBuilder.package(
+    for: selectedOriginalsExport,
+    assets: rawMediaAssets
+)
+check(selectedOriginalsStagePackage.containsRawOriginals, "Selected-originals staged export should contain a selected raw original")
+check(selectedOriginalsStagePackage.entries.filter(\.containsRawMedia).count == 1, "Selected-originals staged export should write exactly one raw original")
+check(selectedOriginalsStagePackage.entries.contains { $0.path.contains("media/originals/") && $0.containsRawMedia }, "Selected-originals staged export should include an original media path")
+check(selectedOriginalsStagePackage.data.range(of: photoOriginalBytes) != nil, "Selected-originals staged export should contain the opted-in photo original bytes")
+check(selectedOriginalsStagePackage.data.range(of: videoOriginalBytes) == nil, "Selected-originals staged export must not contain unselected video original bytes")
+check(selectedOriginalsStagePackage.receipt.consentReceiptID == "consent-raw-media-export-demo", "Selected-originals staged export receipt should preserve consent")
+check(selectedOriginalsStagePackage.receipt.rawOriginalCount == 1, "Selected-originals staged export receipt should count one raw original")
+check(selectedOriginalsStagePackage.centralDirectoryRecordCount == selectedOriginalsStagePackage.entries.count, "Selected-originals staged export should list every staged file in central directory")
+check(selectedOriginalsStagePackage.isTSDRawMediaRightsSafe, "Selected-originals staged export should preserve TSD raw media rights after consent")
+
+do {
+    _ = try RawMediaStagedExportBuilder.package(
+        for: selectedOriginalsExport,
+        assets: [RawMediaAssetPayload(anchorID: photo.id.uuidString, thumbnailData: photoThumbnailBytes)]
+    )
+    check(false, "Selected-originals staged export should reject missing original bytes")
+} catch RawMediaStagedExportBuilderError.missingOriginal(let anchorID) {
+    check(anchorID == photo.id.uuidString, "Missing original error should name the selected anchor")
+}
+
 let deletionRequest = DeletionAPIRequest.request(for: deletion, accountID: deviceKey.accountID)
 check(deletionRequest.endpointPath == "/v1/account/deletion-receipts", "Deletion API request should target receipt endpoint")
 check(deletionRequest.requiresAuthenticatedUser, "Deletion API request should require authenticated user")
@@ -453,11 +508,12 @@ check(ProductionImplementationChecklist.rows.count == 5, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "48", "TestFlight build notes should match v48")
+check(buildNotes.buildNumber == "49", "TestFlight build notes should match v49")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
+check(buildNotes.summary.localizedCaseInsensitiveContains("staged"), "TestFlight build notes should mention staged raw media export")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Account Rights"), "TestFlight build notes should mention Account Rights export UI")
 check(buildNotes.summary.localizedCaseInsensitiveContains("fileExporter"), "TestFlight build notes should mention SwiftUI fileExporter bridge")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion audit"), "TestFlight build notes should mention deletion audit envelope")
@@ -482,4 +538,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, and v48 raw media export policy envelope are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, and v49 raw media staged export builder are aligned.")

@@ -723,6 +723,271 @@ public struct ExportZIPPackage: Codable, Equatable, Sendable {
     }
 }
 
+public struct RawMediaAssetPayload: Equatable, Identifiable, Sendable {
+    public var id: String { anchorID }
+    public var anchorID: String
+    public var thumbnailData: Data
+    public var originalData: Data?
+
+    public init(anchorID: String, thumbnailData: Data, originalData: Data? = nil) {
+        self.anchorID = anchorID
+        self.thumbnailData = thumbnailData
+        self.originalData = originalData
+    }
+}
+
+public struct RawMediaStagedExportReceipt: Codable, Equatable, Sendable {
+    public var id: String
+    public var policyID: String
+    public var consentReceiptID: String?
+    public var manifestItemCount: Int
+    public var rawOriginalCount: Int
+    public var generatedOnDevice: Bool
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+    public var encryptedStagingPolicy: String
+    public var stagedFileToken: String
+
+    public init(
+        id: String,
+        policyID: String,
+        consentReceiptID: String?,
+        manifestItemCount: Int,
+        rawOriginalCount: Int,
+        generatedOnDevice: Bool = true,
+        canBeGeneratedAfterSubscriptionEnds: Bool = true,
+        encryptedStagingPolicy: String,
+        stagedFileToken: String
+    ) {
+        self.id = id
+        self.policyID = policyID
+        self.consentReceiptID = consentReceiptID
+        self.manifestItemCount = manifestItemCount
+        self.rawOriginalCount = rawOriginalCount
+        self.generatedOnDevice = generatedOnDevice
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+        self.encryptedStagingPolicy = encryptedStagingPolicy
+        self.stagedFileToken = stagedFileToken
+    }
+}
+
+public struct RawMediaStagedExportPackage: Equatable, Sendable {
+    public var fileName: String
+    public var data: Data
+    public var entries: [ExportZIPEntry]
+    public var receipt: RawMediaStagedExportReceipt
+    public var policy: RawMediaExportPolicyEnvelope
+    public var generatedOnDevice: Bool
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+    public var containsRawOriginals: Bool
+    public var containsAITranscripts: Bool
+
+    public init(
+        fileName: String,
+        data: Data,
+        entries: [ExportZIPEntry],
+        receipt: RawMediaStagedExportReceipt,
+        policy: RawMediaExportPolicyEnvelope,
+        generatedOnDevice: Bool = true,
+        canBeGeneratedAfterSubscriptionEnds: Bool = true,
+        containsRawOriginals: Bool,
+        containsAITranscripts: Bool = false
+    ) {
+        self.fileName = fileName
+        self.data = data
+        self.entries = entries
+        self.receipt = receipt
+        self.policy = policy
+        self.generatedOnDevice = generatedOnDevice
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+        self.containsRawOriginals = containsRawOriginals
+        self.containsAITranscripts = containsAITranscripts
+    }
+
+    public var hasZIPMagic: Bool {
+        data.starts(with: [0x50, 0x4B, 0x03, 0x04])
+    }
+
+    public var hasEndOfCentralDirectory: Bool {
+        data.count >= 22 &&
+        data.suffix(22).starts(with: [0x50, 0x4B, 0x05, 0x06])
+    }
+
+    public var centralDirectoryRecordCount: Int {
+        guard data.count >= 22 else { return 0 }
+        let offset = data.count - 22 + 10
+        return Int(data[offset]) | (Int(data[offset + 1]) << 8)
+    }
+
+    public var isTSDRawMediaRightsSafe: Bool {
+        policy.isMemoryRightsSafe &&
+        generatedOnDevice &&
+        canBeGeneratedAfterSubscriptionEnds &&
+        !containsAITranscripts &&
+        receipt.generatedOnDevice &&
+        receipt.canBeGeneratedAfterSubscriptionEnds &&
+        receipt.encryptedStagingPolicy == policy.encryptionPolicy &&
+        entries.contains { $0.path == policy.manifestPath } &&
+        entries.contains { $0.path == "rights/raw-media-export-receipt.json" } &&
+        entries.allSatisfy { !$0.containsAITranscript } &&
+        (!containsRawOriginals || policy.selection.allowsRawOriginals) &&
+        entries.filter(\.containsRawMedia).count == receipt.rawOriginalCount
+    }
+}
+
+public enum RawMediaStagedExportBuilderError: Error, Equatable, Sendable {
+    case unsafePolicy(String)
+    case missingThumbnail(String)
+    case missingOriginal(String)
+    case encodingFailed(String)
+    case stagedSizeOverflow(String)
+}
+
+public enum RawMediaStagedExportBuilder {
+    public static func package(
+        for policy: RawMediaExportPolicyEnvelope,
+        assets: [RawMediaAssetPayload]
+    ) throws -> RawMediaStagedExportPackage {
+        try validate(policy)
+
+        let rawOriginalCount = policy.manifestItems.filter(\.includesRawOriginal).count
+        let token = TrustDigest.checksum([
+            policy.id,
+            policy.selection.consentReceiptID ?? "no-consent",
+            "\(rawOriginalCount)",
+            policy.manifestItems.map(\.checksum).joined(separator: "|")
+        ])
+        let receipt = RawMediaStagedExportReceipt(
+            id: "raw-media-receipt-\(token.prefix(12))",
+            policyID: policy.id,
+            consentReceiptID: policy.selection.consentReceiptID,
+            manifestItemCount: policy.manifestItems.count,
+            rawOriginalCount: rawOriginalCount,
+            encryptedStagingPolicy: policy.encryptionPolicy,
+            stagedFileToken: "stage-\(token.prefix(12))"
+        )
+        let files = try exportFiles(policy: policy, assets: assets, receipt: receipt)
+        let zipData = try StoreOnlyZIPWriter.build(files: files)
+        let entries = files.map {
+            ExportZIPEntry(
+                path: $0.path,
+                crc32: CRC32.checksum($0.data),
+                uncompressedSize: $0.data.count,
+                containsRawMedia: $0.containsRawMedia,
+                containsAITranscript: $0.containsAITranscript
+            )
+        }
+        return RawMediaStagedExportPackage(
+            fileName: "timeslowdown-raw-media-\(policy.id).zip",
+            data: zipData,
+            entries: entries,
+            receipt: receipt,
+            policy: policy,
+            containsRawOriginals: rawOriginalCount > 0
+        )
+    }
+
+    private static func validate(_ policy: RawMediaExportPolicyEnvelope) throws {
+        guard policy.isMemoryRightsSafe else {
+            throw RawMediaStagedExportBuilderError.unsafePolicy("Raw media policy must pass memory-rights checks before staging.")
+        }
+        guard policy.generatedOnDevice && policy.canBeGeneratedAfterSubscriptionEnds else {
+            throw RawMediaStagedExportBuilderError.unsafePolicy("Raw media staging must be local and available after subscription ends.")
+        }
+        guard !policy.includesAITranscripts else {
+            throw RawMediaStagedExportBuilderError.unsafePolicy("Raw media staging must not include AI transcripts.")
+        }
+        guard !policy.cloudUploadRequired && !policy.syncRequired && !policy.providerUploadRequired else {
+            throw RawMediaStagedExportBuilderError.unsafePolicy("Raw media staging must not require cloud, sync, or provider upload.")
+        }
+        guard !policy.includesRawOriginals || policy.selection.allowsRawOriginals else {
+            throw RawMediaStagedExportBuilderError.unsafePolicy("Raw originals require explicit consent and selected anchors.")
+        }
+    }
+
+    private static func exportFiles(
+        policy: RawMediaExportPolicyEnvelope,
+        assets: [RawMediaAssetPayload],
+        receipt: RawMediaStagedExportReceipt
+    ) throws -> [ExportFile] {
+        let lookup = Dictionary(uniqueKeysWithValues: assets.map { ($0.anchorID, $0) })
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
+
+        func encode<T: Encodable>(_ value: T, label: String) throws -> Data {
+            do {
+                return try encoder.encode(value)
+            } catch {
+                throw RawMediaStagedExportBuilderError.encodingFailed(label)
+            }
+        }
+
+        var files: [ExportFile] = []
+        files.append(ExportFile(
+            path: policy.manifestPath,
+            data: try encode(RawMediaStagedManifestDocument(policy: policy), label: "raw-media-manifest")
+        ))
+
+        for item in policy.manifestItems {
+            guard let payload = lookup[item.anchorID],
+                  !payload.thumbnailData.isEmpty else {
+                throw RawMediaStagedExportBuilderError.missingThumbnail(item.anchorID)
+            }
+            files.append(ExportFile(path: item.thumbnailPath, data: payload.thumbnailData))
+
+            if item.includesRawOriginal {
+                guard let originalPath = item.originalPath,
+                      let originalData = payload.originalData,
+                      !originalData.isEmpty else {
+                    throw RawMediaStagedExportBuilderError.missingOriginal(item.anchorID)
+                }
+                files.append(ExportFile(path: originalPath, data: originalData, containsRawMedia: true))
+            }
+        }
+
+        files.append(ExportFile(
+            path: "rights/raw-media-export-receipt.json",
+            data: try encode(receipt, label: "raw-media-receipt")
+        ))
+
+        guard files.reduce(0, { $0 + $1.data.count }) <= policy.maxStageSizeMB * 1_024 * 1_024 else {
+            throw RawMediaStagedExportBuilderError.stagedSizeOverflow(policy.id)
+        }
+        return files.sorted { $0.path < $1.path }
+    }
+}
+
+private struct RawMediaStagedManifestDocument: Codable, Equatable {
+    var policyID: String
+    var selectionID: String
+    var mode: RawMediaExportMode
+    var consentReceiptID: String?
+    var manifestPath: String
+    var thumbnailDirectoryPath: String
+    var rawOriginalDirectoryPath: String
+    var encryptionPolicy: String
+    var stagingPolicy: String
+    var canBeGeneratedAfterSubscriptionEnds: Bool
+    var postSubscriptionAccessAllowed: Bool
+    var childOrFamilyMediaCaution: Bool
+    var items: [RawMediaExportManifestItem]
+
+    init(policy: RawMediaExportPolicyEnvelope) {
+        self.policyID = policy.id
+        self.selectionID = policy.selection.id
+        self.mode = policy.selection.mode
+        self.consentReceiptID = policy.selection.consentReceiptID
+        self.manifestPath = policy.manifestPath
+        self.thumbnailDirectoryPath = policy.thumbnailDirectoryPath
+        self.rawOriginalDirectoryPath = policy.rawOriginalDirectoryPath
+        self.encryptionPolicy = policy.encryptionPolicy
+        self.stagingPolicy = policy.stagingPolicy
+        self.canBeGeneratedAfterSubscriptionEnds = policy.canBeGeneratedAfterSubscriptionEnds
+        self.postSubscriptionAccessAllowed = policy.postSubscriptionAccessAllowed
+        self.childOrFamilyMediaCaution = policy.childOrFamilyMediaCaution
+        self.items = policy.manifestItems
+    }
+}
+
 public enum ExportZIPBuilderError: Error, Equatable, Sendable {
     case unsafePlan(String)
     case encodingFailed(String)
@@ -937,6 +1202,78 @@ private struct DeletionRightsDocument: Codable, Equatable {
     var scopes: [String]
     var userCanExportBeforeDeletion: Bool
     var canRequestDeletionAfterSubscriptionEnds: Bool
+}
+
+private enum StoreOnlyZIPWriter {
+    static func build(files: [ExportFile]) throws -> Data {
+        var archive = Data()
+        var centralDirectory = Data()
+
+        for file in files {
+            let pathData = Data(file.path.utf8)
+            guard archive.count <= Int(UInt32.max),
+                  file.data.count <= Int(UInt32.max),
+                  pathData.count <= Int(UInt16.max) else {
+                throw ExportZIPBuilderError.zipSizeOverflow(file.path)
+            }
+
+            let offset = UInt32(archive.count)
+            let crc = CRC32.checksum(file.data)
+            let size = UInt32(file.data.count)
+
+            archive.appendUInt32LE(0x04034B50)
+            archive.appendUInt16LE(20)
+            archive.appendUInt16LE(0)
+            archive.appendUInt16LE(0)
+            archive.appendUInt16LE(0)
+            archive.appendUInt16LE(0)
+            archive.appendUInt32LE(crc)
+            archive.appendUInt32LE(size)
+            archive.appendUInt32LE(size)
+            archive.appendUInt16LE(UInt16(pathData.count))
+            archive.appendUInt16LE(0)
+            archive.append(pathData)
+            archive.append(file.data)
+
+            centralDirectory.appendUInt32LE(0x02014B50)
+            centralDirectory.appendUInt16LE(20)
+            centralDirectory.appendUInt16LE(20)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt32LE(crc)
+            centralDirectory.appendUInt32LE(size)
+            centralDirectory.appendUInt32LE(size)
+            centralDirectory.appendUInt16LE(UInt16(pathData.count))
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt32LE(0)
+            centralDirectory.appendUInt32LE(offset)
+            centralDirectory.append(pathData)
+        }
+
+        guard centralDirectory.count <= Int(UInt32.max),
+              archive.count <= Int(UInt32.max),
+              files.count <= Int(UInt16.max) else {
+            throw ExportZIPBuilderError.zipSizeOverflow("central-directory")
+        }
+
+        let centralDirectoryOffset = UInt32(archive.count)
+        archive.append(centralDirectory)
+        archive.appendUInt32LE(0x06054B50)
+        archive.appendUInt16LE(0)
+        archive.appendUInt16LE(0)
+        archive.appendUInt16LE(UInt16(files.count))
+        archive.appendUInt16LE(UInt16(files.count))
+        archive.appendUInt32LE(UInt32(centralDirectory.count))
+        archive.appendUInt32LE(centralDirectoryOffset)
+        archive.appendUInt16LE(0)
+
+        return archive
+    }
 }
 
 private enum CRC32 {
@@ -1286,7 +1623,7 @@ public enum ProductionImplementationChecklist {
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
-        .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope with thumbnails-only default, staged encrypted Files export, family media caution, no cloud/provider upload, and post-subscription access."),
+        .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope and v47 adds a deletion service integration boundary.")
     ]
 }
