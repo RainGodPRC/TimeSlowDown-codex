@@ -105,7 +105,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>40</string>"), "Info.plist should carry v40 build number")
+check(infoPlistText.contains("<string>41</string>"), "Info.plist should carry v41 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -199,6 +199,29 @@ check(keychainPlan.accessGroup == nil, "Keychain plan should not invent an acces
 check(!keychainPlan.synchronizable, "Device key should not be synchronizable by default")
 check(!keychainPlan.storesSecretMaterialOutsideKeychain, "Device key plan should not store secret material outside Keychain")
 
+let keychainPayload = KeychainDeviceKeyPayload.metadataOnly(for: deviceKey)
+check(keychainPayload.isMetadataOnly, "Keychain payload should keep private key material out of the metadata record")
+check(keychainPayload.record.keyID == deviceKey.keyID, "Keychain payload should preserve the device key record")
+check(!keychainPayload.containsPrivateKeyMaterial, "Keychain payload should not contain private key material")
+
+let keychainStore = KeychainDeviceKeyStore(plan: keychainPlan)
+let encodedPayload = try keychainStore.encodedPayload(keychainPayload)
+let decodedPayload = try keychainStore.decodedPayload(from: encodedPayload)
+check(decodedPayload == keychainPayload, "Keychain payload should round-trip through the store encoder")
+let saveSnapshot = keychainStore.querySnapshot(operation: "save")
+check(saveSnapshot.isSafeTSDDeviceKeyQuery, "Keychain store query should preserve safe TSD defaults")
+check(saveSnapshot.operation == "save", "Keychain query snapshot should preserve operation")
+check(keychainStore.canUseProductionKeychain, "Keychain store should compile with Security.framework on Apple platforms")
+
+let secureEnclavePlan = SecureEnclaveDeviceKeyPlan()
+check(secureEnclavePlan.preservesTSDKeyBoundary, "Secure Enclave plan should preserve non-extractable private key boundary")
+check(!secureEnclavePlan.storesPrivateKeyBytesInAppData, "Secure Enclave plan should forbid app data private key bytes")
+check(secureEnclavePlan.requiresRealDeviceForValidation, "Secure Enclave plan should require signed-device validation")
+
+check(KeychainProductionChecklist.rows.count == 3, "Keychain production checklist should track three v41 rows")
+check(KeychainProductionChecklist.rows.first { $0.id == "keychain-record-store" }?.status == .poc, "Keychain record store adapter should be PoC after v41")
+check(KeychainProductionChecklist.rows.filter { $0.status == .todo }.count == 2, "Secure Enclave and signed-device tests should remain todo")
+
 let gatewayRequest = DeepSeekGatewayClientPlan.request(for: aiEnvelope, accountID: deviceKey.accountID)
 check(gatewayRequest.endpointPath == "/v1/ai/tasks/weekly-chapter", "Gateway request should target the TSD backend task endpoint")
 check(gatewayRequest.requiresServerSideCredential, "Gateway request should require server-side provider credential")
@@ -227,8 +250,9 @@ check(ProductionImplementationChecklist.rows.count == 4, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "40", "TestFlight build notes should match v40")
+check(buildNotes.buildNumber == "41", "TestFlight build notes should match v41")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -248,4 +272,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, and v40 App Store launch assets are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, and v41 Keychain adapter are aligned.")
