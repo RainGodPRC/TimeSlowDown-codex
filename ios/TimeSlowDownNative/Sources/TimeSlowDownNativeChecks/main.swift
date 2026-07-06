@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>54</string>"), "Info.plist should carry v54 build number")
+check(infoPlistText.contains("<string>55</string>"), "Info.plist should carry v55 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -386,6 +386,52 @@ check(serverGateway.responseContract.returnsModelName, "Server gateway response 
 check(serverGateway.responseContract.returnsCostEstimate, "Server gateway response should return a cost estimate")
 check(serverGateway.responseContract.preservesUserEditableDraft, "Server gateway response should preserve user-editable draft semantics")
 check(serverGateway.isProductionSafeBoundary, "Server gateway envelope should be production-safe at the client/backend boundary")
+
+let gatewayValidationEnvironment = DeepSeekGatewayValidationEnvironment.swiftPMHostWithoutBackend()
+check(gatewayValidationEnvironment.model == "deepseek-v4-flash", "Gateway validation environment should target the selected DeepSeek PoC model")
+check(!gatewayValidationEnvironment.usesClientProviderKey, "Gateway validation environment should forbid client-side provider keys")
+check(gatewayValidationEnvironment.providerCredentialLocation == "server-secret-manager", "Gateway validation environment should point provider credentials to the server secret manager")
+check(!gatewayValidationEnvironment.canRunProviderValidation, "SwiftPM host without backend should not claim provider validation capability")
+
+let gatewayValidationPlan = DeepSeekGatewayIntegrationScaffold.plan(
+    environment: gatewayValidationEnvironment,
+    gateway: serverGateway
+)
+check(gatewayValidationPlan.gateway == serverGateway, "Gateway validation plan should preserve the reviewed server gateway envelope")
+check(gatewayValidationPlan.productionModel == "deepseek-v4-flash", "Gateway validation plan should lock to deepseek-v4-flash")
+check(gatewayValidationPlan.requiresExternalBackendWork, "Gateway validation plan should honestly require external backend work here")
+check(!gatewayValidationPlan.isReadyForProviderValidation, "Gateway validation plan should not be provider-ready on this host")
+check(gatewayValidationPlan.steps.count == 10, "Gateway validation plan should track ten backend/provider validation steps")
+check(gatewayValidationPlan.steps.contains { $0.kind == .serverSecretManagerCheck && $0.requiresProviderCredential }, "Gateway validation should require server secret manager credential check")
+check(gatewayValidationPlan.steps.contains { $0.kind == .clientKeyAbsenceCheck && $0.canRunOnSwiftPMHost }, "Gateway validation should include host-runnable client key absence check")
+check(gatewayValidationPlan.steps.contains { $0.kind == .mockGatewayRoundTrip && !$0.requiredForAppStoreGate }, "Mock gateway round trip should not be an App Store gate by itself")
+check(gatewayValidationPlan.steps.contains { $0.kind == .providerGatewayRoundTrip && $0.requiredForAppStoreGate }, "Provider gateway round trip should remain required for App Store AI gate")
+
+let pendingGatewayReceipt = DeepSeekGatewayIntegrationScaffold.pendingBackendReceipt(for: gatewayValidationPlan)
+check(pendingGatewayReceipt.status == .pendingBackend, "Gateway receipt should be pending until real backend/provider validation exists")
+check(!pendingGatewayReceipt.providerCallPerformed, "Pending gateway receipt should not claim a provider call")
+check(!pendingGatewayReceipt.requestWasMocked, "Pending gateway receipt should not claim even a mock run")
+check(!pendingGatewayReceipt.canBeUsedForProductionAIGate, "Pending gateway receipt should not unlock production AI")
+check(!pendingGatewayReceipt.canBeUsedForAppStoreGate, "Pending gateway receipt should not unlock App Store gate")
+check(!pendingGatewayReceipt.isProviderPassReceipt, "Pending gateway receipt should not be a provider pass receipt")
+check(pendingGatewayReceipt.stepReceipts.count == gatewayValidationPlan.steps.count, "Pending gateway receipt should mirror all validation steps")
+check(pendingGatewayReceipt.stepReceipts.allSatisfy { $0.status == .pendingBackend }, "Pending gateway receipt steps should remain pending, not mock-passed")
+check(pendingGatewayReceipt.stepReceipts.allSatisfy { !$0.containsProviderCredential }, "Gateway validation receipts should never contain provider credentials")
+check(pendingGatewayReceipt.stepReceipts.allSatisfy { !$0.containsRawMedia }, "Gateway validation receipts should never contain raw media")
+check(pendingGatewayReceipt.stepReceipts.allSatisfy { !$0.containsFullMemoryArchive }, "Gateway validation receipts should never contain full memory archives")
+
+let mockGatewayReceipt = DeepSeekGatewayIntegrationScaffold.mockPassedReceipt(for: gatewayValidationPlan)
+check(mockGatewayReceipt.status == .mockPassed, "Mock gateway receipt should be explicitly marked mockPassed")
+check(mockGatewayReceipt.requestWasMocked, "Mock gateway receipt should disclose that it was mocked")
+check(!mockGatewayReceipt.providerCallPerformed, "Mock gateway receipt should not claim a provider call")
+check(!mockGatewayReceipt.canBeUsedForProductionAIGate, "Mock gateway receipt should not unlock production AI")
+check(!mockGatewayReceipt.canBeUsedForAppStoreGate, "Mock gateway receipt should not unlock App Store gate")
+check(!mockGatewayReceipt.isProviderPassReceipt, "Mock gateway receipt should remain distinct from provider pass receipt")
+check(mockGatewayReceipt.gatewayJobID != nil, "Mock gateway receipt may return a mock job ID for UI/backend contract testing")
+check(mockGatewayReceipt.auditEventID != nil, "Mock gateway receipt may return a mock audit event ID for UI/backend contract testing")
+check(!mockGatewayReceipt.responseContainsProviderCredential, "Mock gateway response should not contain provider credential")
+check(!mockGatewayReceipt.responseContainsRawMedia, "Mock gateway response should not contain raw media")
+check(!mockGatewayReceipt.responseContainsFullMemoryArchive, "Mock gateway response should not contain full memory archive")
 
 let archivePlan = ExportArchivePlan.zipPlan(for: exportManifest)
 check(archivePlan.fileName.hasSuffix(".zip"), "Export archive should use a zip file name")
@@ -736,7 +782,7 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "54", "TestFlight build notes should match v54")
+check(buildNotes.buildNumber == "55", "TestFlight build notes should match v55")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -751,7 +797,9 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("Account Rights"), "Te
 check(buildNotes.summary.localizedCaseInsensitiveContains("fileExporter"), "TestFlight build notes should mention SwiftUI fileExporter bridge")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion audit"), "TestFlight build notes should mention deletion audit envelope")
 check(buildNotes.summary.localizedCaseInsensitiveContains("server gateway"), "TestFlight build notes should mention server gateway envelope")
+check(buildNotes.summary.localizedCaseInsensitiveContains("provider validation scaffold"), "TestFlight build notes should mention DeepSeek provider validation scaffold")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion service"), "TestFlight build notes should mention deletion service boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("mock gateway"), "TestFlight build notes should disclose mock/provider validation split")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -771,4 +819,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, and v54 signed-device Keychain validation scaffold are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, and v55 DeepSeek provider validation scaffold are aligned.")

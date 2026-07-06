@@ -269,6 +269,347 @@ public enum DeepSeekServerGatewayPlan {
     }
 }
 
+public enum DeepSeekGatewayValidationStatus: String, Codable, Equatable, Sendable {
+    case pendingBackend
+    case mockPassed
+    case providerPassed
+    case failed
+}
+
+public struct DeepSeekGatewayValidationEnvironment: Codable, Equatable, Sendable {
+    public var backendBaseURL: String?
+    public var model: String
+    public var hasServerRuntime: Bool
+    public var hasServerSecretManager: Bool
+    public var hasProviderCredentialOnServer: Bool
+    public var providerCredentialLocation: String
+    public var usesClientProviderKey: Bool
+    public var canReachProvider: Bool
+    public var canRunMockMode: Bool
+    public var maxRetentionHours: Int
+    public var maxBudgetCents: Int
+
+    public init(
+        backendBaseURL: String?,
+        model: String = "deepseek-v4-flash",
+        hasServerRuntime: Bool,
+        hasServerSecretManager: Bool,
+        hasProviderCredentialOnServer: Bool,
+        providerCredentialLocation: String = "server-secret-manager",
+        usesClientProviderKey: Bool = false,
+        canReachProvider: Bool,
+        canRunMockMode: Bool = true,
+        maxRetentionHours: Int = 24,
+        maxBudgetCents: Int = 4
+    ) {
+        self.backendBaseURL = backendBaseURL
+        self.model = model
+        self.hasServerRuntime = hasServerRuntime
+        self.hasServerSecretManager = hasServerSecretManager
+        self.hasProviderCredentialOnServer = hasProviderCredentialOnServer
+        self.providerCredentialLocation = providerCredentialLocation
+        self.usesClientProviderKey = usesClientProviderKey
+        self.canReachProvider = canReachProvider
+        self.canRunMockMode = canRunMockMode
+        self.maxRetentionHours = maxRetentionHours
+        self.maxBudgetCents = maxBudgetCents
+    }
+
+    public static func swiftPMHostWithoutBackend() -> DeepSeekGatewayValidationEnvironment {
+        DeepSeekGatewayValidationEnvironment(
+            backendBaseURL: nil,
+            hasServerRuntime: false,
+            hasServerSecretManager: false,
+            hasProviderCredentialOnServer: false,
+            canReachProvider: false
+        )
+    }
+
+    public var canRunProviderValidation: Bool {
+        backendBaseURL != nil &&
+        hasServerRuntime &&
+        hasServerSecretManager &&
+        hasProviderCredentialOnServer &&
+        providerCredentialLocation == "server-secret-manager" &&
+        !usesClientProviderKey &&
+        canReachProvider &&
+        model == "deepseek-v4-flash"
+    }
+}
+
+public enum DeepSeekGatewayValidationStepKind: String, Codable, Equatable, Sendable {
+    case backendHealthPreflight
+    case serverSecretManagerCheck
+    case clientKeyAbsenceCheck
+    case consentReceiptCheck
+    case idempotencyCheck
+    case budgetCeilingCheck
+    case retentionCeilingCheck
+    case forbiddenPayloadCheck
+    case mockGatewayRoundTrip
+    case providerGatewayRoundTrip
+}
+
+public struct DeepSeekGatewayValidationStep: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { kind.rawValue }
+    public var kind: DeepSeekGatewayValidationStepKind
+    public var title: String
+    public var requiresBackend: Bool
+    public var requiresProviderCredential: Bool
+    public var canRunOnSwiftPMHost: Bool
+    public var requiredForAppStoreGate: Bool
+
+    public init(
+        kind: DeepSeekGatewayValidationStepKind,
+        title: String,
+        requiresBackend: Bool,
+        requiresProviderCredential: Bool,
+        canRunOnSwiftPMHost: Bool,
+        requiredForAppStoreGate: Bool = true
+    ) {
+        self.kind = kind
+        self.title = title
+        self.requiresBackend = requiresBackend
+        self.requiresProviderCredential = requiresProviderCredential
+        self.canRunOnSwiftPMHost = canRunOnSwiftPMHost
+        self.requiredForAppStoreGate = requiredForAppStoreGate
+    }
+}
+
+public struct DeepSeekGatewayIntegrationPlan: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var environment: DeepSeekGatewayValidationEnvironment
+    public var gateway: DeepSeekServerGatewayEnvelope
+    public var steps: [DeepSeekGatewayValidationStep]
+    public var productionModel: String
+    public var requiresExternalBackendWork: Bool
+
+    public init(
+        id: String,
+        environment: DeepSeekGatewayValidationEnvironment,
+        gateway: DeepSeekServerGatewayEnvelope,
+        steps: [DeepSeekGatewayValidationStep],
+        productionModel: String = "deepseek-v4-flash"
+    ) {
+        self.id = id
+        self.environment = environment
+        self.gateway = gateway
+        self.steps = steps
+        self.productionModel = productionModel
+        self.requiresExternalBackendWork = !environment.canRunProviderValidation
+    }
+
+    public var isReadyForProviderValidation: Bool {
+        environment.canRunProviderValidation &&
+        gateway.isProductionSafeBoundary &&
+        gateway.request.model == productionModel &&
+        gateway.serverCredentialLocation == "server-secret-manager" &&
+        gateway.retentionHours <= environment.maxRetentionHours &&
+        gateway.budgetCeilingCents <= environment.maxBudgetCents
+    }
+}
+
+public struct DeepSeekGatewayValidationStepReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { kind.rawValue }
+    public var kind: DeepSeekGatewayValidationStepKind
+    public var status: DeepSeekGatewayValidationStatus
+    public var evidence: String
+    public var containsProviderCredential: Bool
+    public var containsRawMedia: Bool
+    public var containsFullMemoryArchive: Bool
+
+    public init(
+        kind: DeepSeekGatewayValidationStepKind,
+        status: DeepSeekGatewayValidationStatus,
+        evidence: String,
+        containsProviderCredential: Bool = false,
+        containsRawMedia: Bool = false,
+        containsFullMemoryArchive: Bool = false
+    ) {
+        self.kind = kind
+        self.status = status
+        self.evidence = evidence
+        self.containsProviderCredential = containsProviderCredential
+        self.containsRawMedia = containsRawMedia
+        self.containsFullMemoryArchive = containsFullMemoryArchive
+    }
+}
+
+public struct DeepSeekGatewayIntegrationReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var planID: String
+    public var status: DeepSeekGatewayValidationStatus
+    public var model: String
+    public var gatewayJobID: String?
+    public var auditEventID: String?
+    public var responseStatusCode: Int?
+    public var costEstimateCents: Int?
+    public var retentionHours: Int
+    public var requestWasMocked: Bool
+    public var providerCallPerformed: Bool
+    public var providerCredentialVisibleToClient: Bool
+    public var responseContainsProviderCredential: Bool
+    public var responseContainsRawMedia: Bool
+    public var responseContainsFullMemoryArchive: Bool
+    public var canBeUsedForProductionAIGate: Bool
+    public var canBeUsedForAppStoreGate: Bool
+    public var validationNotes: [String]
+    public var stepReceipts: [DeepSeekGatewayValidationStepReceipt]
+
+    public init(
+        id: String,
+        planID: String,
+        status: DeepSeekGatewayValidationStatus,
+        model: String = "deepseek-v4-flash",
+        gatewayJobID: String?,
+        auditEventID: String?,
+        responseStatusCode: Int?,
+        costEstimateCents: Int?,
+        retentionHours: Int,
+        requestWasMocked: Bool,
+        providerCallPerformed: Bool,
+        providerCredentialVisibleToClient: Bool = false,
+        responseContainsProviderCredential: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        responseContainsFullMemoryArchive: Bool = false,
+        canBeUsedForProductionAIGate: Bool,
+        canBeUsedForAppStoreGate: Bool,
+        validationNotes: [String],
+        stepReceipts: [DeepSeekGatewayValidationStepReceipt]
+    ) {
+        self.id = id
+        self.planID = planID
+        self.status = status
+        self.model = model
+        self.gatewayJobID = gatewayJobID
+        self.auditEventID = auditEventID
+        self.responseStatusCode = responseStatusCode
+        self.costEstimateCents = costEstimateCents
+        self.retentionHours = retentionHours
+        self.requestWasMocked = requestWasMocked
+        self.providerCallPerformed = providerCallPerformed
+        self.providerCredentialVisibleToClient = providerCredentialVisibleToClient
+        self.responseContainsProviderCredential = responseContainsProviderCredential
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.responseContainsFullMemoryArchive = responseContainsFullMemoryArchive
+        self.canBeUsedForProductionAIGate = canBeUsedForProductionAIGate
+        self.canBeUsedForAppStoreGate = canBeUsedForAppStoreGate
+        self.validationNotes = validationNotes
+        self.stepReceipts = stepReceipts
+    }
+
+    public var isProviderPassReceipt: Bool {
+        status == .providerPassed &&
+        model == "deepseek-v4-flash" &&
+        gatewayJobID != nil &&
+        auditEventID != nil &&
+        responseStatusCode == 200 &&
+        retentionHours <= 24 &&
+        !requestWasMocked &&
+        providerCallPerformed &&
+        !providerCredentialVisibleToClient &&
+        !responseContainsProviderCredential &&
+        !responseContainsRawMedia &&
+        !responseContainsFullMemoryArchive &&
+        canBeUsedForProductionAIGate &&
+        canBeUsedForAppStoreGate &&
+        stepReceipts.allSatisfy {
+            !$0.containsProviderCredential &&
+            !$0.containsRawMedia &&
+            !$0.containsFullMemoryArchive
+        }
+    }
+}
+
+public enum DeepSeekGatewayIntegrationScaffold {
+    public static func plan(
+        environment: DeepSeekGatewayValidationEnvironment,
+        gateway: DeepSeekServerGatewayEnvelope
+    ) -> DeepSeekGatewayIntegrationPlan {
+        let digest = TrustDigest.checksum([
+            environment.backendBaseURL ?? "no-backend",
+            environment.model,
+            gateway.id,
+            gateway.requestBodyDigest
+        ])
+        return DeepSeekGatewayIntegrationPlan(
+            id: "deepseek-provider-validation-\(digest.prefix(12))",
+            environment: environment,
+            gateway: gateway,
+            steps: [
+                .init(kind: .backendHealthPreflight, title: "Backend health preflight", requiresBackend: true, requiresProviderCredential: false, canRunOnSwiftPMHost: false),
+                .init(kind: .serverSecretManagerCheck, title: "Server secret manager contains provider key", requiresBackend: true, requiresProviderCredential: true, canRunOnSwiftPMHost: false),
+                .init(kind: .clientKeyAbsenceCheck, title: "Client bundle and request contain no DeepSeek key", requiresBackend: false, requiresProviderCredential: false, canRunOnSwiftPMHost: true),
+                .init(kind: .consentReceiptCheck, title: "AI consent receipt required before task enqueue", requiresBackend: false, requiresProviderCredential: false, canRunOnSwiftPMHost: true),
+                .init(kind: .idempotencyCheck, title: "Idempotency key survives gateway handoff", requiresBackend: false, requiresProviderCredential: false, canRunOnSwiftPMHost: true),
+                .init(kind: .budgetCeilingCheck, title: "Task budget stays within user-approved ceiling", requiresBackend: false, requiresProviderCredential: false, canRunOnSwiftPMHost: true),
+                .init(kind: .retentionCeilingCheck, title: "Transient AI task retention stays within 24 hours", requiresBackend: false, requiresProviderCredential: false, canRunOnSwiftPMHost: true),
+                .init(kind: .forbiddenPayloadCheck, title: "Raw media, full archive, and provider credentials never cross response boundary", requiresBackend: false, requiresProviderCredential: false, canRunOnSwiftPMHost: true),
+                .init(kind: .mockGatewayRoundTrip, title: "Mock gateway round trip returns editable draft metadata", requiresBackend: true, requiresProviderCredential: false, canRunOnSwiftPMHost: false, requiredForAppStoreGate: false),
+                .init(kind: .providerGatewayRoundTrip, title: "Real DeepSeek provider round trip returns audited weekly chapter draft", requiresBackend: true, requiresProviderCredential: true, canRunOnSwiftPMHost: false)
+            ]
+        )
+    }
+
+    public static func pendingBackendReceipt(for plan: DeepSeekGatewayIntegrationPlan) -> DeepSeekGatewayIntegrationReceipt {
+        DeepSeekGatewayIntegrationReceipt(
+            id: "deepseek-pending-\(plan.id.suffix(12))",
+            planID: plan.id,
+            status: .pendingBackend,
+            model: plan.productionModel,
+            gatewayJobID: nil,
+            auditEventID: nil,
+            responseStatusCode: nil,
+            costEstimateCents: nil,
+            retentionHours: plan.gateway.retentionHours,
+            requestWasMocked: false,
+            providerCallPerformed: false,
+            canBeUsedForProductionAIGate: false,
+            canBeUsedForAppStoreGate: false,
+            validationNotes: [
+                "No production backend URL or server-side DeepSeek credential is available in this SwiftPM host.",
+                "This receipt is a contract scaffold only; it cannot satisfy production AI, TestFlight, or App Store gates."
+            ],
+            stepReceipts: plan.steps.map {
+                DeepSeekGatewayValidationStepReceipt(
+                    kind: $0.kind,
+                    status: .pendingBackend,
+                    evidence: $0.canRunOnSwiftPMHost ? "Static Swift contract check passed on host." : "Requires deployed backend/provider validation."
+                )
+            }
+        )
+    }
+
+    public static func mockPassedReceipt(for plan: DeepSeekGatewayIntegrationPlan) -> DeepSeekGatewayIntegrationReceipt {
+        DeepSeekGatewayIntegrationReceipt(
+            id: "deepseek-mock-\(plan.id.suffix(12))",
+            planID: plan.id,
+            status: .mockPassed,
+            model: plan.productionModel,
+            gatewayJobID: "mock-job-\(plan.id.suffix(8))",
+            auditEventID: "mock-audit-\(plan.id.suffix(8))",
+            responseStatusCode: plan.gateway.responseContract.completedStatusCode,
+            costEstimateCents: 0,
+            retentionHours: plan.gateway.retentionHours,
+            requestWasMocked: true,
+            providerCallPerformed: false,
+            canBeUsedForProductionAIGate: false,
+            canBeUsedForAppStoreGate: false,
+            validationNotes: [
+                "Mock gateway can exercise queue, consent, idempotency, budget, and editable-draft shape.",
+                "Mock success is intentionally distinct from providerPassed and cannot unlock production AI."
+            ],
+            stepReceipts: plan.steps.map {
+                DeepSeekGatewayValidationStepReceipt(
+                    kind: $0.kind,
+                    status: $0.requiresProviderCredential ? .pendingBackend : .mockPassed,
+                    evidence: $0.requiresProviderCredential ? "Real provider credential and DeepSeek call still required." : "Mock gateway contract exercised without provider call."
+                )
+            }
+        )
+    }
+}
+
 public enum ExportArchiveEntryKind: String, Codable, Equatable, Sendable {
     case manifest
     case slices
@@ -2198,7 +2539,7 @@ public enum DeletionServiceIntegrationPlan {
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
-        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
+        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, and v55 adds pending/mock/provider validation receipts so mock success cannot satisfy the production AI gate."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),
