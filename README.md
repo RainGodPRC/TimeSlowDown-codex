@@ -21,3 +21,4 @@ Current demo focus:
 - Visual share studio: weekly poster, 90-day card, life meadow card, public/private copy
 - Media memory anchors: attach photo/video files, external media links, and notes to slices
 - Media memory wall: filter bound media by image/video/link and browse a recall timeline
+- Media-first Quick Mark: start a slice directly from a photo/video, then optionally add text later

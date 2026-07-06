@@ -211,9 +211,12 @@ function setState(patch) {
 }
 
 function addMoment() {
-  const text = state.draft.trim() || "今天有一个还没说清楚、但想先占位的瞬间。";
-  const title = deriveTitle(text);
   const media = normalizeMediaDraft();
+  const fallbackText = media
+    ? `${mediaKindLabel(media.kind)}里有一个我想以后还能回来的瞬间。`
+    : "今天有一个还没说清楚、但想先占位的瞬间。";
+  const text = state.draft.trim() || media?.note || fallbackText;
+  const title = deriveTitle(text);
   const mediaTags = media ? [media.kind === "video" ? "视频" : media.kind === "image" ? "照片" : "影像线索"] : [];
   const tags = [...new Set([...(state.activeTags.length ? state.activeTags : ["普通但值得"]), ...mediaTags])];
   const gates = analyzeMemory(text, tags);
@@ -299,6 +302,12 @@ function useDemoMedia() {
 function handleMediaFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+  const nextView = event.currentTarget?.dataset.afterView;
+  const clearDraft = event.currentTarget?.dataset.clearDraft === "true";
+  const contextPatch = {
+    ...(nextView ? { view: nextView } : {}),
+    ...(clearDraft ? { draft: "" } : {})
+  };
   const kind = guessMediaKind(file.type || file.name);
   const base = {
     kind,
@@ -313,6 +322,7 @@ function handleMediaFile(event) {
   const shouldPreview = kind === "image" && file.size <= 900 * 1024;
   if (!shouldPreview) {
     setState({
+      ...contextPatch,
       mediaDraft: base,
       mediaDraftUrl: "",
       activeTags: [...new Set([...state.activeTags, kind === "video" ? "视频" : "照片"])],
@@ -323,6 +333,7 @@ function handleMediaFile(event) {
   const reader = new FileReader();
   reader.onload = () => {
     setState({
+      ...contextPatch,
       mediaDraft: { ...base, previewUrl: String(reader.result || "") },
       mediaDraftUrl: "",
       activeTags: [...new Set([...state.activeTags, "照片"])],
@@ -330,7 +341,7 @@ function handleMediaFile(event) {
     });
   };
   reader.onerror = () => {
-    setState({ mediaDraft: base, mediaDraftUrl: "", toast: "照片预览读取失败，但已保留文件名和大小作为线索。" });
+    setState({ ...contextPatch, mediaDraft: base, mediaDraftUrl: "", toast: "照片预览读取失败，但已保留文件名和大小作为线索。" });
   };
   reader.readAsDataURL(file);
 }
@@ -909,7 +920,7 @@ function bindEvents() {
     state.draft = e.target.value;
     saveState();
   });
-  $("[data-media-file]")?.addEventListener("change", handleMediaFile);
+  $$("[data-media-file]").forEach(input => input.addEventListener("change", handleMediaFile));
   $("[data-demo-media]")?.addEventListener("click", useDemoMedia);
   $("[data-clear-media]")?.addEventListener("click", clearMediaDraft);
   const mediaUrl = $("[data-media-url]");
@@ -1009,19 +1020,30 @@ function nowView() {
     <section class="hero-card">
       <div class="eyebrow">Difference Radar</div>
       <h1 class="hero-title">今天有什么，<br/>不太一样？</h1>
-      <p class="hero-subtitle">不需要完整日记。选一个线索，先把它钉在时间里。</p>
-      <div class="action-row"><button class="primary" data-view="slice">开始 Quick Mark</button><button class="secondary" data-view="chapter">看本周章节</button></div>
+      <p class="hero-subtitle">不需要完整日记。可以先拍下/选中一个画面，再补一句话；影像本身就是回忆的入口。</p>
+      <div class="action-row"><button class="primary" data-view="slice">开始 Quick Mark</button><button class="secondary" data-view="media">看媒体记忆墙</button></div>
+    </section>
+    <section class="media-first-strip">
+      <div>
+        <div class="eyebrow">Photo / Video First</div>
+        <strong>用照片或视频，先把这一刻钉住。</strong>
+        <span>选完会进入今日切片：可以只留影像备注，也可以周末再补完整故事。</span>
+      </div>
+      <label class="media-first-button">
+        <span>选择照片/视频</span>
+        <input data-media-file data-after-view="slice" data-clear-draft="true" type="file" accept="image/*,video/*" />
+      </label>
     </section>
     <div class="radar">
       ${radarItem("第一次", "任何第一次都值得先占位，不必先判断它重不重要。", "✦")}
       ${radarItem("人", "今天有没有一个人，比平时更清晰？", "♙")}
-      ${radarItem("情绪转弯", "从烦到松、从紧张到开心，都算。", "↺")}
+      ${radarItem("影像", "照片、视频、截图、录音备注，都可以成为切片的第一线索。", "▧")}
     </div>
     <section class="journey-card">
       <div class="eyebrow">Try This Demo</div>
       <h2 class="section-title">推荐体验路线 <span class="micro">3 分钟</span></h2>
       <div class="journey-steps">
-        ${journeyStep("01", "留下一张切片", "用 Quick Mark 写一句今天不同的地方。", "slice")}
+        ${journeyStep("01", "留下一张切片", "用照片/视频或一句话，先占住今天不同的地方。", "slice")}
         ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
         ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
         ${journeyStep("04", "打开媒体记忆墙", "看照片、视频如何把切片串成时间线。", "media")}
@@ -1050,10 +1072,9 @@ function sliceView() {
     <div class="topline"><div><div class="brand">今日切片</div><div class="micro">5–15 秒先占位，周末再慢慢补全。</div></div></div>
     <section class="quick-panel">
       <h2 class="section-title">Quick Mark <span class="micro">${state.aiMode === "rules" ? "L0 规则层" : "DeepSeek PoC 草稿"}</span></h2>
-      <textarea class="text-input" data-draft placeholder="写一句今天想留下的事">${escapeHtml(state.draft)}</textarea>
       <div class="media-capture">
         <div class="media-capture-head">
-          <div><strong>影像线索</strong><span>照片/视频不是附件，是这张切片的记忆锚点。</span></div>
+          <div><strong>影像线索</strong><span>可以先选照片/视频，再写一句；影像不是附件，是这张切片的记忆锚点。</span></div>
           <button class="secondary small" data-demo-media>试一张照片</button>
         </div>
         <label class="media-file">
@@ -1064,6 +1085,7 @@ function sliceView() {
         <textarea class="media-note-input" data-media-note rows="2" placeholder="这张影像为什么值得留下？">${escapeHtml(state.mediaDraftNote)}</textarea>
         ${mediaDraftPreview()}
       </div>
+      <textarea class="text-input" data-draft placeholder="可选：写一句今天想留下的事。没想好也可以先用影像占位。">${escapeHtml(state.draft)}</textarea>
       <div class="quick-tags">
         ${tags.map(t => `<button class="tag ${state.activeTags.includes(t) ? "active" : ""}" data-tag="${t}">${t}</button>`).join("")}
       </div>
@@ -1077,7 +1099,7 @@ function sliceView() {
 function mediaDraftPreview() {
   const media = normalizeMediaDraft();
   if (!media) {
-    return `<div class="media-empty"><span>还没有影像线索</span><em>可以先写一句话，也可以把照片/视频作为回忆入口。</em></div>`;
+    return `<div class="media-empty"><span>还没有影像线索</span><em>可以从照片/视频开始，也可以只写一句话。TSD 不要求你当场写完整日记。</em></div>`;
   }
   return `<div class="media-preview">
     ${media.previewUrl ? `<img src="${media.previewUrl}" alt="本地照片预览" />` : `<div class="media-thumb">${media.kind === "video" ? "▶" : media.kind === "image" ? "▧" : "↗"}</div>`}
@@ -1261,7 +1283,7 @@ function mediaView() {
   return `
     <div class="topline"><div><div class="brand">媒体记忆墙</div><div class="micro">照片和视频不是附件，它们是能把回忆带回来的光。</div></div></div>
     <section class="guide-card media-hero">
-      <div class="eyebrow">Media Memory Wall · v15</div>
+      <div class="eyebrow">Media Memory Wall · v16</div>
       <h1 class="hero-title">影像让时间，<br/>重新有了入口。</h1>
       <p class="hero-subtitle">这里不是普通相册。TSD 只展示已经绑定到切片的照片/视频线索：它们有时间、有一句话、有来源，也能回到章节和人生旷野。</p>
       <div class="media-stats">
@@ -2026,7 +2048,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v15 聚焦媒体记忆墙：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台、审核材料雏形、三类分享卡片、照片/视频记忆锚点和影像时间线已经进入同一个体验。下一步继续补安装资产、真实模型网关、真实图片导出或媒体库生产假面。</p>
+      <p>当前 v16 把影像提升为一级入口：用户可以从此刻页直接选择照片/视频，进入今日切片后再决定是否补文字；媒体记忆墙、影像时间线、分享卡片和隐私边界已经进入同一个体验。下一步继续补人物/地点镜头、安装资产、真实模型网关、真实图片导出或媒体库生产假面。</p>
     </section>
   </aside>`;
 }
