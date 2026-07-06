@@ -415,7 +415,7 @@ async function copyPrivacySummary() {
     "TimeSlowDown Codex Demo 隐私摘要：",
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
-    "3. v11 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
+    "3. v12 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
     "4. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "5. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -425,6 +425,25 @@ async function copyPrivacySummary() {
     setState({ toast: "隐私摘要已复制，可发给试用者或审核者。" });
   } catch {
     setState({ toast: "浏览器不允许自动复制；请手动查看隐私摘要。" });
+  }
+}
+
+async function copyReviewPacket() {
+  const text = [
+    "TimeSlowDown Codex Demo 审核包摘要：",
+    "1. 当前公网 Demo 是 Web 原型，不是已提交 App Store 的 iOS App。",
+    "2. 权限策略：Demo 不请求相册、定位、通讯录、日历、麦克风或通知权限；记录来自用户手动输入与本地样例。",
+    "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
+    "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
+    "5. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
+    "6. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
+  ].join("\n");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ toast: "审核包摘要已复制，可发给试用者、agent 或未来审核角色。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请直接查看审核中心内容。" });
   }
 }
 
@@ -632,6 +651,7 @@ function bindEvents() {
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
+  $("[data-copy-review]")?.addEventListener("click", copyReviewPacket);
   $$("[data-simulate-ai-task]").forEach(btn => btn.addEventListener("click", simulateAiTask));
   $$("[data-revoke-ai-draft]").forEach(btn => btn.addEventListener("click", revokeAiDraft));
   $$("[data-copy-ai-task]").forEach(btn => btn.addEventListener("click", copyAiTaskSheet));
@@ -717,7 +737,7 @@ function shell(content) {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, guide: guideView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, guide: guideView, review: reviewView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -1050,6 +1070,7 @@ function guideView() {
         ${trialStep("03", "缩放人生旷野", "从月度花丛看到一生周格。", "meadow")}
         ${trialStep("04", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
         ${trialStep("05", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
+        ${trialStep("06", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
       </div>
     </section>
     <section class="guide-card">
@@ -1084,10 +1105,10 @@ function guideView() {
         <div class="chapter-line"><strong>AI 是忠实编辑，不是人生意义作者</strong><span>漂亮但没有来源的句子不得进入最终故事；低落、压力和普通日子也允许被记录。</span></div>
         <div class="chapter-line"><strong>生产版会先解决数据边界</strong><span>真实用户记忆进入云端前，需要 E2EE、地区数据边界、删除/导出权和清晰的模型处理条款。</span></div>
       </div>
-      <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
+      <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v11</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v12</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1095,7 +1116,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v11 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单与同步控制台说明数据何时离机、何时暂停、退订后如何取回。</p>
+      <p class="source-line">v12 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台和审核中心说明数据、权限、合规材料的边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1105,7 +1126,9 @@ function guideView() {
         ${readiness("AI 边界", "PoC 覆盖", "分层架构和黄金样本已可看；生产需真实网关。")}
         ${readiness("安装体验", "待做", "受不新建文件约束，本轮未添加 manifest/icon。")}
         ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
+        ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
       </div>
+      <div class="action-row"><button class="secondary" data-view="review">打开审核中心</button></div>
     </section>
   `;
 }
@@ -1124,6 +1147,72 @@ function readiness(label, stateLabel, copy) {
 
 function productionNode(title, copy, tone) {
   return `<div class="production-node ${tone}"><strong>${title}</strong><span>${copy}</span></div>`;
+}
+
+function reviewView() {
+  return `
+    <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
+    <section class="guide-card review-hero">
+      <div class="eyebrow">Review Packet · v12</div>
+      <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
+      <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
+      <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">权限说明 <span class="micro">Demo 当前请求</span></h2>
+      <div class="permission-grid">
+        ${permissionCard("相册", "未请求", "当前照片 Mark 为产品占位，不读取系统相册。")}
+        ${permissionCard("定位", "未请求", "地点只来自用户手写，不读取 GPS 或轨迹。")}
+        ${permissionCard("通讯录", "未请求", "人物关系由用户输入，不访问联系人。")}
+        ${permissionCard("通知", "未请求", "时间唤醒为界面演示，不发系统推送。")}
+        ${permissionCard("麦克风", "未请求", "语音 Mark 属未来方向，当前不录音。")}
+        ${permissionCard("网络", "静态站点", "公网 Demo 加载静态资源，不调用真实模型接口。")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">隐私营养标签雏形 <span class="micro">上线前需复核</span></h2>
+      <div class="nutrition-grid">
+        ${nutritionItem("当前收集", "浏览器本地 Demo 数据", "local")}
+        ${nutritionItem("当前不收集", "身份、联系人、定位、照片原文件", "safe")}
+        ${nutritionItem("未来可选", "账户、E2EE 同步、模型任务摘要", "poc")}
+        ${nutritionItem("用户权利", "导出、清空、撤销草稿、暂停同步", "safe")}
+      </div>
+      <p class="source-line">生产版必须用正式法务文本和平台表单重做；这里的价值是提前把数据类别和用户权利放进产品界面。</p>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">试用者 FAQ</h2>
+      <div class="faq-list">
+        ${faqItem("这是真 App 吗？", "不是。当前是公网 Web Demo，用来验证产品体验、信息架构和信任边界。")}
+        ${faqItem("我的记录会上传吗？", "当前 Demo 记录保存在你的浏览器 localStorage；可以导出 JSON，也可以清空。")}
+        ${faqItem("AI 真的调用 DeepSeek 吗？", "没有。DeepSeek V4 Flash 是 PoC 目标，当前只演示任务单、路由、门禁和降级。")}
+        ${faqItem("退订会丢记忆吗？", "产品原则是不扣留已有记忆；同步控制台已演示取回窗口。")}
+        ${faqItem("低落和普通日子会被保留吗？", "会。TSD 不只记录高光，晴天雨天一起构成人生旷野。")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">生产待做清单 <span class="micro">不能假装完成</span></h2>
+      <div class="readiness-list">
+        ${readiness("原生壳", "待做", "iOS 项目、权限弹窗、安装资产、App Icon。")}
+        ${readiness("账户同步", "待做", "真实登录、E2EE、密钥恢复、设备管理。")}
+        ${readiness("模型网关", "待做", "DeepSeek 适配、限流、成本预算、供应商条款。")}
+        ${readiness("合规文本", "待做", "正式隐私政策、用户协议、数据处理活动台账。")}
+        ${readiness("审核材料", "雏形", "本页可作为未来审核/法务任务清单，不代表已通过。")}
+      </div>
+    </section>
+  `;
+}
+
+function permissionCard(title, status, copy) {
+  return `<div class="permission-card"><span>${title}</span><strong>${status}</strong><em>${copy}</em></div>`;
+}
+
+function nutritionItem(title, value, tone) {
+  return `<div class="nutrition-item ${tone}"><strong>${title}</strong><span>${value}</span></div>`;
+}
+
+function faqItem(question, answer) {
+  return `<details class="faq-item" open><summary>${question}</summary><p>${answer}</p></details>`;
 }
 
 function monthPrompt(label, attr, value) {
@@ -1271,7 +1360,7 @@ function aiView() {
       <p class="source-line">所有黄金样本都遵守事实门、语气门、隐私门和认领门；漂亮但无来源的句子默认视为风险。</p>
     </section>
     <section class="ai-card">
-      <h2 class="section-title">AI 任务单 <span class="micro">v11 · 离机前确认</span></h2>
+      <h2 class="section-title">AI 任务单 <span class="micro">v12 · 离机前确认</span></h2>
       <div class="task-sheet">
         <div class="task-head">
           <span>模拟请求</span>
@@ -1297,7 +1386,7 @@ function aiView() {
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="ai-card">
-      <h2 class="section-title">模型路由与降级 <span class="micro">v11 生产边界</span></h2>
+      <h2 class="section-title">模型路由与降级 <span class="micro">v12 生产边界</span></h2>
       <div class="route-stack">
         ${routeStep("L0", "本地规则", "免费底座；时间冲突、信息稀少、照片占位、敏感提示先在本地处理。", "已在 Demo 中模拟")}
         ${routeStep("L1", "免费云额度", "只处理非敏感轻任务；失败时静默退回 L0，不让记录中断。", "生产待接入")}
@@ -1311,7 +1400,7 @@ function aiView() {
         <span>无来源不成章</span>
         <span>敏感默认谨慎</span>
       </div>
-      <p class="source-line">v11 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、任务单、门禁和降级策略。</p>
+      <p class="source-line">v12 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、任务单、门禁和降级策略。</p>
     </section>
   `;
 }
@@ -1346,16 +1435,16 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v11 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v12 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
       </div>
-      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
-      <h2 class="section-title">记忆保险箱 <span class="micro">v11 · 本地优先</span></h2>
+      <h2 class="section-title">记忆保险箱 <span class="micro">v12 · 本地优先</span></h2>
       <div class="vault-grid">
         ${vaultStat("切片", stats.moments, "条")}
         ${vaultStat("认领", stats.claimed, "个")}
@@ -1396,7 +1485,7 @@ function settingsView() {
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
-      <h2 class="section-title">同步控制台 <span class="micro">v11 · 多设备保险箱</span></h2>
+      <h2 class="section-title">同步控制台 <span class="micro">v12 · 多设备保险箱</span></h2>
       <div class="sync-console">
         ${syncStateCard("账户", state.accountMode === "guest" ? "访客模式" : "已登录演示", "不登录也能本地记录；登录只用于加密备份和多设备。")}
         ${syncStateCard("同步", syncModeLabel(), state.syncMode === "paused" ? "暂停后本机继续可用，云端不再接收新变化。" : "同步是可选增强，不是核心记录门槛。")}
@@ -1418,7 +1507,7 @@ function settingsView() {
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
-      <h2 class="section-title">数据离机账本 <span class="micro">v11 · 可撤销</span></h2>
+      <h2 class="section-title">数据离机账本 <span class="micro">v12 · 可撤销</span></h2>
       <div class="ledger-panel">
         ${ledgerLine("最近 AI 任务", state.lastAiTaskAt || "尚未模拟", state.lastAiTaskAt ? "已记录" : "待触发")}
         ${ledgerLine("最近撤销", state.aiDraftRevokedAt || "尚未撤销", state.aiDraftRevokedAt ? "已撤销" : "无")}
@@ -1477,7 +1566,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : state.view === "guide" ? "settings" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : ["guide", "review"].includes(state.view) ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -1505,7 +1594,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v11 聚焦可信同步：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本和同步控制台已经可以在公网试用。下一步继续补安装资产、真实模型网关或更完整的 App Store 审核材料。</p>
+      <p>当前 v12 聚焦审核中心：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台和审核材料雏形已经可以在公网试用。下一步继续补安装资产、真实模型网关或更完整的视觉成品导出。</p>
     </section>
   </aside>`;
 }

@@ -17,3 +17,4 @@ Current demo focus:
 - AI/sync boundary map: local rules, DeepSeek PoC, BYOK, E2EE, export/delete rights
 - AI task sheet and off-device ledger: what leaves, what never leaves, fallback, revoke
 - Sync console: encrypted-backup demo, pause/resume sync, cancellation recovery window
+- Review center: permissions, privacy-label draft, tester FAQ, production checklist
