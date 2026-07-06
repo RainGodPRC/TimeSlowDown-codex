@@ -104,7 +104,12 @@ const defaultState = {
   lastStudioShareAt: "",
   lastMediaExportAt: "",
   mediaDeleteRequestAt: "",
-  mediaShareAt: ""
+  mediaShareAt: "",
+  mediaVaultSealedAt: "",
+  mediaPermissionReviewAt: "",
+  mediaThumbnailPurgeAt: "",
+  mediaFamilyReviewAt: "",
+  mediaPackageExportAt: ""
 };
 
 let state = loadState();
@@ -584,22 +589,37 @@ function mediaLibraryStats() {
   const local = items.filter(moment => moment.media?.storage === "browser-local-demo").length;
   const external = items.filter(moment => moment.media?.storage === "external-link" || moment.media?.kind === "link").length;
   const previews = items.filter(moment => moment.media?.previewUrl).length;
+  const sensitive = items.filter(moment => /孩子|爸爸|妈妈|家人|儿童|家庭|医院|病/.test(`${moment.title} ${moment.text} ${(moment.tags || []).join(" ")} ${moment.media?.note || ""}`)).length;
   return {
     total: items.length,
     local,
     external,
     previews,
     encrypted: items.length,
-    deleteQueue: state.mediaDeleteRequestAt ? 1 : 0
+    deleteQueue: state.mediaDeleteRequestAt ? 1 : 0,
+    sensitive,
+    sealed: state.mediaVaultSealedAt ? items.length : 0,
+    packageReady: state.mediaPackageExportAt ? 1 : 0
   };
 }
 
 function mediaLibraryManifest() {
+  const stats = mediaLibraryStats();
   return {
-    product: "TimeSlowDown Media Library Production Facade",
-    version: "v23-demo",
+    product: "TimeSlowDown Media Vault Path",
+    version: "v24-demo",
     generatedAt: new Date().toISOString(),
-    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service.",
+    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v24 models the production media vault path and audit trail.",
+    vaultState: {
+      permission: state.mediaPermissionReviewAt ? "limited-picker-reviewed" : "single-picker-only",
+      sealedAt: state.mediaVaultSealedAt || "",
+      thumbnailPurgeAt: state.mediaThumbnailPurgeAt || "",
+      familyReviewAt: state.mediaFamilyReviewAt || "",
+      packageExportAt: state.mediaPackageExportAt || "",
+      deleteRequestAt: state.mediaDeleteRequestAt || "",
+      mediaCount: stats.total,
+      sensitiveCandidateCount: stats.sensitive
+    },
     media: mediaMoments().map(moment => ({
       sliceId: moment.id,
       date: moment.date,
@@ -611,6 +631,42 @@ function mediaLibraryManifest() {
       source: moment.media?.source || "unknown"
     }))
   };
+}
+
+function simulatePermissionReview() {
+  setState({
+    mediaPermissionReviewAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟有限相册选择说明：TSD 只访问本次选中的照片/视频，批量整理前再解释权限升级。"
+  });
+}
+
+function sealMediaVaultDemo() {
+  setState({
+    mediaVaultSealedAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟封存媒体保险箱：原图/视频、缩略图和切片索引应分别加密、分别可导出/删除。"
+  });
+}
+
+function purgeMediaThumbnailsDemo() {
+  setState({
+    mediaThumbnailPurgeAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟清除缩略图缓存。生产版应保留原始文件权利，同时重建或删除预览。"
+  });
+}
+
+function markFamilyMediaReview() {
+  setState({
+    mediaFamilyReviewAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟家庭/儿童影像复核：公开分享默认隐藏原图、人名、地点和原文。"
+  });
+}
+
+function exportMediaPackageDemo() {
+  setState({
+    mediaPackageExportAt: new Date().toLocaleString("zh-CN"),
+    lastMediaExportAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟生成媒体导出包：原图/视频、缩略图、切片 JSON、source 追溯和可读说明。"
+  });
 }
 
 async function copyMediaLibraryReport() {
@@ -1019,8 +1075,8 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v23 已支持生产隐私中心、模型网关控制台、分享工作室 PNG 导出、媒体入口/媒体库生产边界和 Demo QA Console。",
-    "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由和地区数据边界完成后，才允许处理真实用户记忆。",
+    "4. v24 已支持生产隐私中心、模型网关控制台、分享工作室 PNG 导出、媒体入口、媒体保险箱路径和 Demo QA Console。",
+    "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由、媒体导出/删除审计和地区数据边界完成后，才允许处理真实用户记忆。",
     "6. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
   try {
@@ -1039,7 +1095,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v23 允许从首次进入就选择照片/视频作为切片锚点，也允许给已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v24 允许从首次进入就选择照片/视频作为切片锚点，也允许给已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -1054,13 +1110,13 @@ async function copyReviewPacket() {
 
 async function copyComplianceReport() {
   const text = [
-    "TimeSlowDown 生产隐私报告（Demo v23）：",
+    "TimeSlowDown 生产隐私报告（Demo v24）：",
     "1. 当前 Demo：静态站点 + localStorage；不登录、不云同步、不调用真实模型、不请求持久相册/定位/通讯录/麦克风/通知。",
     "2. 数据生命周期：用户主动输入/选择 → 设备本地保存 → 可选 AI/同步任务单 → 导出/删除 → 分享包去隐私。",
     "3. 权限升级梯子：先单次选择；只有批量整理、同步、提醒等明确动作出现时才解释并请求更多权限。",
     "4. 影像边界：照片/视频是记忆锚点；不扫全库、不做人脸识别、不读 EXIF/GPS 推断地点。",
     "5. AI 边界：DeepSeek V4 Flash 仍是 PoC；真实生产需供应商审查、最小字段、预算、失败降级、撤销和缓存删除。",
-    "6. 用户权利：导出、删除、撤销 AI 草稿、暂停同步、退订取回已有记忆，必须是一等能力。",
+    "6. 用户权利：导出、删除、清除缩略图、撤销 AI 草稿、暂停同步、退订取回已有记忆，必须是一等能力。",
     "7. 未成年/家庭影像：默认更谨慎；公开分享不带原图、人名、地点、原文和原始影像。",
     "8. 仍待生产完成：正式隐私政策、用户协议、DPA/供应商条款、地区数据边界、App Store 隐私标签和法务复核。"
   ].join("\n");
@@ -1077,14 +1133,14 @@ function qaSnapshot() {
   const mediaCount = mediaMoments().length;
   const claimedCount = state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length;
   return {
-    version: "v23",
+    version: "v24",
     publicUrl: PUBLIC_DEMO_URL,
-    resources: "styles.css?v=23 / app.js?v=23",
+    resources: "styles.css?v=24 / app.js?v=24",
     moments: state.moments.length,
     mediaCount,
     claimedCount,
     gatewayStatus: gatewayStatusLabel(),
-    privacyCenter: "v23",
+    privacyCenter: "v24",
     qaReportAt: state.lastQaReportAt || "尚未复制",
     checks: qaChecks(mediaCount, claimedCount)
   };
@@ -1109,6 +1165,12 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       status: mediaCount ? "pass" : "warn",
       route: "切片 / 章节 / 媒体墙",
       evidence: `${mediaCount} 个切片已绑定照片/视频/链接；已有切片可事后补影像。`
+    },
+    {
+      area: "媒体保险箱",
+      status: "pass",
+      route: "媒体库生产",
+      evidence: "v24 已演示有限相册说明、E2EE 分层、缩略图清除、导出包、删除审计和家庭/儿童影像复核。"
     },
     {
       area: "周章节",
@@ -1161,7 +1223,7 @@ function qaScore() {
 async function copyQaReport() {
   const snapshot = qaSnapshot();
   const text = [
-    "TimeSlowDown Demo QA Console（v23）：",
+    "TimeSlowDown Demo QA Console（v24）：",
     `公网：${snapshot.publicUrl}`,
     `资源：${snapshot.resources}`,
     `本地样本：${snapshot.moments} 张切片 / ${snapshot.mediaCount} 个影像锚点 / ${snapshot.claimedCount} 个周认领`,
@@ -1472,6 +1534,11 @@ function bindEvents() {
   $$("[data-copy-media-library]").forEach(btn => btn.addEventListener("click", copyMediaLibraryReport));
   $$("[data-delete-media-library]").forEach(btn => btn.addEventListener("click", simulateMediaDelete));
   $$("[data-share-media-library]").forEach(btn => btn.addEventListener("click", shareMediaLibraryDemo));
+  $$("[data-media-permission-review]").forEach(btn => btn.addEventListener("click", simulatePermissionReview));
+  $$("[data-seal-media-vault]").forEach(btn => btn.addEventListener("click", sealMediaVaultDemo));
+  $$("[data-purge-media-thumbnails]").forEach(btn => btn.addEventListener("click", purgeMediaThumbnailsDemo));
+  $$("[data-family-media-review]").forEach(btn => btn.addEventListener("click", markFamilyMediaReview));
+  $$("[data-export-media-package]").forEach(btn => btn.addEventListener("click", exportMediaPackageDemo));
   $$("[data-simulate-ai-task]").forEach(btn => btn.addEventListener("click", simulateAiTask));
   $$("[data-revoke-ai-draft]").forEach(btn => btn.addEventListener("click", revokeAiDraft));
   $$("[data-copy-ai-task]").forEach(btn => btn.addEventListener("click", copyAiTaskSheet));
@@ -1948,9 +2015,9 @@ function mediaLibraryView() {
   return `
     <div class="topline"><div><div class="brand">媒体库生产</div><div class="micro">把照片/视频从 Demo 能力推进到上架前必须说清的边界。</div></div></div>
     <section class="guide-card library-hero">
-      <div class="eyebrow">Media Library · v18</div>
+      <div class="eyebrow">Media Vault Path · v24</div>
       <h1 class="hero-title">不是普通相册，<br/>而是可带走、可删除的记忆库。</h1>
-      <p class="hero-subtitle">这里演示生产版媒体层应如何处理：有限相册选择、端到端加密影像库、缩略图、原始文件导出/删除、去隐私分享。当前仍是 Web Demo，不请求持久相册权限。</p>
+      <p class="hero-subtitle">这里演示生产版媒体层应如何处理：有限相册选择、端到端加密影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核和去隐私分享。当前仍是 Web Demo，不请求持久相册权限。</p>
       <div class="library-stats">
         ${libraryStat("影像锚点", stats.total, "个")}
         ${libraryStat("本地文件", stats.local, "个")}
@@ -1959,6 +2026,17 @@ function mediaLibraryView() {
       </div>
       <div class="action-row"><button class="primary" data-copy-media-library>复制媒体库清单</button><button class="secondary" data-share-media-library>模拟系统分享</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">媒体保险箱状态 <span class="micro">user rights ledger</span></h2>
+      <div class="media-vault-dashboard">
+        ${vaultStatus("相册权限", state.mediaPermissionReviewAt ? "已解释有限选择" : "单次选择", state.mediaPermissionReviewAt || "尚未复核", "ready")}
+        ${vaultStatus("保险箱封存", state.mediaVaultSealedAt ? "已模拟封存" : "待封存", state.mediaVaultSealedAt || "尚未封存", state.mediaVaultSealedAt ? "ready" : "todo")}
+        ${vaultStatus("导出包", state.mediaPackageExportAt ? "已生成" : "待生成", state.mediaPackageExportAt || "尚未导出", state.mediaPackageExportAt ? "ready" : "todo")}
+        ${vaultStatus("家庭影像", stats.sensitive ? `${stats.sensitive} 个候选` : "暂无候选", state.mediaFamilyReviewAt || "尚未复核", stats.sensitive ? "warn" : "ready")}
+      </div>
+      <div class="action-row"><button class="secondary" data-media-permission-review>解释相册权限</button><button class="secondary" data-seal-media-vault>模拟封存保险箱</button><button class="secondary" data-export-media-package>生成导出包</button><button class="ghost danger" data-family-media-review>复核家庭影像</button></div>
+      <p class="source-line">保险箱状态只写入当前浏览器 Demo；生产版需要真实 E2EE、密钥恢复、删除回执和导出包校验。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">权限策略 <span class="micro">Photos Picker first</span></h2>
@@ -1975,6 +2053,12 @@ function mediaLibraryView() {
         ${vaultLayer("缩略图", "设备端生成小预览，用于媒体墙/人物地点镜头；可单独清除。", stats.previews)}
         ${vaultLayer("索引元信息", "只保存用户写下的备注、source、切片 ID 和最小类型信息。", stats.total)}
       </div>
+      <div class="media-audit-strip">
+        ${auditChip("封存", state.mediaVaultSealedAt || "未封存")}
+        ${auditChip("清缩略图", state.mediaThumbnailPurgeAt || "未清除")}
+        ${auditChip("删除请求", state.mediaDeleteRequestAt || "未请求")}
+      </div>
+      <div class="action-row"><button class="secondary" data-seal-media-vault>模拟 E2EE 封存</button><button class="ghost danger" data-purge-media-thumbnails>清除缩略图缓存</button></div>
       <p class="source-line">Demo 只保存小图预览或文件元信息；生产版需要真正的加密文件库、密钥恢复和多设备同步策略。</p>
     </section>
     <section class="guide-card">
@@ -1984,8 +2068,17 @@ function mediaLibraryView() {
         <div class="chapter-line"><strong>删除必须删干净</strong><span>删除原始影像时，同步删除缩略图、云副本、任务缓存和分享草稿。</span></div>
         <div class="chapter-line"><strong>退订不能扣留记忆</strong><span>Plus 过期后仍应允许查看、导出和删除已有媒体。</span></div>
       </div>
-      <div class="action-row"><button class="secondary" data-copy-media-library>复制导出清单</button><button class="ghost danger" data-delete-media-library>模拟删除请求</button></div>
-      <p class="source-line">上次媒体导出：${escapeHtml(state.lastMediaExportAt || "尚未导出")}；上次删除请求：${escapeHtml(state.mediaDeleteRequestAt || "尚未请求")}。</p>
+      <div class="action-row"><button class="secondary" data-copy-media-library>复制导出清单</button><button class="secondary" data-export-media-package>生成媒体导出包</button><button class="ghost danger" data-delete-media-library>模拟删除请求</button></div>
+      <p class="source-line">上次媒体导出：${escapeHtml(state.lastMediaExportAt || "尚未导出")}；导出包：${escapeHtml(state.mediaPackageExportAt || "尚未生成")}；上次删除请求：${escapeHtml(state.mediaDeleteRequestAt || "尚未请求")}。</p>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">家庭 / 儿童影像 <span class="micro">extra care</span></h2>
+      <div class="family-media-card">
+        <strong>不靠恐惧提醒用户，但对家庭影像更谨慎。</strong>
+        <span>含孩子、家人、医院、住址等线索的媒体，公开分享默认隐藏原图、人名、地点和原文；AI 任务默认只读用户备注，不读原始影像。</span>
+        <small>候选数：${stats.sensitive}；上次复核：${escapeHtml(state.mediaFamilyReviewAt || "尚未复核")}。</small>
+      </div>
+      <div class="action-row"><button class="secondary" data-family-media-review>模拟敏感影像复核</button><button class="secondary" data-view="review">查看生产隐私中心</button></div>
     </section>
     <section class="guide-card">
       <h2 class="section-title">Web Share / 图片导出 <span class="micro">去隐私分享包</span></h2>
@@ -2090,6 +2183,14 @@ function libraryStep(num, title, copy, tone) {
 
 function vaultLayer(title, copy, count) {
   return `<div class="vault-layer"><strong>${title}<span>${count}</span></strong><em>${copy}</em></div>`;
+}
+
+function vaultStatus(title, status, stamp, tone = "ready") {
+  return `<div class="vault-status ${tone}"><strong>${title}</strong><span>${status}</span><em>${escapeHtml(stamp)}</em></div>`;
+}
+
+function auditChip(label, value) {
+  return `<div class="audit-chip"><strong>${label}</strong><span>${escapeHtml(value)}</span></div>`;
 }
 
 function shareBoundary(title, copy) {
@@ -2354,7 +2455,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v23</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v24</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -2362,7 +2463,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v23 仍不调用真实模型和真实账户；它把“照片/视频优先”、事后补影像锚点、媒体库边界、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v24 仍不调用真实模型和真实账户；它把“照片/视频优先”、事后补影像锚点、媒体保险箱路径、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -2379,10 +2480,10 @@ function guideView() {
         ${readiness("切片补影像", "v22", "已有切片可事后补照片/视频或影像链接，周末回顾时也能把真实影像贴回记忆。")}
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
-        ${readiness("QA Console", "v23", "核心试用路径、PoC 边界和生产待做被整理成可复制验收报告。")}
+        ${readiness("QA Console", "v24", "核心试用路径、PoC 边界、媒体保险箱和生产待做被整理成可复制验收报告。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
-        ${readiness("媒体库生产", "v18", "相册权限、E2EE 影像库、缩略图、导出删除与 Web Share 边界。")}
+        ${readiness("媒体保险箱", "v24", "相册权限、E2EE 分层、缩略图清除、导出包、删除审计和家庭/儿童影像复核。")}
       </div>
       <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button><button class="secondary" data-view="qa">打开 QA Console</button></div>
     </section>
@@ -2409,7 +2510,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v23</div>
+      <div class="eyebrow">Review Packet · v24</div>
       <h1 class="hero-title">记忆产品的信任，<br/>必须能被看见。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里把权限、数据生命周期、AI、影像、同步和删除权做成可读的生产隐私中心雏形。</p>
       <div class="action-row"><button class="primary" data-copy-compliance>复制生产隐私报告</button><button class="secondary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -2483,7 +2584,7 @@ function reviewView() {
         ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
         ${readiness("模型网关", "v21 假面", "Provider 状态、限流预算、任务队列、失败降级和撤销日志已产品化；真实 API/密钥仍待接入。")}
         ${readiness("合规文本", "v22 雏形", "生产隐私中心、生命周期、权限升级和处理边界已产品化；正式法律文本仍待复核。")}
-        ${readiness("审核材料", "v22/v23 雏形", "本页可复制生产隐私报告，QA Console 可复制 Demo 验收报告；不代表已通过法务或上架审核。")}
+        ${readiness("审核材料", "v22/v24 雏形", "本页可复制生产隐私报告，QA Console 可复制 Demo 验收报告；不代表已通过法务或上架审核。")}
       </div>
     </section>
   `;
@@ -2495,7 +2596,7 @@ function qaView() {
   return `
     <div class="topline"><div><div class="brand">QA Console</div><div class="micro">把当前公网 Demo 的可靠性和边界摊开给试用者看。</div></div></div>
     <section class="guide-card qa-hero">
-      <div class="eyebrow">Demo QA Console · v23</div>
+      <div class="eyebrow">Demo QA Console · v24</div>
       <h1 class="hero-title">这不是口头说“能用”，<br/>而是把证据放出来。</h1>
       <p class="hero-subtitle">TSD 的 demo 越接近商品级，越需要让用户、测试者和其他 agent 清楚知道：哪些路径已经可以点击验证，哪些仍只是 PoC，哪些上架前必须补完。</p>
       <div class="qa-scoreboard">
@@ -2528,10 +2629,11 @@ function qaView() {
       <div class="qa-route">
         ${qaRouteStep("01", "从照片/视频开始", "在 onboarding 或此刻页选一张图，确认进入今日切片。", "slice")}
         ${qaRouteStep("02", "给旧切片补影像", "到周章节候选卡，给无影像的切片补一张照片。", "chapter")}
-        ${qaRouteStep("03", "看媒体墙", "确认媒体数增加，照片/视频进入回忆时间线。", "media")}
-        ${qaRouteStep("04", "编译章节", "认领 3 个瞬间，确认章节正文保留 source。", "chapter")}
-        ${qaRouteStep("05", "导出视觉成品", "到分享工作室生成 PNG，公开版隐藏原文和原始影像。", "studio")}
-        ${qaRouteStep("06", "复制隐私/QA 报告", "在生产隐私中心与 QA Console 复制报告，确认边界可讲清。", "review")}
+        ${qaRouteStep("03", "看媒体保险箱", "进入媒体库生产，模拟权限说明、封存、导出包和删除审计。", "library")}
+        ${qaRouteStep("04", "看媒体墙", "确认媒体数增加，照片/视频进入回忆时间线。", "media")}
+        ${qaRouteStep("05", "编译章节", "认领 3 个瞬间，确认章节正文保留 source。", "chapter")}
+        ${qaRouteStep("06", "导出视觉成品", "到分享工作室生成 PNG，公开版隐藏原文和原始影像。", "studio")}
+        ${qaRouteStep("07", "复制隐私/QA 报告", "在生产隐私中心与 QA Console 复制报告，确认边界可讲清。", "review")}
       </div>
     </section>
     <section class="guide-card">
@@ -2539,7 +2641,7 @@ function qaView() {
       <div class="processing-ledger">
         ${processingBoundary("真实模型", "待接入", "DeepSeek V4 Flash 目前仍是 PoC 假面；生产需密钥管理、限流、供应商审查和任务回放。", "warn")}
         ${processingBoundary("真实同步", "待接入", "账户、E2EE、密钥恢复、设备管理、地区数据边界仍未实现。", "warn")}
-        ${processingBoundary("相册权限", "待接入", "当前只用文件选择；生产需有限相册选择、缩略图、原图导出/删除。", "warn")}
+        ${processingBoundary("相册权限", "PoC 边界", "v24 已有媒体保险箱路径；真实系统 Photos Picker、E2EE 文件库和删除回执仍待接入。", "warn")}
         ${processingBoundary("安装资产", "待创建", "受当前不新建文件约束，manifest/icon/iOS 原生壳仍未补。", "poc")}
       </div>
     </section>
@@ -2872,7 +2974,7 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v23 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v24 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -3032,7 +3134,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v23 已把媒体优先入口、事后补影像锚点、媒体库生产假面、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 串起来：用户可以从照片/视频开始，也可以周末把照片/视频补到已有切片，再进入媒体墙、章节和人生旷野；试用者还能看到哪些路径已通过、哪些仍是 PoC。</p>
+      <p>当前 v24 已把媒体优先入口、事后补影像锚点、媒体保险箱路径、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 串起来：用户可以从照片/视频开始，也可以周末把照片/视频补到已有切片，再进入媒体墙、章节和人生旷野；试用者还能看到权限、导出、删除、家庭影像和 PoC 边界。</p>
     </section>
   </aside>`;
 }

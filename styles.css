@@ -289,6 +289,30 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .share-boundary { border:1px solid var(--line); border-radius: 18px; padding: 12px; background: rgba(255,255,255,.54); }
 .share-boundary strong { display:block; font-size: 13px; margin-bottom: 5px; }
 .share-boundary span { display:block; color: var(--muted); font-size: 11px; line-height:1.4; }
+.media-vault-dashboard { display:grid; grid-template-columns: repeat(2, 1fr); gap: 9px; }
+.vault-status {
+  min-height: 86px; border:1px solid var(--line); border-radius: 18px; padding: 12px;
+  background: rgba(255,255,255,.56); display:flex; flex-direction:column; justify-content:space-between;
+}
+.vault-status strong { font-size: 12px; color: var(--muted); }
+.vault-status span { font-size: 15px; font-weight: 900; color: var(--ink); line-height:1.25; }
+.vault-status em { color: var(--muted); font-size: 10px; line-height:1.35; font-style:normal; overflow-wrap:anywhere; }
+.vault-status.ready { background: linear-gradient(145deg, rgba(223,234,215,.74), rgba(255,253,247,.68)); }
+.vault-status.warn { background: linear-gradient(145deg, rgba(255,238,214,.72), rgba(255,253,247,.68)); }
+.vault-status.todo span { color: var(--rose); }
+.media-audit-strip { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.audit-chip {
+  border:1px dashed rgba(85,116,95,.22); border-radius: 16px; padding: 10px; background: rgba(255,253,247,.55);
+}
+.audit-chip strong { display:block; font-size: 10px; color: var(--moss); margin-bottom: 4px; }
+.audit-chip span { display:block; font-size: 10px; color: var(--muted); line-height:1.35; overflow-wrap:anywhere; }
+.family-media-card {
+  border:1px solid rgba(184,121,108,.22); border-radius: 22px; padding: 14px;
+  background: linear-gradient(145deg, rgba(255,253,247,.72), rgba(244,225,218,.42));
+}
+.family-media-card strong { display:block; font-size: 14px; margin-bottom: 7px; }
+.family-media-card span { display:block; color: var(--muted); font-size: 12px; line-height:1.5; }
+.family-media-card small { display:block; color: var(--rose); font-size: 10px; line-height:1.35; margin-top: 10px; font-weight:900; }
 
 .meadow {
   height: 150px; border-radius: 22px; border: 1px solid rgba(85,116,95,.16);
@@ -809,6 +833,8 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
   .readiness-item { grid-template-columns: 1fr; }
   .permission-grid { grid-template-columns: 1fr; }
   .nutrition-grid { grid-template-columns: 1fr; }
+  .media-vault-dashboard { grid-template-columns: 1fr; }
+  .media-audit-strip { grid-template-columns: 1fr; }
   .qa-state-grid { grid-template-columns: repeat(2, 1fr); }
   .qa-check { grid-template-columns: 54px minmax(0,1fr); grid-template-areas:"status title" "status route" "copy copy"; }
   .qa-check em { justify-self:start; }
