@@ -182,6 +182,15 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .media-preview em, .media-memory em { display:block; color: var(--rose); font-size: 10px; font-style:normal; font-weight:900; margin-top: 4px; }
 .media-memory { grid-template-columns: 58px minmax(0,1fr); margin: 12px 0 0; background: linear-gradient(145deg, rgba(255,253,247,.72), rgba(223,234,215,.38)); }
 .media-memory img, .media-memory .media-thumb { width:58px; height:58px; }
+.media-attach {
+  display:grid; grid-template-columns: minmax(0,1fr) auto; gap: 8px; align-items:center; margin-top: 10px;
+}
+.media-attach.compact { margin: 8px 10px 10px; grid-template-columns: minmax(0,1fr); }
+.media-attach-button {
+  min-height: 38px; border-radius: 14px; border:1px dashed rgba(85,116,95,.3); background: rgba(255,255,255,.54);
+  display:grid; place-items:center; color: var(--moss); font-size: 11px; font-weight: 900; position:relative; overflow:hidden;
+}
+.media-attach-button input { position:absolute; inset:0; opacity:0; cursor:pointer; }
 .media-hero { background: linear-gradient(145deg, rgba(255,253,247,.82), rgba(223,234,215,.52)); }
 .media-stats { display:grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
 .media-stat {
@@ -397,14 +406,18 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .chapter-line span { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .source-chip { display:inline-flex; margin-top: 8px; font-size:10px; color: var(--moss); background: rgba(85,116,95,.1); border-radius: 999px; padding: 5px 8px; }
 .claim-list { display:grid; gap: 10px; margin-top: 12px; }
+.claim-card-shell {
+  border-radius: 20px; border: 1px solid var(--line); background: rgba(255,255,255,.42); overflow:hidden;
+}
+.claim-card-shell.active { border-color: rgba(85,116,95,.42); background: linear-gradient(135deg, rgba(223,234,215,.6), rgba(255,253,247,.66)); }
 .claim-card {
   width: 100%; text-align:left; display:grid; grid-template-columns: 34px minmax(0, 1fr); gap: 11px; align-items:start;
-  border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,.54); padding: 12px; color: var(--ink);
+  border-radius: 0; border: 0; background: transparent; padding: 12px; color: var(--ink);
   transition-property: transform, background-color, border-color, box-shadow; transition-duration:.18s; transition-timing-function:cubic-bezier(.2,0,0,1);
 }
-.claim-card.active { border-color: rgba(85,116,95,.42); background: linear-gradient(135deg, rgba(223,234,215,.78), rgba(255,253,247,.7)); }
+.claim-card-shell.active .claim-card { background: linear-gradient(135deg, rgba(223,234,215,.44), rgba(255,253,247,.38)); }
 .claim-check { width: 28px; height: 28px; border-radius: 11px; display:grid; place-items:center; background: rgba(85,116,95,.12); color: var(--moss); font-weight: 900; }
-.claim-card.active .claim-check { background: var(--ink); color: #fff; }
+.claim-card-shell.active .claim-check { background: var(--ink); color: #fff; }
 .claim-card strong { display:block; font-size: 13px; margin-bottom: 4px; }
 .claim-card em { display:block; font-style: normal; color: var(--muted); font-size: 12px; line-height: 1.45; max-height: 52px; overflow:hidden; }
 .claim-card small { display:block; color: rgba(85,116,95,.8); font-size: 10px; margin-top: 7px; }
@@ -550,6 +563,30 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .readiness-item strong { font-size: 11px; color: var(--ink); }
 .readiness-item em { color: var(--muted); font-size: 11px; line-height:1.35; font-style:normal; }
 .review-hero { background: linear-gradient(145deg, rgba(255,253,247,.8), rgba(223,234,215,.5)); }
+.lifecycle-map { display:grid; gap: 9px; }
+.lifecycle-step {
+  display:grid; grid-template-columns: 38px minmax(0,1fr); grid-template-areas:"num title" "num copy";
+  gap: 2px 10px; border:1px solid var(--line); border-radius: 18px; padding: 11px; background: rgba(255,255,255,.56);
+}
+.lifecycle-step span { grid-area:num; width:32px; height:32px; border-radius: 12px; display:grid; place-items:center; background: rgba(85,116,95,.12); color: var(--moss); font-size: 11px; font-weight:900; }
+.lifecycle-step strong { grid-area:title; font-size: 13px; }
+.lifecycle-step em { grid-area:copy; color: var(--muted); font-size: 11px; line-height:1.35; font-style:normal; }
+.permission-ladder { display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.permission-ladder-item { border:1px solid var(--line); border-radius: 18px; padding: 12px; background: rgba(255,255,255,.56); }
+.permission-ladder-item strong { display:block; font-size: 13px; }
+.permission-ladder-item span { display:inline-flex; margin-top: 7px; border-radius:999px; padding:5px 7px; background: rgba(85,116,95,.1); color: var(--moss); font-size: 10px; font-weight:900; }
+.permission-ladder-item em { display:block; margin-top: 7px; color: var(--muted); font-size: 11px; line-height:1.35; font-style:normal; }
+.processing-ledger { display:grid; gap: 8px; }
+.processing-boundary {
+  border:1px solid var(--line); border-radius: 17px; padding: 11px; background: rgba(255,255,255,.56);
+  display:grid; grid-template-columns: 90px 74px minmax(0,1fr); gap: 8px; align-items:start;
+}
+.processing-boundary span { color: var(--moss); font-size: 11px; font-weight:900; }
+.processing-boundary strong { color: var(--ink); font-size: 11px; }
+.processing-boundary em { color: var(--muted); font-size: 11px; line-height:1.35; font-style:normal; }
+.processing-boundary.safe { background: rgba(223,234,215,.38); border-color: rgba(85,116,95,.22); }
+.processing-boundary.poc { background: rgba(112,148,163,.12); border-color: rgba(112,148,163,.24); }
+.processing-boundary.warn { background: rgba(215,168,95,.12); border-color: rgba(215,168,95,.28); }
 .permission-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .permission-card {
   min-height: 98px; border:1px solid var(--line); border-radius: 18px; padding: 12px;

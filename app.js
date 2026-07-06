@@ -90,6 +90,7 @@ const defaultState = {
   gatewayConsentAt: "",
   gatewayFallbackAt: "",
   gatewayRevokedAt: "",
+  lastComplianceReportAt: "",
   accountMode: "guest",
   syncMode: "local",
   lastSyncAt: "",
@@ -296,6 +297,74 @@ function normalizeMediaDraft() {
   };
 }
 
+function attachMediaToMoment(momentId, media, toast) {
+  const tag = media.kind === "video" ? "视频" : media.kind === "image" ? "照片" : "影像线索";
+  const moments = state.moments.map(moment => {
+    if (moment.id !== momentId) return moment;
+    return {
+      ...moment,
+      media: { ...media, attachedAt: new Date().toISOString() },
+      tags: [...new Set([...(moment.tags || []), tag])],
+      sources: [...new Set([...(moment.sources || []), "影像线索"])]
+    };
+  });
+  setState({ moments, toast });
+}
+
+function mediaFromFileBase(file) {
+  const kind = guessMediaKind(file.type || file.name);
+  return {
+    kind,
+    label: file.name,
+    size: file.size,
+    type: file.type || "unknown",
+    storage: "browser-local-demo",
+    source: "用户选择本地文件",
+    previewUrl: "",
+    note: "这张影像是后来补到切片上的记忆锚点。"
+  };
+}
+
+function attachMediaFileToMoment(file, momentId) {
+  const base = mediaFromFileBase(file);
+  const shouldPreview = base.kind === "image" && file.size <= 900 * 1024;
+  if (!shouldPreview) {
+    attachMediaToMoment(
+      momentId,
+      base,
+      base.kind === "video" ? "已把视频线索补到这张切片。" : "已把影像文件线索补到这张切片。大图只保存文件名和大小。"
+    );
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    attachMediaToMoment(momentId, { ...base, previewUrl: String(reader.result || "") }, "已把照片预览补到这张切片，它会出现在媒体记忆墙。");
+  };
+  reader.onerror = () => {
+    attachMediaToMoment(momentId, base, "照片预览读取失败，但已把文件名和大小补到切片。");
+  };
+  reader.readAsDataURL(file);
+}
+
+function attachMediaLinkToMoment(momentId) {
+  const url = window.prompt("粘贴这张切片对应的照片/视频链接：");
+  if (!url?.trim()) return;
+  const note = window.prompt("给这条影像补一句备注（可留空）：") || "";
+  const kind = guessMediaKind(url.trim());
+  attachMediaToMoment(
+    momentId,
+    {
+      kind,
+      url: url.trim(),
+      label: mediaHost(url.trim()),
+      note: note.trim() || "这条影像链接能把我带回当时。",
+      storage: "external-link",
+      source: "用户补充影像链接"
+    },
+    "已把影像链接补到这张切片。"
+  );
+}
+
 function clearMediaDraft() {
   setState({ mediaDraftUrl: "", mediaDraftNote: "", mediaDraft: null, toast: "已移除本次影像线索。" });
 }
@@ -313,6 +382,11 @@ function useDemoMedia() {
 function handleMediaFile(event) {
   const file = event.target.files?.[0];
   if (!file) return;
+  const attachMomentId = event.currentTarget?.dataset.attachMoment;
+  if (attachMomentId) {
+    attachMediaFileToMoment(file, attachMomentId);
+    return;
+  }
   const nextView = event.currentTarget?.dataset.afterView;
   const clearDraft = event.currentTarget?.dataset.clearDraft === "true";
   const onboardFromMedia = event.currentTarget?.dataset.onboardMedia === "true";
@@ -393,6 +467,7 @@ function vaultPayload() {
       gatewayConsentAt: state.gatewayConsentAt,
       gatewayFallbackAt: state.gatewayFallbackAt,
       gatewayRevokedAt: state.gatewayRevokedAt,
+      lastComplianceReportAt: state.lastComplianceReportAt,
       accountMode: state.accountMode,
       syncMode: state.syncMode,
       lastSyncAt: state.lastSyncAt,
@@ -520,7 +595,7 @@ function mediaLibraryStats() {
 function mediaLibraryManifest() {
   return {
     product: "TimeSlowDown Media Library Production Facade",
-    version: "v21-demo",
+    version: "v22-demo",
     generatedAt: new Date().toISOString(),
     boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service.",
     media: mediaMoments().map(moment => ({
@@ -942,8 +1017,8 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v21 已支持模型网关控制台、分享工作室 PNG 导出和媒体入口/媒体库生产边界。",
-    "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
+    "4. v22 已支持生产隐私中心、模型网关控制台、分享工作室 PNG 导出和媒体入口/媒体库生产边界。",
+    "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由和地区数据边界完成后，才允许处理真实用户记忆。",
     "6. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
   try {
@@ -962,7 +1037,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v21 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v22 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -972,6 +1047,27 @@ async function copyReviewPacket() {
     setState({ toast: "审核包摘要已复制，可发给试用者、agent 或未来审核角色。" });
   } catch {
     setState({ toast: "浏览器不允许自动复制；请直接查看审核中心内容。" });
+  }
+}
+
+async function copyComplianceReport() {
+  const text = [
+    "TimeSlowDown 生产隐私报告（Demo v22）：",
+    "1. 当前 Demo：静态站点 + localStorage；不登录、不云同步、不调用真实模型、不请求持久相册/定位/通讯录/麦克风/通知。",
+    "2. 数据生命周期：用户主动输入/选择 → 设备本地保存 → 可选 AI/同步任务单 → 导出/删除 → 分享包去隐私。",
+    "3. 权限升级梯子：先单次选择；只有批量整理、同步、提醒等明确动作出现时才解释并请求更多权限。",
+    "4. 影像边界：照片/视频是记忆锚点；不扫全库、不做人脸识别、不读 EXIF/GPS 推断地点。",
+    "5. AI 边界：DeepSeek V4 Flash 仍是 PoC；真实生产需供应商审查、最小字段、预算、失败降级、撤销和缓存删除。",
+    "6. 用户权利：导出、删除、撤销 AI 草稿、暂停同步、退订取回已有记忆，必须是一等能力。",
+    "7. 未成年/家庭影像：默认更谨慎；公开分享不带原图、人名、地点、原文和原始影像。",
+    "8. 仍待生产完成：正式隐私政策、用户协议、DPA/供应商条款、地区数据边界、App Store 隐私标签和法务复核。"
+  ].join("\n");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ lastComplianceReportAt: new Date().toLocaleString("zh-CN"), toast: "生产隐私报告已复制，可发给试用者、审核者或未来法务。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请直接查看生产隐私中心。" });
   }
 }
 
@@ -1262,6 +1358,7 @@ function bindEvents() {
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
   $("[data-copy-review]")?.addEventListener("click", copyReviewPacket);
+  $("[data-copy-compliance]")?.addEventListener("click", copyComplianceReport);
   $$("[data-copy-media-library]").forEach(btn => btn.addEventListener("click", copyMediaLibraryReport));
   $$("[data-delete-media-library]").forEach(btn => btn.addEventListener("click", simulateMediaDelete));
   $$("[data-share-media-library]").forEach(btn => btn.addEventListener("click", shareMediaLibraryDemo));
@@ -1288,6 +1385,7 @@ function bindEvents() {
   $("[data-quiet]")?.addEventListener("click", () => setState({ quietMode: !state.quietMode }));
   $$("[data-scale]").forEach(btn => btn.addEventListener("click", () => setState({ meadowScale: btn.dataset.scale })));
   $$("[data-media-filter]").forEach(btn => btn.addEventListener("click", () => setState({ mediaFilter: btn.dataset.mediaFilter })));
+  $$("[data-attach-media-link]").forEach(btn => btn.addEventListener("click", () => attachMediaLinkToMoment(btn.dataset.attachMediaLink)));
   $$("[data-claim]").forEach(btn => btn.addEventListener("click", () => toggleClaim(btn.dataset.claim)));
   $$("[data-share-mode]").forEach(btn => btn.addEventListener("click", () => setState({ shareMode: btn.dataset.shareMode })));
   $("[data-age]")?.addEventListener("input", (e) => setState({ age: Number(e.target.value || 36) }));
@@ -1526,6 +1624,7 @@ function latestSliceCard() {
     <h2 class="slice-title">${escapeHtml(m.title)}</h2>
     <p class="hero-subtitle">${escapeHtml(m.text)}</p>
     ${mediaBlock(m.media)}
+    ${mediaAttachActions(m)}
     <div class="slice-meta">${m.tags.map(t => `<span class="meta">${escapeHtml(t)}</span>`).join("")}</div>
     ${gateBadges(m.gates)}
     <div class="source-line">来源：${m.sources.join(" · ")}。无来源的漂亮句子不会进入最终故事。</div>
@@ -1541,6 +1640,17 @@ function mediaBlock(media) {
       <span>${escapeHtml(media.note || "这条影像已经和切片绑定。")}</span>
       <em>${media.storage === "external-link" ? "外部链接 · 用户提供" : `本地 Demo 元信息 · ${formatBytes(media.size)}`}</em>
     </div>
+  </div>`;
+}
+
+function mediaAttachActions(moment, compact = false) {
+  const hasMedia = Boolean(moment.media);
+  return `<div class="media-attach ${compact ? "compact" : ""}">
+    <label class="media-attach-button">
+      <span>${hasMedia ? "更换照片/视频" : "补照片/视频"}</span>
+      <input data-media-file data-attach-moment="${escapeHtml(moment.id)}" type="file" accept="image/*,video/*" />
+    </label>
+    <button class="ghost small" data-attach-media-link="${escapeHtml(moment.id)}">粘贴影像链接</button>
   </div>`;
 }
 
@@ -1883,8 +1993,8 @@ function mediaFilterButton(filter, label) {
 function emptyMediaWall() {
   return `<div class="empty-media-wall">
     <strong>这一类暂时没有影像线索</strong>
-    <span>先去 Quick Mark 里添加一张照片或一段视频。TSD 会把它和那天的切片绑在一起。</span>
-    <button class="secondary" data-view="slice">添加影像线索</button>
+    <span>可以新建一张影像切片，也可以把照片/视频补到已经存在的切片上。TSD 关心的是影像和哪一个瞬间绑定。</span>
+    <div class="action-row"><button class="secondary" data-view="slice">新建影像切片</button><button class="secondary" data-view="chapter">给旧切片补影像</button></div>
   </div>`;
 }
 
@@ -2132,7 +2242,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v21</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v22</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -2140,7 +2250,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v21 仍不调用真实模型和真实账户；它把“照片/视频优先”的入口、媒体库边界、PNG 分享成品和模型网关控制台放进同一条产品路径，同时用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v22 仍不调用真实模型和真实账户；它把“照片/视频优先”、事后补影像锚点、媒体库边界、PNG 分享成品、生产隐私中心和模型网关控制台放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -2154,6 +2264,7 @@ function guideView() {
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
         ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
         ${readiness("媒体优先入口", "v19", "首次进入即可从照片/视频开始，文字可后补；影像被视为切片锚点而非附件。")}
+        ${readiness("切片补影像", "v22", "已有切片可事后补照片/视频或影像链接，周末回顾时也能把真实影像贴回记忆。")}
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
@@ -2185,11 +2296,31 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v21</div>
-      <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
-      <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
-      <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
+      <div class="eyebrow">Review Packet · v22</div>
+      <h1 class="hero-title">记忆产品的信任，<br/>必须能被看见。</h1>
+      <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里把权限、数据生命周期、AI、影像、同步和删除权做成可读的生产隐私中心雏形。</p>
+      <div class="action-row"><button class="primary" data-copy-compliance>复制生产隐私报告</button><button class="secondary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
+      <p class="source-line">上次生产隐私报告：${escapeHtml(state.lastComplianceReportAt || "尚未复制")}。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">数据生命周期 <span class="micro">从输入到删除</span></h2>
+      <div class="lifecycle-map">
+        ${lifecycleStep("01", "用户主动留下", "文字、照片/视频、影像备注、标签和认领动作都来自用户主动输入或选择。")}
+        ${lifecycleStep("02", "本地先保存", "当前 Demo 写入浏览器 localStorage；生产版默认本地优先，不因未登录阻断记录。")}
+        ${lifecycleStep("03", "可选离机任务", "AI、同步、图片分享必须通过任务单或明确动作触发，不读取整个人生档案。")}
+        ${lifecycleStep("04", "可带走可删除", "导出 JSON/媒体包、清空本地、撤销 AI 草稿、删除缩略图和任务缓存必须可见。")}
+        ${lifecycleStep("05", "分享先去隐私", "公开卡片默认隐藏原图、人名、地点、原文和原始影像，只分享时间风景。")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">权限升级梯子 <span class="micro">Just-in-time permission</span></h2>
+      <div class="permission-ladder">
+        ${permissionLadder("相册", "单次/有限选择", "只有用户主动绑定照片/视频时才触发；批量整理前必须解释原因。")}
+        ${permissionLadder("通知", "默认不请求", "只有用户选择温和时间唤醒时才请求；不得用焦虑或连续打卡逼迫。")}
+        ${permissionLadder("网络/AI", "任务单授权", "模型网关只处理本次任务最小字段；失败退回本地规则层。")}
+        ${permissionLadder("定位/通讯录", "首发不请求", "地点和人物来自用户手写，不读 GPS、轨迹、通讯录或相册人脸。")}
+      </div>
     </section>
     <section class="guide-card">
       <h2 class="section-title">权限说明 <span class="micro">Demo 当前请求</span></h2>
@@ -2213,6 +2344,15 @@ function reviewView() {
       <p class="source-line">生产版必须用正式法务文本和平台表单重做；这里的价值是提前把数据类别和用户权利放进产品界面。</p>
     </section>
     <section class="guide-card">
+      <h2 class="section-title">处理边界台账 <span class="micro">Media / AI / Sync</span></h2>
+      <div class="processing-ledger">
+        ${processingBoundary("原始影像", "不自动上传", "仅用户主动绑定；生产版需 E2EE、导出包和删除原图/缩略图。", "safe")}
+        ${processingBoundary("模型任务", "最小字段", "只发送任务单允许字段；缓存、草稿和撤销日志必须可见。", "poc")}
+        ${processingBoundary("同步数据", "可暂停", "同步是增强，不是扣押；退订后已有记忆仍可查看、编辑、导出。", "safe")}
+        ${processingBoundary("家庭/未成年影像", "默认谨慎", "公开分享不带原图、人名、地点和原文；未来需更严格提示。", "warn")}
+      </div>
+    </section>
+    <section class="guide-card">
       <h2 class="section-title">试用者 FAQ</h2>
       <div class="faq-list">
         ${faqItem("这是真 App 吗？", "不是。当前是公网 Web Demo，用来验证产品体验、信息架构和信任边界。")}
@@ -2229,11 +2369,23 @@ function reviewView() {
         ${readiness("账户同步", "待做", "真实登录、E2EE、密钥恢复、设备管理。")}
         ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
         ${readiness("模型网关", "v21 假面", "Provider 状态、限流预算、任务队列、失败降级和撤销日志已产品化；真实 API/密钥仍待接入。")}
-        ${readiness("合规文本", "待做", "正式隐私政策、用户协议、数据处理活动台账。")}
-        ${readiness("审核材料", "雏形", "本页可作为未来审核/法务任务清单，不代表已通过。")}
+        ${readiness("合规文本", "v22 雏形", "生产隐私中心、生命周期、权限升级和处理边界已产品化；正式法律文本仍待复核。")}
+        ${readiness("审核材料", "v22 雏形", "本页可复制生产隐私报告，可作为未来审核/法务任务清单，不代表已通过。")}
       </div>
     </section>
   `;
+}
+
+function lifecycleStep(num, title, copy) {
+  return `<div class="lifecycle-step"><span>${num}</span><strong>${title}</strong><em>${copy}</em></div>`;
+}
+
+function permissionLadder(title, status, copy) {
+  return `<div class="permission-ladder-item"><strong>${title}</strong><span>${status}</span><em>${copy}</em></div>`;
+}
+
+function processingBoundary(title, status, copy, tone) {
+  return `<div class="processing-boundary ${tone}"><span>${title}</span><strong>${status}</strong><em>${copy}</em></div>`;
 }
 
 function permissionCard(title, status, copy) {
@@ -2317,10 +2469,14 @@ function tellableMoment(moment, recalled) {
 
 function claimCard(moment) {
   const active = state.weeklyClaimed.includes(moment.id);
-  return `<button class="claim-card ${active ? "active" : ""}" data-claim="${escapeHtml(moment.id)}">
-    <span class="claim-check">${active ? "✓" : "+"}</span>
-    <span><strong>${escapeHtml(moment.title)}</strong><em>${escapeHtml(moment.text)}</em><small>${escapeHtml(moment.tags.join(" · "))} · ${moment.media ? `${mediaKindLabel(moment.media.kind)}锚点 · ` : ""}source: ${escapeHtml(moment.id)}</small></span>
-  </button>`;
+  return `<article class="claim-card-shell ${active ? "active" : ""}">
+    <button class="claim-card" data-claim="${escapeHtml(moment.id)}">
+      <span class="claim-check">${active ? "✓" : "+"}</span>
+      <span><strong>${escapeHtml(moment.title)}</strong><em>${escapeHtml(moment.text)}</em><small>${escapeHtml(moment.tags.join(" · "))} · ${moment.media ? `${mediaKindLabel(moment.media.kind)}锚点 · ` : "尚未绑定影像 · "}source: ${escapeHtml(moment.id)}</small></span>
+    </button>
+    ${mediaBlock(moment.media)}
+    ${mediaAttachActions(moment, true)}
+  </article>`;
 }
 
 function aiTaskSheet() {
@@ -2681,7 +2837,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v21 已把媒体优先入口、媒体库生产假面、PNG 分享成品和模型网关控制台串起来：用户可以从照片/视频开始，生成切片、进入媒体墙，把周章节/季度回忆/人生旷野导出成图，也能看到 AI 任务如何授权、预算、降级和撤销。下一步继续补安装资产或更完整的生产隐私文本。</p>
+      <p>当前 v22 已把媒体优先入口、事后补影像锚点、媒体库生产假面、PNG 分享成品、生产隐私中心和模型网关控制台串起来：用户可以从照片/视频开始，也可以周末把照片/视频补到已有切片，再进入媒体墙、章节和人生旷野。下一步继续补安装资产或更完整的生产隐私文本。</p>
     </section>
   </aside>`;
 }
