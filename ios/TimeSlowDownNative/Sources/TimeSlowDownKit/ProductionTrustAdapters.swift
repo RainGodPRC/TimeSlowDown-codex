@@ -549,11 +549,123 @@ public struct DeletionAPIRequest: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum DeletionAPIResponseStatus: String, Codable, Equatable, Sendable {
+    case accepted
+    case alreadyQueued
+    case requiresReauthentication
+}
+
+public struct DeletionAPIResponseContract: Codable, Equatable, Sendable {
+    public var acceptedStatusCode: Int
+    public var alreadyQueuedStatusCode: Int
+    public var reauthenticationStatusCode: Int
+    public var responseContainsRawMemoryPayload: Bool
+    public var returnsDeletionReceiptID: Bool
+    public var returnsAuditEventID: Bool
+    public var userCanExportBeforeDeletion: Bool
+
+    public init(
+        acceptedStatusCode: Int = 202,
+        alreadyQueuedStatusCode: Int = 200,
+        reauthenticationStatusCode: Int = 401,
+        responseContainsRawMemoryPayload: Bool = false,
+        returnsDeletionReceiptID: Bool = true,
+        returnsAuditEventID: Bool = true,
+        userCanExportBeforeDeletion: Bool = true
+    ) {
+        self.acceptedStatusCode = acceptedStatusCode
+        self.alreadyQueuedStatusCode = alreadyQueuedStatusCode
+        self.reauthenticationStatusCode = reauthenticationStatusCode
+        self.responseContainsRawMemoryPayload = responseContainsRawMemoryPayload
+        self.returnsDeletionReceiptID = returnsDeletionReceiptID
+        self.returnsAuditEventID = returnsAuditEventID
+        self.userCanExportBeforeDeletion = userCanExportBeforeDeletion
+    }
+}
+
+public struct DeletionAPIClientEnvelope: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var request: DeletionAPIRequest
+    public var headers: [String: String]
+    public var bodyDigest: String
+    public var auditEventName: String
+    public var exportFileName: String?
+    public var requiresExportOpportunityBeforeSubmission: Bool
+    public var userCanRetainExportAfterSubscriptionEnds: Bool
+    public var transportContainsRawMemoryPayload: Bool
+    public var responseContract: DeletionAPIResponseContract
+
+    public init(
+        id: String,
+        request: DeletionAPIRequest,
+        headers: [String: String],
+        bodyDigest: String,
+        auditEventName: String = "account.deletion.requested",
+        exportFileName: String?,
+        requiresExportOpportunityBeforeSubmission: Bool = true,
+        userCanRetainExportAfterSubscriptionEnds: Bool = true,
+        transportContainsRawMemoryPayload: Bool = false,
+        responseContract: DeletionAPIResponseContract = DeletionAPIResponseContract()
+    ) {
+        self.id = id
+        self.request = request
+        self.headers = headers
+        self.bodyDigest = bodyDigest
+        self.auditEventName = auditEventName
+        self.exportFileName = exportFileName
+        self.requiresExportOpportunityBeforeSubmission = requiresExportOpportunityBeforeSubmission
+        self.userCanRetainExportAfterSubscriptionEnds = userCanRetainExportAfterSubscriptionEnds
+        self.transportContainsRawMemoryPayload = transportContainsRawMemoryPayload
+        self.responseContract = responseContract
+    }
+
+    public var isPrivacyReviewSafe: Bool {
+        request.requiresAuthenticatedUser &&
+        request.canBeCreatedAfterSubscriptionEnds &&
+        !request.containsRawMemoryPayload &&
+        !transportContainsRawMemoryPayload &&
+        requiresExportOpportunityBeforeSubmission &&
+        userCanRetainExportAfterSubscriptionEnds &&
+        responseContract.userCanExportBeforeDeletion &&
+        !responseContract.responseContainsRawMemoryPayload &&
+        responseContract.returnsDeletionReceiptID &&
+        responseContract.returnsAuditEventID
+    }
+}
+
+public enum DeletionAPIClientPlan {
+    public static func envelope(
+        for request: DeletionAPIRequest,
+        exportPackage: ExportZIPPackage?
+    ) -> DeletionAPIClientEnvelope {
+        let bodyDigest = TrustDigest.checksum([
+            request.id,
+            request.receipt.id,
+            request.receipt.checksum,
+            exportPackage?.fileName ?? "no-export-package"
+        ])
+        return DeletionAPIClientEnvelope(
+            id: "delete-envelope-\(bodyDigest.prefix(12))",
+            request: request,
+            headers: [
+                "Content-Type": "application/json",
+                "Idempotency-Key": request.idempotencyKey,
+                "X-TSD-Deletion-Receipt": request.receipt.id
+            ],
+            bodyDigest: bodyDigest,
+            exportFileName: exportPackage?.fileName,
+            requiresExportOpportunityBeforeSubmission: true,
+            userCanRetainExportAfterSubscriptionEnds: exportPackage?.canBeGeneratedAfterSubscriptionEnds ?? true,
+            transportContainsRawMemoryPayload: false
+        )
+    }
+}
+
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, and keeps local-rules fallback."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
-        .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, and available after subscription ends.")
+        .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends, and v45 adds a privacy-review-safe client audit envelope.")
     ]
 }

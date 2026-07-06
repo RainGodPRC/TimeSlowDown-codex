@@ -42,6 +42,7 @@ Current demo focus:
 - On-device export ZIP builder: memory exports can be assembled into a standard ZIP container with manifest, slices, chapters, media index, and deletion-rights documents while keeping raw media and AI transcripts out by default
 - Native export UI state: Account Rights can trigger a local memory ZIP export and show a rights-safe summary before the future Files/share-sheet integration exists
 - System file exporter bridge: the native shell wraps the ZIP package as a SwiftUI `FileDocument` for the future Files/share-sheet export flow without claiming signed-device validation yet
+- Deletion API audit envelope: account deletion requests now have a Swift-verifiable client envelope with idempotency headers, export-before-delete evidence, response contract, and raw-memory-free privacy review boundaries
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
