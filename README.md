@@ -45,4 +45,6 @@ Native core verification:
 cd ios/TimeSlowDownNative
 swift build
 swift run TimeSlowDownNativeChecks
+swift build --product TimeSlowDownAppPreview
+plutil -lint AppStore/Info.plist AppStore/PrivacyInfo.xcprivacy AppStore/TimeSlowDown.entitlements
 ```

@@ -71,4 +71,7 @@ check(shell.snapshot.sliceCount == 4, "Memory Camera capture should increase sli
 check(shell.snapshot.mediaAnchorCount == 2, "Memory Camera capture should increase media anchor count")
 check(shell.weeklyPreviewTitle() == "本周没有消失", "Native shell should expose weekly chapter preview")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, and SwiftUI shell state are aligned.")
+let requiredRoutes = ["此刻", "切片", "旷野", "上架", "我的"]
+check(NativeShellRoute.allCases.map(\.title) == requiredRoutes, "Native shell route titles should match the App Store shell")
+
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, and app target contract are aligned.")

@@ -16,6 +16,10 @@ let package = Package(
         .executable(
             name: "TimeSlowDownNativeChecks",
             targets: ["TimeSlowDownNativeChecks"]
+        ),
+        .executable(
+            name: "TimeSlowDownAppPreview",
+            targets: ["TimeSlowDownAppPreview"]
         )
     ],
     targets: [
@@ -24,6 +28,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "TimeSlowDownNativeChecks",
+            dependencies: ["TimeSlowDownKit"]
+        ),
+        .executableTarget(
+            name: "TimeSlowDownAppPreview",
             dependencies: ["TimeSlowDownKit"]
         )
     ]
