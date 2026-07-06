@@ -131,7 +131,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>47</string>"), "Info.plist should carry v47 build number")
+check(infoPlistText.contains("<string>48</string>"), "Info.plist should carry v48 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -317,6 +317,76 @@ check(zipPackage.entries.allSatisfy { $0.uncompressedSize > 0 }, "Export ZIP ent
 check(zipPackage.entries.allSatisfy { !$0.containsRawMedia && !$0.containsAITranscript }, "Export ZIP should exclude raw media and AI transcripts by default")
 check(zipPackage.isMemorySafeDefault, "Export ZIP should preserve local generation and non-hostage export rights")
 
+let thumbnailsOnlyMediaExport = RawMediaExportPolicyPlan.thumbnailsOnlyEnvelope(
+    for: archivePlan,
+    slices: [slice, updated]
+)
+check(thumbnailsOnlyMediaExport.baseArchivePlan == archivePlan, "Raw media export policy should preserve the reviewed base archive plan")
+check(thumbnailsOnlyMediaExport.selection.mode == .thumbnailsOnly, "Raw media export should default to thumbnails-only mode")
+check(!thumbnailsOnlyMediaExport.selection.userExplicitlyOptedIn, "Thumbnails-only export should not pretend the user opted into raw originals")
+check(thumbnailsOnlyMediaExport.selection.selectedAnchorIDs.isEmpty, "Thumbnails-only export should not select raw original anchors")
+check(!thumbnailsOnlyMediaExport.defaultIncludesRawOriginals, "Raw media export should never include originals by default")
+check(!thumbnailsOnlyMediaExport.includesRawOriginals, "Thumbnails-only export should not include raw originals")
+check(!thumbnailsOnlyMediaExport.includesAITranscripts, "Raw media export should exclude AI transcripts")
+check(thumbnailsOnlyMediaExport.generatedOnDevice, "Raw media export should be generated on device")
+check(!thumbnailsOnlyMediaExport.cloudUploadRequired, "Raw media export should not require cloud upload")
+check(!thumbnailsOnlyMediaExport.syncRequired, "Raw media export should not require sync")
+check(!thumbnailsOnlyMediaExport.providerUploadRequired, "Raw media export should not require provider upload")
+check(thumbnailsOnlyMediaExport.canBeGeneratedAfterSubscriptionEnds, "Raw media export should remain available after subscription ends")
+check(thumbnailsOnlyMediaExport.postSubscriptionAccessAllowed, "Raw media export should preserve post-subscription access")
+check(thumbnailsOnlyMediaExport.encryptionPolicy == "device-key-encrypted-staging", "Raw media export should stage with device-key encryption policy")
+check(thumbnailsOnlyMediaExport.stagingPolicy == "staged-files-export-with-user-confirmation", "Raw media export should require user-confirmed staged Files export")
+check(thumbnailsOnlyMediaExport.maxStageSizeMB <= 2048, "Raw media export should define a bounded stage size")
+check(thumbnailsOnlyMediaExport.filesAppExportReady, "Raw media export should be ready for Files/export UX handoff")
+check(thumbnailsOnlyMediaExport.manifestPath == "media/raw-media-manifest.json", "Raw media export should define a media manifest path")
+check(thumbnailsOnlyMediaExport.manifestItems.count == 2, "Raw media export manifest should include the two media anchors")
+check(thumbnailsOnlyMediaExport.manifestItems.allSatisfy { !$0.includesRawOriginal && $0.originalPath == nil }, "Thumbnails-only manifest should not include original file paths")
+check(thumbnailsOnlyMediaExport.childOrFamilyMediaCaution, "Raw media export should flag child/family media review when applicable")
+check(thumbnailsOnlyMediaExport.responseContract.stagedStatusCode == 202, "Raw media export response should support staged work")
+check(thumbnailsOnlyMediaExport.responseContract.completedStatusCode == 200, "Raw media export response should support completion")
+check(thumbnailsOnlyMediaExport.responseContract.storageLimitStatusCode == 413, "Raw media export response should model large media limits")
+check(thumbnailsOnlyMediaExport.responseContract.returnsMediaManifest, "Raw media export response should return a manifest")
+check(thumbnailsOnlyMediaExport.responseContract.returnsExportReceiptID, "Raw media export response should return an export receipt")
+check(thumbnailsOnlyMediaExport.responseContract.returnsStagedFileToken, "Raw media export response should return staged file token")
+check(!thumbnailsOnlyMediaExport.responseContract.responseContainsProviderCredential, "Raw media export response should not expose provider credentials")
+check(!thumbnailsOnlyMediaExport.responseContract.responseContainsAITranscript, "Raw media export response should not include AI transcripts")
+check(!thumbnailsOnlyMediaExport.responseContract.uploadsToCloudByDefault, "Raw media export response should not upload to cloud by default")
+check(thumbnailsOnlyMediaExport.responseContract.userCanCancelStaging, "Raw media export should let users cancel staging")
+check(thumbnailsOnlyMediaExport.responseContract.supportsResume, "Raw media export should support resume for large staged exports")
+check(thumbnailsOnlyMediaExport.isMemoryRightsSafe, "Thumbnails-only raw media export envelope should be memory-rights safe")
+
+let selectedOriginalsExport = RawMediaExportPolicyPlan.selectedOriginalsEnvelope(
+    for: archivePlan,
+    slices: [slice, updated],
+    selectedAnchorIDs: [photo.id.uuidString],
+    consentReceiptID: "consent-raw-media-export-demo"
+)
+check(selectedOriginalsExport.selection.mode == .selectedOriginals, "Selected originals export should use selected-originals mode")
+check(selectedOriginalsExport.selection.userExplicitlyOptedIn, "Selected originals export should require explicit user opt-in")
+check(selectedOriginalsExport.selection.consentReceiptID == "consent-raw-media-export-demo", "Selected originals export should preserve consent receipt")
+check(selectedOriginalsExport.selection.selectedAnchorIDs == [photo.id.uuidString], "Selected originals export should preserve the selected media anchor")
+check(selectedOriginalsExport.selection.allowsRawOriginals, "Selected originals export should only allow raw media after explicit consent")
+check(selectedOriginalsExport.includesRawOriginals, "Selected originals export should include at least one raw original")
+check(selectedOriginalsExport.manifestItems.filter { $0.includesRawOriginal }.count == 1, "Selected originals export should include only the user-selected original")
+check(selectedOriginalsExport.manifestItems.first { $0.anchorID == photo.id.uuidString }?.originalPath?.contains("media/originals/") == true, "Selected original should receive an original export path")
+check(selectedOriginalsExport.manifestItems.first { $0.anchorID == video.id.uuidString }?.originalPath == nil, "Unselected media anchor should remain thumbnail-only")
+check(!selectedOriginalsExport.includesAITranscripts, "Selected originals export should still exclude AI transcripts")
+check(!selectedOriginalsExport.cloudUploadRequired, "Selected originals export should not require cloud upload")
+check(!selectedOriginalsExport.providerUploadRequired, "Selected originals export should not require AI/provider upload")
+check(selectedOriginalsExport.isMemoryRightsSafe, "Selected originals raw media export envelope should be memory-rights safe after consent")
+
+let unsafeLabelPhoto = MediaAnchor(kind: .image, label: "2026/park raw.heic", note: "路径字符也要安全")
+let unsafeLabelSlice = SliceFactory.quickMark(title: "文件名安全", tags: ["照片"], media: unsafeLabelPhoto)
+let unsafeLabelExport = RawMediaExportPolicyPlan.selectedOriginalsEnvelope(
+    for: archivePlan,
+    slices: [unsafeLabelSlice],
+    selectedAnchorIDs: [unsafeLabelPhoto.id.uuidString],
+    consentReceiptID: "consent-raw-media-export-safe-filename"
+)
+let unsafeOriginalPath = unsafeLabelExport.manifestItems.first?.originalPath ?? ""
+check(!unsafeOriginalPath.contains("/park raw"), "Raw media original path should not embed unsafe user label path separators")
+check(unsafeOriginalPath.contains("2026-park-raw.heic"), "Raw media original path should sanitize user labels into safe filenames")
+
 let deletionRequest = DeletionAPIRequest.request(for: deletion, accountID: deviceKey.accountID)
 check(deletionRequest.endpointPath == "/v1/account/deletion-receipts", "Deletion API request should target receipt endpoint")
 check(deletionRequest.requiresAuthenticatedUser, "Deletion API request should require authenticated user")
@@ -379,14 +449,15 @@ check(!deletionService.responseContract.responseContainsRawMedia, "Deletion serv
 check(deletionService.responseContract.userCanDownloadReceiptAfterCompletion, "Deletion service response should preserve downloadable completion receipt")
 check(deletionService.isDeletionRightsSafe, "Deletion service envelope should be deletion-rights safe")
 
-check(ProductionImplementationChecklist.rows.count == 4, "Production Implementation Checklist should track four v39 implementation adapters")
+check(ProductionImplementationChecklist.rows.count == 5, "Production Implementation Checklist should track five implementation adapters after v48")
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "47", "TestFlight build notes should match v47")
+check(buildNotes.buildNumber == "48", "TestFlight build notes should match v48")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
+check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Account Rights"), "TestFlight build notes should mention Account Rights export UI")
 check(buildNotes.summary.localizedCaseInsensitiveContains("fileExporter"), "TestFlight build notes should mention SwiftUI fileExporter bridge")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion audit"), "TestFlight build notes should mention deletion audit envelope")
@@ -411,4 +482,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, and v47 deletion service integration boundary are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, and v48 raw media export policy envelope are aligned.")

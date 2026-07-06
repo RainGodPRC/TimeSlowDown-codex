@@ -340,6 +340,323 @@ public struct ExportArchivePlan: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum RawMediaExportMode: String, Codable, Equatable, Sendable {
+    case thumbnailsOnly
+    case selectedOriginals
+}
+
+public struct RawMediaExportSelection: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var mode: RawMediaExportMode
+    public var selectedAnchorIDs: [String]
+    public var userExplicitlyOptedIn: Bool
+    public var consentReceiptID: String?
+    public var includesAITranscripts: Bool
+    public var requestedBy: String
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+
+    public init(
+        id: String,
+        mode: RawMediaExportMode,
+        selectedAnchorIDs: [String],
+        userExplicitlyOptedIn: Bool = false,
+        consentReceiptID: String? = nil,
+        includesAITranscripts: Bool = false,
+        requestedBy: String = "account-rights-export",
+        canBeGeneratedAfterSubscriptionEnds: Bool = true
+    ) {
+        self.id = id
+        self.mode = mode
+        self.selectedAnchorIDs = selectedAnchorIDs
+        self.userExplicitlyOptedIn = userExplicitlyOptedIn
+        self.consentReceiptID = consentReceiptID
+        self.includesAITranscripts = includesAITranscripts
+        self.requestedBy = requestedBy
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+    }
+
+    public var allowsRawOriginals: Bool {
+        mode == .selectedOriginals &&
+        userExplicitlyOptedIn &&
+        consentReceiptID != nil &&
+        !selectedAnchorIDs.isEmpty &&
+        !includesAITranscripts
+    }
+}
+
+public struct RawMediaExportManifestItem: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { anchorID }
+    public var anchorID: String
+    public var sliceID: String
+    public var kind: MediaKind
+    public var label: String
+    public var thumbnailPath: String
+    public var originalPath: String?
+    public var includesRawOriginal: Bool
+    public var requiresFamilyMediaReview: Bool
+    public var checksum: String
+
+    public init(
+        anchorID: String,
+        sliceID: String,
+        kind: MediaKind,
+        label: String,
+        thumbnailPath: String,
+        originalPath: String?,
+        includesRawOriginal: Bool,
+        requiresFamilyMediaReview: Bool,
+        checksum: String
+    ) {
+        self.anchorID = anchorID
+        self.sliceID = sliceID
+        self.kind = kind
+        self.label = label
+        self.thumbnailPath = thumbnailPath
+        self.originalPath = originalPath
+        self.includesRawOriginal = includesRawOriginal
+        self.requiresFamilyMediaReview = requiresFamilyMediaReview
+        self.checksum = checksum
+    }
+}
+
+public struct RawMediaExportResponseContract: Codable, Equatable, Sendable {
+    public var stagedStatusCode: Int
+    public var completedStatusCode: Int
+    public var storageLimitStatusCode: Int
+    public var returnsMediaManifest: Bool
+    public var returnsExportReceiptID: Bool
+    public var returnsStagedFileToken: Bool
+    public var responseContainsProviderCredential: Bool
+    public var responseContainsAITranscript: Bool
+    public var uploadsToCloudByDefault: Bool
+    public var userCanCancelStaging: Bool
+    public var supportsResume: Bool
+
+    public init(
+        stagedStatusCode: Int = 202,
+        completedStatusCode: Int = 200,
+        storageLimitStatusCode: Int = 413,
+        returnsMediaManifest: Bool = true,
+        returnsExportReceiptID: Bool = true,
+        returnsStagedFileToken: Bool = true,
+        responseContainsProviderCredential: Bool = false,
+        responseContainsAITranscript: Bool = false,
+        uploadsToCloudByDefault: Bool = false,
+        userCanCancelStaging: Bool = true,
+        supportsResume: Bool = true
+    ) {
+        self.stagedStatusCode = stagedStatusCode
+        self.completedStatusCode = completedStatusCode
+        self.storageLimitStatusCode = storageLimitStatusCode
+        self.returnsMediaManifest = returnsMediaManifest
+        self.returnsExportReceiptID = returnsExportReceiptID
+        self.returnsStagedFileToken = returnsStagedFileToken
+        self.responseContainsProviderCredential = responseContainsProviderCredential
+        self.responseContainsAITranscript = responseContainsAITranscript
+        self.uploadsToCloudByDefault = uploadsToCloudByDefault
+        self.userCanCancelStaging = userCanCancelStaging
+        self.supportsResume = supportsResume
+    }
+}
+
+public struct RawMediaExportPolicyEnvelope: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var baseArchivePlan: ExportArchivePlan
+    public var selection: RawMediaExportSelection
+    public var manifestPath: String
+    public var thumbnailDirectoryPath: String
+    public var rawOriginalDirectoryPath: String
+    public var manifestItems: [RawMediaExportManifestItem]
+    public var encryptionPolicy: String
+    public var stagingPolicy: String
+    public var maxStageSizeMB: Int
+    public var defaultIncludesRawOriginals: Bool
+    public var includesRawOriginals: Bool
+    public var includesAITranscripts: Bool
+    public var generatedOnDevice: Bool
+    public var cloudUploadRequired: Bool
+    public var syncRequired: Bool
+    public var providerUploadRequired: Bool
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+    public var postSubscriptionAccessAllowed: Bool
+    public var childOrFamilyMediaCaution: Bool
+    public var filesAppExportReady: Bool
+    public var auditEventName: String
+    public var responseContract: RawMediaExportResponseContract
+
+    public init(
+        id: String,
+        baseArchivePlan: ExportArchivePlan,
+        selection: RawMediaExportSelection,
+        manifestPath: String = "media/raw-media-manifest.json",
+        thumbnailDirectoryPath: String = "media/thumbnails/",
+        rawOriginalDirectoryPath: String = "media/originals/",
+        manifestItems: [RawMediaExportManifestItem],
+        encryptionPolicy: String = "device-key-encrypted-staging",
+        stagingPolicy: String = "staged-files-export-with-user-confirmation",
+        maxStageSizeMB: Int = 2048,
+        defaultIncludesRawOriginals: Bool = false,
+        includesRawOriginals: Bool,
+        includesAITranscripts: Bool = false,
+        generatedOnDevice: Bool = true,
+        cloudUploadRequired: Bool = false,
+        syncRequired: Bool = false,
+        providerUploadRequired: Bool = false,
+        canBeGeneratedAfterSubscriptionEnds: Bool = true,
+        postSubscriptionAccessAllowed: Bool = true,
+        childOrFamilyMediaCaution: Bool,
+        filesAppExportReady: Bool = true,
+        auditEventName: String = "export.raw_media.policy_reviewed",
+        responseContract: RawMediaExportResponseContract = RawMediaExportResponseContract()
+    ) {
+        self.id = id
+        self.baseArchivePlan = baseArchivePlan
+        self.selection = selection
+        self.manifestPath = manifestPath
+        self.thumbnailDirectoryPath = thumbnailDirectoryPath
+        self.rawOriginalDirectoryPath = rawOriginalDirectoryPath
+        self.manifestItems = manifestItems
+        self.encryptionPolicy = encryptionPolicy
+        self.stagingPolicy = stagingPolicy
+        self.maxStageSizeMB = maxStageSizeMB
+        self.defaultIncludesRawOriginals = defaultIncludesRawOriginals
+        self.includesRawOriginals = includesRawOriginals
+        self.includesAITranscripts = includesAITranscripts
+        self.generatedOnDevice = generatedOnDevice
+        self.cloudUploadRequired = cloudUploadRequired
+        self.syncRequired = syncRequired
+        self.providerUploadRequired = providerUploadRequired
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+        self.postSubscriptionAccessAllowed = postSubscriptionAccessAllowed
+        self.childOrFamilyMediaCaution = childOrFamilyMediaCaution
+        self.filesAppExportReady = filesAppExportReady
+        self.auditEventName = auditEventName
+        self.responseContract = responseContract
+    }
+
+    public var isMemoryRightsSafe: Bool {
+        baseArchivePlan.generatedOnDevice &&
+        baseArchivePlan.canBeGeneratedAfterSubscriptionEnds &&
+        baseArchivePlan.entries.allSatisfy { !$0.containsRawMedia && !$0.containsAITranscript } &&
+        !baseArchivePlan.manifest.includesRawMedia &&
+        !baseArchivePlan.manifest.includesAITranscripts &&
+        selection.canBeGeneratedAfterSubscriptionEnds &&
+        generatedOnDevice &&
+        !cloudUploadRequired &&
+        !syncRequired &&
+        !providerUploadRequired &&
+        canBeGeneratedAfterSubscriptionEnds &&
+        postSubscriptionAccessAllowed &&
+        !defaultIncludesRawOriginals &&
+        !includesAITranscripts &&
+        maxStageSizeMB <= 2048 &&
+        encryptionPolicy == "device-key-encrypted-staging" &&
+        stagingPolicy == "staged-files-export-with-user-confirmation" &&
+        filesAppExportReady &&
+        responseContract.returnsMediaManifest &&
+        responseContract.returnsExportReceiptID &&
+        responseContract.returnsStagedFileToken &&
+        !responseContract.responseContainsProviderCredential &&
+        !responseContract.responseContainsAITranscript &&
+        !responseContract.uploadsToCloudByDefault &&
+        responseContract.userCanCancelStaging &&
+        responseContract.supportsResume &&
+        (!includesRawOriginals || selection.allowsRawOriginals) &&
+        manifestItems.allSatisfy { $0.includesRawOriginal == ($0.originalPath != nil) }
+    }
+}
+
+public enum RawMediaExportPolicyPlan {
+    public static func thumbnailsOnlyEnvelope(
+        for baseArchivePlan: ExportArchivePlan,
+        slices: [MemorySlice]
+    ) -> RawMediaExportPolicyEnvelope {
+        let selection = RawMediaExportSelection(
+            id: "raw-media-selection-thumbnails-\(baseArchivePlan.id)",
+            mode: .thumbnailsOnly,
+            selectedAnchorIDs: [],
+            userExplicitlyOptedIn: false
+        )
+        return envelope(for: baseArchivePlan, slices: slices, selection: selection)
+    }
+
+    public static func selectedOriginalsEnvelope(
+        for baseArchivePlan: ExportArchivePlan,
+        slices: [MemorySlice],
+        selectedAnchorIDs: [String],
+        consentReceiptID: String
+    ) -> RawMediaExportPolicyEnvelope {
+        let selection = RawMediaExportSelection(
+            id: "raw-media-selection-originals-\(baseArchivePlan.id)",
+            mode: .selectedOriginals,
+            selectedAnchorIDs: selectedAnchorIDs.sorted(),
+            userExplicitlyOptedIn: true,
+            consentReceiptID: consentReceiptID
+        )
+        return envelope(for: baseArchivePlan, slices: slices, selection: selection)
+    }
+
+    private static func envelope(
+        for baseArchivePlan: ExportArchivePlan,
+        slices: [MemorySlice],
+        selection: RawMediaExportSelection
+    ) -> RawMediaExportPolicyEnvelope {
+        let items = slices.compactMap { slice -> RawMediaExportManifestItem? in
+            guard let media = slice.media else { return nil }
+            let anchorID = media.id.uuidString
+            let canIncludeOriginal = selection.allowsRawOriginals &&
+                selection.selectedAnchorIDs.contains(anchorID) &&
+                media.kind != .link
+            let familyReview = slice.tags.contains { tag in
+                ["家人", "孩子", "family", "child"].contains(tag.localizedLowercase)
+            } || media.note.localizedCaseInsensitiveContains("孩子")
+            let checksum = TrustDigest.checksum([
+                slice.id.uuidString,
+                anchorID,
+                media.kind.rawValue,
+                media.label,
+                canIncludeOriginal ? "original" : "thumbnail"
+            ])
+            return RawMediaExportManifestItem(
+                anchorID: anchorID,
+                sliceID: slice.id.uuidString,
+                kind: media.kind,
+                label: media.label,
+                thumbnailPath: "media/thumbnails/\(anchorID).jpg",
+                originalPath: canIncludeOriginal ? "media/originals/\(anchorID)-\(safeFilename(media.label))" : nil,
+                includesRawOriginal: canIncludeOriginal,
+                requiresFamilyMediaReview: familyReview,
+                checksum: checksum
+            )
+        }.sorted { $0.anchorID < $1.anchorID }
+        let includesRawOriginals = items.contains { $0.includesRawOriginal }
+        let digest = TrustDigest.checksum([
+            baseArchivePlan.id,
+            selection.id,
+            selection.mode.rawValue,
+            items.map(\.checksum).joined(separator: "|")
+        ])
+        return RawMediaExportPolicyEnvelope(
+            id: "raw-media-export-\(digest.prefix(12))",
+            baseArchivePlan: baseArchivePlan,
+            selection: selection,
+            manifestItems: items,
+            includesRawOriginals: includesRawOriginals,
+            includesAITranscripts: selection.includesAITranscripts,
+            childOrFamilyMediaCaution: items.contains { $0.requiresFamilyMediaReview }
+        )
+    }
+
+    private static func safeFilename(_ label: String) -> String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
+        let scalars = label.unicodeScalars.map { scalar -> Character in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "-."))
+        return sanitized.isEmpty ? "media-original" : sanitized
+    }
+}
+
 public struct ExportZIPEntry: Codable, Equatable, Identifiable, Sendable {
     public var id: String { path }
     public var path: String
@@ -969,6 +1286,7 @@ public enum ProductionImplementationChecklist {
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
+        .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope with thumbnails-only default, staged encrypted Files export, family media caution, no cloud/provider upload, and post-subscription access."),
         .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope and v47 adds a deletion service integration boundary.")
     ]
 }
