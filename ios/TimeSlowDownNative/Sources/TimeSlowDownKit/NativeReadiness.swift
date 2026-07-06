@@ -26,9 +26,9 @@ public enum NativeHandoffLedger {
     public static let rows: [ReadinessRow] = [
         .init(id: "swiftui-shell", title: "SwiftUI shell", status: .poc, owner: "iOS", evidence: "SwiftUI shell, app entry, Xcode project skeleton, launch screen, App Icon asset catalog, main navigation."),
         .init(id: "photos-picker", title: "PhotosPicker", status: .todo, owner: "iOS", evidence: "Limited library picker, media import pipeline, no full-library scan."),
-        .init(id: "keychain-e2ee", title: "Keychain + E2EE", status: .todo, owner: "iOS/backend", evidence: "Device key, recovery flow, encrypted memory/media store."),
-        .init(id: "media-package", title: "Media package", status: .todo, owner: "iOS/backend", evidence: "File checksum, thumbnail lifecycle, export/delete receipts."),
-        .init(id: "deepseek-gateway", title: "DeepSeek gateway", status: .todo, owner: "backend", evidence: "Server-side API key, replayable task sheet, budget and fallback."),
+        .init(id: "keychain-e2ee", title: "Keychain + E2EE", status: .poc, owner: "iOS/backend", evidence: "v38 trust contracts cover device key record and E2EE envelope; real Secure Enclave/Keychain and cryptography still required."),
+        .init(id: "media-package", title: "Media package", status: .poc, owner: "iOS/backend", evidence: "v38 export manifest signature and deletion receipt contracts cover package integrity and user rights; real media storage still required."),
+        .init(id: "deepseek-gateway", title: "DeepSeek gateway", status: .poc, owner: "backend", evidence: "v38 DeepSeek task envelope constrains provider, budget, fallback, and forbidden fields; real server gateway still required."),
         .init(id: "app-privacy-details", title: "App Privacy Details", status: .todo, owner: "App Store Connect", evidence: "User content, photos/videos, account, purchases, diagnostics, AI processing."),
         .init(id: "privacy-manifest", title: "Privacy Manifest / required reason API", status: .todo, owner: "release", evidence: "Required reason API audit and dependency privacy manifests."),
         .init(id: "testflight-packet", title: "TestFlight packet", status: .todo, owner: "release", evidence: "Build notes, test account, review notes, support and privacy URLs.")

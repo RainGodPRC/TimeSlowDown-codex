@@ -45,6 +45,9 @@ check(NativeHandoffLedger.rows.map(\.id).contains("keychain-e2ee"), "Native Hand
 check(SubmissionPacket.rows.map(\.id).contains("privacy-questionnaire"), "Submission Packet should include privacy questionnaire")
 check(SubmissionPacket.rows.map(\.id).contains("subscription-copy"), "Submission Packet should include subscription wording")
 check(NativeHandoffLedger.rows.first { $0.id == "swiftui-shell" }?.status == .poc, "SwiftUI shell should be promoted to PoC after v37 Xcode project skeleton")
+check(NativeHandoffLedger.rows.first { $0.id == "keychain-e2ee" }?.status == .poc, "Keychain/E2EE should be promoted to PoC after v38 trust contracts")
+check(NativeHandoffLedger.rows.first { $0.id == "media-package" }?.status == .poc, "Media package should be promoted to PoC after v38 export/delete contracts")
+check(NativeHandoffLedger.rows.first { $0.id == "deepseek-gateway" }?.status == .poc, "DeepSeek gateway should be promoted to PoC after v38 AI task envelope")
 
 let boundary = PrivacyBoundary()
 check(boundary.isAppStoreSafeDefault, "Default privacy boundary should be App Store safe")
@@ -102,7 +105,60 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>37</string>"), "Info.plist should carry v37 build number")
+check(infoPlistText.contains("<string>38</string>"), "Info.plist should carry v38 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, and Xcode project skeleton are aligned.")
+let fixedDate = Date(timeIntervalSince1970: 1_788_249_600)
+let deviceKey = KeychainVaultStub.bootstrapDeviceKey(
+    accountID: "guest-pass",
+    deviceName: "Geralt iPhone",
+    createdAt: fixedDate
+)
+check(deviceKey.storageClass == "keychain-this-device-only", "Device key should target a Keychain-only storage class")
+check(!deviceKey.privateKeyExtractable, "Device key contract should forbid private-key extraction")
+check(!deviceKey.secretMaterialPersistedInRepo, "Device key stub should never persist secret material in repo")
+
+let envelope = E2EEEnvelope.sealMetadataOnly(slice, with: deviceKey)
+check(envelope.keyID == deviceKey.keyID, "E2EE envelope should bind to the device key")
+check(!envelope.containsRawMemoryBody, "E2EE envelope contract should not expose raw memory body")
+check(!envelope.containsRawMedia, "E2EE envelope contract should not contain raw media")
+check(envelope.trustLevel == .developmentStub, "E2EE envelope should explicitly identify stub trust level")
+
+let exportManifest = ExportManifestSigner.sign(
+    slices: [slice, updated],
+    chapters: [chapter],
+    with: deviceKey,
+    generatedAt: fixedDate
+)
+check(exportManifest.sliceCount == 2, "Export manifest should count exported slices")
+check(exportManifest.mediaAnchorCount == 2, "Export manifest should count media anchors")
+check(!exportManifest.includesRawMedia, "Export manifest should default to no raw media in stub")
+check(!exportManifest.includesAITranscripts, "Export manifest should not include AI transcripts by default")
+check(exportManifest.userCanExportWithoutSubscription, "Export must remain available without subscription")
+check(exportManifest.signature.hasPrefix("stub-signature-v1:"), "Export manifest should carry a deterministic signature stub")
+
+let deletion = DeletionReceipt.issue(
+    scopes: [.encryptedCloudBackup, .aiDrafts, .mediaThumbnails],
+    requestedAt: fixedDate
+)
+check(deletion.status == .accepted, "Deletion receipt should be accepted")
+check(deletion.userCanExportBeforeDeletion, "Deletion receipt should preserve pre-deletion export rights")
+check(deletion.scopes.contains(.aiDrafts), "Deletion receipt should cover AI drafts")
+check(deletion.affectedRemoteSystems.contains("encrypted-backup"), "Deletion receipt should list affected remote systems")
+
+let aiEnvelope = DeepSeekTaskEnvelope.weeklyChapterDraft(claimed: moments)
+check(aiEnvelope.provider == "deepseek", "AI envelope should use DeepSeek provider for PoC")
+check(aiEnvelope.model == "deepseek-v4-flash", "AI envelope should use the selected DeepSeek model")
+check(aiEnvelope.userConsentRequired, "AI envelope should require user consent")
+check(aiEnvelope.maxBudgetCents <= 4, "AI envelope should keep PoC budget bounded")
+check(aiEnvelope.fallbackMode == "local-rules", "AI envelope should declare local fallback")
+check(!aiEnvelope.containsRawMedia, "AI envelope should forbid raw media")
+check(!aiEnvelope.containsFullMemoryArchive, "AI envelope should forbid full memory archive")
+check(aiEnvelope.allowedPayloadKeys.contains("user_selected_claims"), "AI envelope should only send user-claimed context")
+check(aiEnvelope.forbiddenPayloadKeys.contains("raw_media_binary"), "AI envelope should explicitly forbid raw media binary")
+check(aiEnvelope.forbiddenPayloadKeys.contains("full_memory_archive"), "AI envelope should explicitly forbid full archive upload")
+
+check(ProductionTrustChecklist.rows.count == 5, "Production Trust Checklist should track five v38 trust contracts")
+check(ProductionTrustChecklist.rows.allSatisfy { $0.status == .poc }, "Production Trust Checklist rows should remain PoC, not falsely ready")
+
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, and v38 production trust contracts are aligned.")

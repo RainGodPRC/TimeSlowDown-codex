@@ -35,6 +35,7 @@ Current demo focus:
 - App Store submission packet: product page copy, screenshot/app preview plan, privacy questionnaire, age rating, review notes, support/privacy URLs, and subscription wording
 - Native Core Kit: a Swift package under `ios/TimeSlowDownNative` that starts the real iOS core with memory slices, media anchors, weekly chapters, privacy boundaries, SwiftUI shell state, PhotosPicker bridge, Native Handoff rows, and Submission Packet rows
 - Xcode project skeleton: `ios/TimeSlowDownNative/TimeSlowDown.xcodeproj` wires a native iOS app target to `TimeSlowDownKit`, Info.plist, Privacy Manifest, entitlements, launch screen, and App Icon asset catalog for the next Xcode/TestFlight handoff
+- Production Trust contracts: Swift stubs for Keychain-shaped device keys, metadata-only E2EE envelopes, export manifest signatures, deletion receipts, and DeepSeek task envelopes keep privacy/export/delete/AI boundaries testable before the real backend exists
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
