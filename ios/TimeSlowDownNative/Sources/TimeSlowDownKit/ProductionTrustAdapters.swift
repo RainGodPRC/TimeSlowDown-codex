@@ -269,6 +269,249 @@ public enum DeepSeekServerGatewayPlan {
     }
 }
 
+public struct DeepSeekProviderProxyRequestContract: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var provider: String
+    public var model: String
+    public var providerEndpoint: String
+    public var credentialLocation: String
+    public var credentialVisibleToClient: Bool
+    public var mapsFromGatewayBodyDigest: String
+    public var allowedProviderRequestKeys: [String]
+    public var forbiddenProviderRequestKeys: [String]
+    public var bodyContainsRawMedia: Bool
+    public var bodyContainsFullMemoryArchive: Bool
+    public var bodyContainsContacts: Bool
+    public var bodyContainsGPS: Bool
+    public var bodyContainsFaceEmbeddings: Bool
+    public var bodyContainsSubscriptionState: Bool
+    public var maxPromptRetentionHours: Int
+    public var maxBudgetCents: Int
+
+    public init(
+        id: String,
+        provider: String = "deepseek",
+        model: String = "deepseek-v4-flash",
+        providerEndpoint: String = "https://api.deepseek.com/chat/completions",
+        credentialLocation: String = "server-secret-manager",
+        credentialVisibleToClient: Bool = false,
+        mapsFromGatewayBodyDigest: String,
+        allowedProviderRequestKeys: [String] = ["model", "messages", "response_format", "temperature", "max_tokens", "metadata"],
+        forbiddenProviderRequestKeys: [String] = ["provider_api_key", "raw_media_binary", "full_memory_archive", "contacts", "gps_trace", "face_embeddings", "subscription_state"],
+        bodyContainsRawMedia: Bool = false,
+        bodyContainsFullMemoryArchive: Bool = false,
+        bodyContainsContacts: Bool = false,
+        bodyContainsGPS: Bool = false,
+        bodyContainsFaceEmbeddings: Bool = false,
+        bodyContainsSubscriptionState: Bool = false,
+        maxPromptRetentionHours: Int = 24,
+        maxBudgetCents: Int
+    ) {
+        self.id = id
+        self.provider = provider
+        self.model = model
+        self.providerEndpoint = providerEndpoint
+        self.credentialLocation = credentialLocation
+        self.credentialVisibleToClient = credentialVisibleToClient
+        self.mapsFromGatewayBodyDigest = mapsFromGatewayBodyDigest
+        self.allowedProviderRequestKeys = allowedProviderRequestKeys
+        self.forbiddenProviderRequestKeys = forbiddenProviderRequestKeys
+        self.bodyContainsRawMedia = bodyContainsRawMedia
+        self.bodyContainsFullMemoryArchive = bodyContainsFullMemoryArchive
+        self.bodyContainsContacts = bodyContainsContacts
+        self.bodyContainsGPS = bodyContainsGPS
+        self.bodyContainsFaceEmbeddings = bodyContainsFaceEmbeddings
+        self.bodyContainsSubscriptionState = bodyContainsSubscriptionState
+        self.maxPromptRetentionHours = maxPromptRetentionHours
+        self.maxBudgetCents = maxBudgetCents
+    }
+
+    public var isSafeProviderProxyBoundary: Bool {
+        provider == "deepseek" &&
+        model == "deepseek-v4-flash" &&
+        providerEndpoint.hasPrefix("https://") &&
+        credentialLocation == "server-secret-manager" &&
+        !credentialVisibleToClient &&
+        !mapsFromGatewayBodyDigest.isEmpty &&
+        allowedProviderRequestKeys.contains("messages") &&
+        forbiddenProviderRequestKeys.contains("provider_api_key") &&
+        forbiddenProviderRequestKeys.contains("raw_media_binary") &&
+        forbiddenProviderRequestKeys.contains("full_memory_archive") &&
+        forbiddenProviderRequestKeys.contains("contacts") &&
+        forbiddenProviderRequestKeys.contains("gps_trace") &&
+        forbiddenProviderRequestKeys.contains("face_embeddings") &&
+        forbiddenProviderRequestKeys.contains("subscription_state") &&
+        !bodyContainsRawMedia &&
+        !bodyContainsFullMemoryArchive &&
+        !bodyContainsContacts &&
+        !bodyContainsGPS &&
+        !bodyContainsFaceEmbeddings &&
+        !bodyContainsSubscriptionState &&
+        maxPromptRetentionHours <= 24 &&
+        maxBudgetCents > 0
+    }
+}
+
+public struct DeepSeekProviderProxyResponseContract: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var returnsEditableDraft: Bool
+    public var returnsSourceTrace: Bool
+    public var returnsResponseDigest: Bool
+    public var returnsGatewayJobID: Bool
+    public var returnsAuditEventID: Bool
+    public var returnsCostEstimate: Bool
+    public var storesRawProviderTranscript: Bool
+    public var responseContainsProviderCredential: Bool
+    public var responseContainsRawMedia: Bool
+    public var responseContainsFullMemoryArchive: Bool
+    public var responseContainsContacts: Bool
+    public var responseContainsGPS: Bool
+    public var responseContainsFaceEmbeddings: Bool
+
+    public init(
+        id: String,
+        returnsEditableDraft: Bool = true,
+        returnsSourceTrace: Bool = true,
+        returnsResponseDigest: Bool = true,
+        returnsGatewayJobID: Bool = true,
+        returnsAuditEventID: Bool = true,
+        returnsCostEstimate: Bool = true,
+        storesRawProviderTranscript: Bool = false,
+        responseContainsProviderCredential: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        responseContainsFullMemoryArchive: Bool = false,
+        responseContainsContacts: Bool = false,
+        responseContainsGPS: Bool = false,
+        responseContainsFaceEmbeddings: Bool = false
+    ) {
+        self.id = id
+        self.returnsEditableDraft = returnsEditableDraft
+        self.returnsSourceTrace = returnsSourceTrace
+        self.returnsResponseDigest = returnsResponseDigest
+        self.returnsGatewayJobID = returnsGatewayJobID
+        self.returnsAuditEventID = returnsAuditEventID
+        self.returnsCostEstimate = returnsCostEstimate
+        self.storesRawProviderTranscript = storesRawProviderTranscript
+        self.responseContainsProviderCredential = responseContainsProviderCredential
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.responseContainsFullMemoryArchive = responseContainsFullMemoryArchive
+        self.responseContainsContacts = responseContainsContacts
+        self.responseContainsGPS = responseContainsGPS
+        self.responseContainsFaceEmbeddings = responseContainsFaceEmbeddings
+    }
+
+    public var isSafeBackendResponseBoundary: Bool {
+        returnsEditableDraft &&
+        returnsSourceTrace &&
+        returnsResponseDigest &&
+        returnsGatewayJobID &&
+        returnsAuditEventID &&
+        returnsCostEstimate &&
+        !storesRawProviderTranscript &&
+        !responseContainsProviderCredential &&
+        !responseContainsRawMedia &&
+        !responseContainsFullMemoryArchive &&
+        !responseContainsContacts &&
+        !responseContainsGPS &&
+        !responseContainsFaceEmbeddings
+    }
+}
+
+public struct DeepSeekBackendEndpointContract: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var method: String
+    public var endpointPath: String
+    public var acceptsOnlyGatewayEnvelope: Bool
+    public var requiresAuthenticatedAccount: Bool
+    public var requiresConsentReceipt: Bool
+    public var requiresIdempotencyKey: Bool
+    public var requiresTaskDigest: Bool
+    public var requiresBudgetCeiling: Bool
+    public var dataResidencyPolicy: String
+    public var queueName: String
+    public var retentionHours: Int
+    public var providerProxyRequest: DeepSeekProviderProxyRequestContract
+    public var providerProxyResponse: DeepSeekProviderProxyResponseContract
+
+    public init(
+        id: String,
+        method: String = "POST",
+        endpointPath: String = "/v1/ai/tasks/weekly-chapter",
+        acceptsOnlyGatewayEnvelope: Bool = true,
+        requiresAuthenticatedAccount: Bool = true,
+        requiresConsentReceipt: Bool = true,
+        requiresIdempotencyKey: Bool = true,
+        requiresTaskDigest: Bool = true,
+        requiresBudgetCeiling: Bool = true,
+        dataResidencyPolicy: String = "user-region-pinned",
+        queueName: String = "ai-weekly-chapter",
+        retentionHours: Int = 24,
+        providerProxyRequest: DeepSeekProviderProxyRequestContract,
+        providerProxyResponse: DeepSeekProviderProxyResponseContract
+    ) {
+        self.id = id
+        self.method = method
+        self.endpointPath = endpointPath
+        self.acceptsOnlyGatewayEnvelope = acceptsOnlyGatewayEnvelope
+        self.requiresAuthenticatedAccount = requiresAuthenticatedAccount
+        self.requiresConsentReceipt = requiresConsentReceipt
+        self.requiresIdempotencyKey = requiresIdempotencyKey
+        self.requiresTaskDigest = requiresTaskDigest
+        self.requiresBudgetCeiling = requiresBudgetCeiling
+        self.dataResidencyPolicy = dataResidencyPolicy
+        self.queueName = queueName
+        self.retentionHours = retentionHours
+        self.providerProxyRequest = providerProxyRequest
+        self.providerProxyResponse = providerProxyResponse
+    }
+
+    public var isProductionEndpointSafe: Bool {
+        method == "POST" &&
+        endpointPath == "/v1/ai/tasks/weekly-chapter" &&
+        acceptsOnlyGatewayEnvelope &&
+        requiresAuthenticatedAccount &&
+        requiresConsentReceipt &&
+        requiresIdempotencyKey &&
+        requiresTaskDigest &&
+        requiresBudgetCeiling &&
+        dataResidencyPolicy == "user-region-pinned" &&
+        queueName == "ai-weekly-chapter" &&
+        retentionHours <= 24 &&
+        providerProxyRequest.isSafeProviderProxyBoundary &&
+        providerProxyResponse.isSafeBackendResponseBoundary
+    }
+}
+
+public enum DeepSeekBackendEndpointPlan {
+    public static func contract(for gateway: DeepSeekServerGatewayEnvelope) -> DeepSeekBackendEndpointContract {
+        let digest = TrustDigest.checksum([
+            gateway.id,
+            gateway.request.endpointPath,
+            gateway.requestBodyDigest,
+            gateway.consentReceiptID,
+            gateway.queueName
+        ])
+        let providerRequest = DeepSeekProviderProxyRequestContract(
+            id: "deepseek-provider-proxy-request-\(digest.prefix(12))",
+            mapsFromGatewayBodyDigest: gateway.requestBodyDigest,
+            maxPromptRetentionHours: gateway.retentionHours,
+            maxBudgetCents: gateway.budgetCeilingCents
+        )
+        let providerResponse = DeepSeekProviderProxyResponseContract(
+            id: "deepseek-provider-proxy-response-\(digest.prefix(12))"
+        )
+        return DeepSeekBackendEndpointContract(
+            id: "deepseek-backend-endpoint-\(digest.prefix(12))",
+            endpointPath: gateway.request.endpointPath,
+            dataResidencyPolicy: gateway.dataResidencyPolicy,
+            queueName: gateway.queueName,
+            retentionHours: gateway.retentionHours,
+            providerProxyRequest: providerRequest,
+            providerProxyResponse: providerResponse
+        )
+    }
+}
+
 public enum DeepSeekGatewayValidationStatus: String, Codable, Equatable, Sendable {
     case pendingBackend
     case mockPassed
@@ -2818,7 +3061,7 @@ public enum DeletionServiceIntegrationPlan {
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
-        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, and v56 adds redacted integration test request/result contracts so only real provider evidence can promote to production AI gate."),
+        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, v56 adds redacted integration test request/result contracts, and v57 adds the backend endpoint/provider proxy contract so only real provider evidence can promote to production AI gate."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),
