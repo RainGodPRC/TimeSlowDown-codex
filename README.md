@@ -39,6 +39,7 @@ Current demo focus:
 - Production Trust contracts: Swift stubs for Keychain-shaped device keys, metadata-only E2EE envelopes, export manifest signatures, deletion receipts, and DeepSeek task envelopes keep privacy/export/delete/AI boundaries testable before the real backend exists
 - Implementation adapters: Keychain persistence plan, DeepSeek backend request plan, export ZIP archive plan, and deletion receipt API request plan turn the trust contracts into concrete engineering handoff points
 - Keychain production adapter: a Security.framework-backed device key record store can save/load/delete metadata-only key records with this-device-only, non-synchronizable defaults; automated checks verify the adapter contract without writing to the user's Keychain
+- On-device export ZIP builder: memory exports can be assembled into a standard ZIP container with manifest, slices, chapters, media index, and deletion-rights documents while keeping raw media and AI transcripts out by default
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report

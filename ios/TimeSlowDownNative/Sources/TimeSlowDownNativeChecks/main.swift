@@ -105,7 +105,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>41</string>"), "Info.plist should carry v41 build number")
+check(infoPlistText.contains("<string>42</string>"), "Info.plist should carry v42 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -239,6 +239,23 @@ check(archivePlan.entries.map(\.kind).contains(.mediaIndex), "Export archive sho
 check(archivePlan.entries.map(\.kind).contains(.deletionRights), "Export archive should include deletion rights")
 check(archivePlan.entries.allSatisfy { !$0.containsRawMedia }, "Export archive plan should not include raw media by default")
 
+let zipPackage = try OnDeviceExportZIPBuilder.package(
+    for: archivePlan,
+    slices: [slice, updated],
+    chapters: [chapter],
+    deletionReceipt: deletion
+)
+check(zipPackage.fileName == archivePlan.fileName, "Export ZIP package should preserve archive file name")
+check(zipPackage.hasZIPMagic, "Export ZIP package should start with local file header magic")
+check(zipPackage.hasEndOfCentralDirectory, "Export ZIP package should include end-of-central-directory record")
+check(zipPackage.centralDirectoryRecordCount == archivePlan.entries.count, "Export ZIP package should include one central-directory record per export entry")
+check(zipPackage.entries.map(\.path).contains("manifest.json"), "Export ZIP package should include manifest.json")
+check(zipPackage.entries.map(\.path).contains("media/index.json"), "Export ZIP package should include media index")
+check(zipPackage.entries.map(\.path).contains("rights/deletion-receipt-template.json"), "Export ZIP package should include deletion rights")
+check(zipPackage.entries.allSatisfy { $0.uncompressedSize > 0 }, "Export ZIP entries should contain encoded JSON documents")
+check(zipPackage.entries.allSatisfy { !$0.containsRawMedia && !$0.containsAITranscript }, "Export ZIP should exclude raw media and AI transcripts by default")
+check(zipPackage.isMemorySafeDefault, "Export ZIP should preserve local generation and non-hostage export rights")
+
 let deletionRequest = DeletionAPIRequest.request(for: deletion, accountID: deviceKey.accountID)
 check(deletionRequest.endpointPath == "/v1/account/deletion-receipts", "Deletion API request should target receipt endpoint")
 check(deletionRequest.requiresAuthenticatedUser, "Deletion API request should require authenticated user")
@@ -250,9 +267,10 @@ check(ProductionImplementationChecklist.rows.count == 4, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "41", "TestFlight build notes should match v41")
+check(buildNotes.buildNumber == "42", "TestFlight build notes should match v42")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
+check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -272,4 +290,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, and v41 Keychain adapter are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, and v42 export ZIP builder are aligned.")

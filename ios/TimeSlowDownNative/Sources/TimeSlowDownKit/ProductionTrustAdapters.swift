@@ -192,6 +192,320 @@ public struct ExportArchivePlan: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct ExportZIPEntry: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { path }
+    public var path: String
+    public var crc32: UInt32
+    public var uncompressedSize: Int
+    public var containsRawMedia: Bool
+    public var containsAITranscript: Bool
+
+    public init(
+        path: String,
+        crc32: UInt32,
+        uncompressedSize: Int,
+        containsRawMedia: Bool = false,
+        containsAITranscript: Bool = false
+    ) {
+        self.path = path
+        self.crc32 = crc32
+        self.uncompressedSize = uncompressedSize
+        self.containsRawMedia = containsRawMedia
+        self.containsAITranscript = containsAITranscript
+    }
+}
+
+public struct ExportZIPPackage: Codable, Equatable, Sendable {
+    public var fileName: String
+    public var data: Data
+    public var entries: [ExportZIPEntry]
+    public var generatedOnDevice: Bool
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+
+    public init(
+        fileName: String,
+        data: Data,
+        entries: [ExportZIPEntry],
+        generatedOnDevice: Bool,
+        canBeGeneratedAfterSubscriptionEnds: Bool
+    ) {
+        self.fileName = fileName
+        self.data = data
+        self.entries = entries
+        self.generatedOnDevice = generatedOnDevice
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+    }
+
+    public var hasZIPMagic: Bool {
+        data.starts(with: [0x50, 0x4B, 0x03, 0x04])
+    }
+
+    public var hasEndOfCentralDirectory: Bool {
+        data.count >= 22 &&
+        data.suffix(22).starts(with: [0x50, 0x4B, 0x05, 0x06])
+    }
+
+    public var centralDirectoryRecordCount: Int {
+        guard data.count >= 22 else { return 0 }
+        let offset = data.count - 22 + 10
+        return Int(data[offset]) | (Int(data[offset + 1]) << 8)
+    }
+
+    public var isMemorySafeDefault: Bool {
+        generatedOnDevice &&
+        canBeGeneratedAfterSubscriptionEnds &&
+        entries.allSatisfy { !$0.containsRawMedia && !$0.containsAITranscript }
+    }
+}
+
+public enum ExportZIPBuilderError: Error, Equatable, Sendable {
+    case unsafePlan(String)
+    case encodingFailed(String)
+    case zipSizeOverflow(String)
+}
+
+public enum OnDeviceExportZIPBuilder {
+    public static func package(
+        for plan: ExportArchivePlan,
+        slices: [MemorySlice],
+        chapters: [WeeklyChapter],
+        deletionReceipt: DeletionReceipt
+    ) throws -> ExportZIPPackage {
+        try validate(plan)
+
+        let files = try exportFiles(
+            plan: plan,
+            slices: slices,
+            chapters: chapters,
+            deletionReceipt: deletionReceipt
+        )
+        let zipData = try buildZIP(files: files)
+        let entries = files.map {
+            ExportZIPEntry(
+                path: $0.path,
+                crc32: CRC32.checksum($0.data),
+                uncompressedSize: $0.data.count,
+                containsRawMedia: $0.containsRawMedia,
+                containsAITranscript: $0.containsAITranscript
+            )
+        }
+        return ExportZIPPackage(
+            fileName: plan.fileName,
+            data: zipData,
+            entries: entries,
+            generatedOnDevice: plan.generatedOnDevice,
+            canBeGeneratedAfterSubscriptionEnds: plan.canBeGeneratedAfterSubscriptionEnds
+        )
+    }
+
+    private static func validate(_ plan: ExportArchivePlan) throws {
+        guard plan.format == "zip" else {
+            throw ExportZIPBuilderError.unsafePlan("Only zip export archives are supported.")
+        }
+        guard plan.generatedOnDevice else {
+            throw ExportZIPBuilderError.unsafePlan("TSD memory exports must be generated on device by default.")
+        }
+        guard plan.canBeGeneratedAfterSubscriptionEnds else {
+            throw ExportZIPBuilderError.unsafePlan("Export must remain available after subscription ends.")
+        }
+        guard plan.entries.allSatisfy({ !$0.containsRawMedia && !$0.containsAITranscript }) else {
+            throw ExportZIPBuilderError.unsafePlan("Default export package must not include raw media or AI transcripts.")
+        }
+    }
+
+    private static func exportFiles(
+        plan: ExportArchivePlan,
+        slices: [MemorySlice],
+        chapters: [WeeklyChapter],
+        deletionReceipt: DeletionReceipt
+    ) throws -> [ExportFile] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+
+        func encode<T: Encodable>(_ value: T, label: String) throws -> Data {
+            do {
+                return try encoder.encode(value)
+            } catch {
+                throw ExportZIPBuilderError.encodingFailed(label)
+            }
+        }
+
+        let mediaIndex = MediaIndexDocument(
+            generatedFromExportID: plan.manifest.id,
+            anchors: slices.compactMap { slice -> MediaIndexAnchor? in
+                guard let media = slice.media else { return nil }
+                return MediaIndexAnchor(
+                    sliceID: slice.id.uuidString,
+                    kind: media.kind.rawValue,
+                    label: media.label,
+                    noteDigest: media.note.isEmpty ? nil : TrustDigest.checksum([media.note]),
+                    containsRawMedia: false
+                )
+            }
+        )
+        let deletionRights = DeletionRightsDocument(
+            exportID: plan.manifest.id,
+            receiptID: deletionReceipt.id,
+            scopes: deletionReceipt.scopes.map(\.rawValue).sorted(),
+            userCanExportBeforeDeletion: deletionReceipt.userCanExportBeforeDeletion,
+            canRequestDeletionAfterSubscriptionEnds: true
+        )
+
+        return try [
+            ExportFile(path: "manifest.json", data: encode(plan.manifest, label: "manifest")),
+            ExportFile(path: "memories/slices.json", data: encode(slices, label: "slices")),
+            ExportFile(path: "memories/chapters.json", data: encode(chapters, label: "chapters")),
+            ExportFile(path: "media/index.json", data: encode(mediaIndex, label: "media-index")),
+            ExportFile(path: "rights/deletion-receipt-template.json", data: encode(deletionRights, label: "deletion-rights"))
+        ].sorted { $0.path < $1.path }
+    }
+
+    private static func buildZIP(files: [ExportFile]) throws -> Data {
+        var archive = Data()
+        var centralDirectory = Data()
+        var localHeaderOffsets: [String: UInt32] = [:]
+
+        for file in files {
+            let pathData = Data(file.path.utf8)
+            guard archive.count <= Int(UInt32.max),
+                  file.data.count <= Int(UInt32.max),
+                  pathData.count <= Int(UInt16.max) else {
+                throw ExportZIPBuilderError.zipSizeOverflow(file.path)
+            }
+
+            let offset = UInt32(archive.count)
+            localHeaderOffsets[file.path] = offset
+            let crc = CRC32.checksum(file.data)
+            let size = UInt32(file.data.count)
+
+            archive.appendUInt32LE(0x04034B50)
+            archive.appendUInt16LE(20)
+            archive.appendUInt16LE(0)
+            archive.appendUInt16LE(0)
+            archive.appendUInt16LE(0)
+            archive.appendUInt16LE(0)
+            archive.appendUInt32LE(crc)
+            archive.appendUInt32LE(size)
+            archive.appendUInt32LE(size)
+            archive.appendUInt16LE(UInt16(pathData.count))
+            archive.appendUInt16LE(0)
+            archive.append(pathData)
+            archive.append(file.data)
+
+            centralDirectory.appendUInt32LE(0x02014B50)
+            centralDirectory.appendUInt16LE(20)
+            centralDirectory.appendUInt16LE(20)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt32LE(crc)
+            centralDirectory.appendUInt32LE(size)
+            centralDirectory.appendUInt32LE(size)
+            centralDirectory.appendUInt16LE(UInt16(pathData.count))
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt16LE(0)
+            centralDirectory.appendUInt32LE(0)
+            centralDirectory.appendUInt32LE(offset)
+            centralDirectory.append(pathData)
+        }
+
+        guard centralDirectory.count <= Int(UInt32.max),
+              archive.count <= Int(UInt32.max),
+              files.count <= Int(UInt16.max) else {
+            throw ExportZIPBuilderError.zipSizeOverflow("central-directory")
+        }
+
+        let centralDirectoryOffset = UInt32(archive.count)
+        archive.append(centralDirectory)
+        archive.appendUInt32LE(0x06054B50)
+        archive.appendUInt16LE(0)
+        archive.appendUInt16LE(0)
+        archive.appendUInt16LE(UInt16(files.count))
+        archive.appendUInt16LE(UInt16(files.count))
+        archive.appendUInt32LE(UInt32(centralDirectory.count))
+        archive.appendUInt32LE(centralDirectoryOffset)
+        archive.appendUInt16LE(0)
+
+        return archive
+    }
+}
+
+private struct ExportFile: Equatable {
+    var path: String
+    var data: Data
+    var containsRawMedia: Bool
+    var containsAITranscript: Bool
+
+    init(
+        path: String,
+        data: Data,
+        containsRawMedia: Bool = false,
+        containsAITranscript: Bool = false
+    ) {
+        self.path = path
+        self.data = data
+        self.containsRawMedia = containsRawMedia
+        self.containsAITranscript = containsAITranscript
+    }
+}
+
+private struct MediaIndexDocument: Codable, Equatable {
+    var generatedFromExportID: String
+    var anchors: [MediaIndexAnchor]
+}
+
+private struct MediaIndexAnchor: Codable, Equatable {
+    var sliceID: String
+    var kind: String
+    var label: String
+    var noteDigest: String?
+    var containsRawMedia: Bool
+}
+
+private struct DeletionRightsDocument: Codable, Equatable {
+    var exportID: String
+    var receiptID: String
+    var scopes: [String]
+    var userCanExportBeforeDeletion: Bool
+    var canRequestDeletionAfterSubscriptionEnds: Bool
+}
+
+private enum CRC32 {
+    static func checksum(_ data: Data) -> UInt32 {
+        var crc: UInt32 = 0xFFFF_FFFF
+        for byte in data {
+            var value = (crc ^ UInt32(byte)) & 0xFF
+            for _ in 0..<8 {
+                if value & 1 == 1 {
+                    value = (value >> 1) ^ 0xEDB8_8320
+                } else {
+                    value >>= 1
+                }
+            }
+            crc = (crc >> 8) ^ value
+        }
+        return crc ^ 0xFFFF_FFFF
+    }
+}
+
+private extension Data {
+    mutating func appendUInt16LE(_ value: UInt16) {
+        append(UInt8(value & 0xFF))
+        append(UInt8((value >> 8) & 0xFF))
+    }
+
+    mutating func appendUInt32LE(_ value: UInt32) {
+        append(UInt8(value & 0xFF))
+        append(UInt8((value >> 8) & 0xFF))
+        append(UInt8((value >> 16) & 0xFF))
+        append(UInt8((value >> 24) & 0xFF))
+    }
+}
+
 public struct DeletionAPIRequest: Codable, Equatable, Identifiable, Sendable {
     public var id: String
     public var method: String
@@ -239,7 +553,7 @@ public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, and keeps local-rules fallback."),
-        .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends."),
+        .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, and available after subscription ends.")
     ]
 }
