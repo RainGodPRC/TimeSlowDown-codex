@@ -12,3 +12,5 @@ Current demo focus:
 - Claim 3 moments → editable weekly chapter
 - Semantic zoom meadow: day / week / month / year / life
 - Memory vault: local-first export, demo import, and delete controls
+- 90-day recall ritual: free recall, quarter landscape, tellable moments
+- Public trial guide: what to try, what is PoC, and what remains production work

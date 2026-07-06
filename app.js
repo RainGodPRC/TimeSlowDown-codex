@@ -3,6 +3,7 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const STORAGE_KEY = "tsd-codex-demo-state-v1";
 const VAULT_SCHEMA_VERSION = "tsd-codex-vault-v1";
+const PUBLIC_DEMO_URL = "https://raingodprc.github.io/TimeSlowDown-codex/";
 
 const seedMoments = [
   {
@@ -381,6 +382,16 @@ async function copyShareText() {
   }
 }
 
+async function copyDemoLink() {
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(PUBLIC_DEMO_URL);
+    setState({ toast: "公网试用链接已复制，可以发给朋友体验。" });
+  } catch {
+    setState({ toast: `浏览器不允许自动复制；请手动复制：${PUBLIC_DEMO_URL}` });
+  }
+}
+
 function saveQuarterRecall() {
   setState({ toast: "已保存自由回忆。现在可以揭开季度风景，对照哪些是主动想起、哪些是被线索唤回。" });
 }
@@ -501,6 +512,7 @@ function bindEvents() {
   $("[data-add]")?.addEventListener("click", addMoment);
   $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
+  $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-save-recall]")?.addEventListener("click", saveQuarterRecall);
   $("[data-reveal-quarter]")?.addEventListener("click", revealQuarter);
   $("[data-reset-ritual]")?.addEventListener("click", resetQuarterRitual);
@@ -579,7 +591,7 @@ function shell(content) {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, guide: guideView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -632,6 +644,7 @@ function nowView() {
         ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
         ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
         ${journeyStep("04", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
+        ${journeyStep("05", "给朋友试用", "看 3 分钟导览、隐私和 PoC 边界。", "guide")}
       </div>
     </section>
   `;
@@ -893,6 +906,83 @@ function ritualView() {
   `;
 }
 
+function guideView() {
+  return `
+    <div class="topline"><div><div class="brand">试用指南</div><div class="micro">给第一次打开 TSD 的人：怎么试、试什么、哪些还只是 PoC。</div></div></div>
+    <section class="hero-card">
+      <div class="eyebrow">Public Trial</div>
+      <h1 class="hero-title">3 分钟，<br/>看懂 TSD 在帮你留住什么。</h1>
+      <p class="hero-subtitle">这不是日记 App，也不是相册。你可以从一张切片开始，看它如何长成周章节、人生旷野和 90 天回忆。</p>
+      <div class="action-row"><button class="primary" data-copy-demo-link>复制公网试用链接</button><button class="secondary" data-view="slice">从 Quick Mark 开始</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">推荐试用路线 <span class="micro">第一次打开</span></h2>
+      <div class="trial-route">
+        ${trialStep("01", "留下一张切片", "写一句今天不同的地方。", "slice")}
+        ${trialStep("02", "编译一篇周章节", "认领 3 个瞬间，看它变成可编辑故事。", "chapter")}
+        ${trialStep("03", "缩放人生旷野", "从月度花丛看到一生周格。", "meadow")}
+        ${trialStep("04", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
+        ${trialStep("05", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">当前能力边界 <span class="micro">说清楚才可信</span></h2>
+      <div class="boundary-grid">
+        ${boundaryColumn("已可试用", [
+          "Quick Mark 与今日切片",
+          "可编辑周章节与隐私分享预览",
+          "人生旷野五档语义缩放",
+          "记忆保险箱导出/导入/清空",
+          "90 天回忆仪式"
+        ], "ok")}
+        ${boundaryColumn("PoC 模拟", [
+          "AI 分层与 DeepSeek 模式为演示开关",
+          "规则门禁用于模拟忠实编辑",
+          "季度风景使用本地样例与当前切片",
+          "分享仅生成文案，不发布到社交平台"
+        ], "soft")}
+        ${boundaryColumn("生产待做", [
+          "账户、同步、E2EE 与恢复窗口",
+          "真实模型网关与成本/额度策略",
+          "App Store 隐私营养标签",
+          "PWA manifest / iOS 原生壳与图标资产"
+        ], "warn")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">隐私与 AI 说明 <span class="micro">外部试用版</span></h2>
+      <div class="chapter-list">
+        <div class="chapter-line"><strong>Demo 默认只用浏览器本地数据</strong><span>当前公网版本没有接入真实登录、云同步或真实 DeepSeek API；你在本机浏览器里的 Demo 数据可导出、可清空。</span></div>
+        <div class="chapter-line"><strong>AI 是忠实编辑，不是人生意义作者</strong><span>漂亮但没有来源的句子不得进入最终故事；低落、压力和普通日子也允许被记录。</span></div>
+        <div class="chapter-line"><strong>生产版会先解决数据边界</strong><span>真实用户记忆进入云端前，需要 E2EE、地区数据边界、删除/导出权和清晰的模型处理条款。</span></div>
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">App Store 方向清单</h2>
+      <div class="readiness-list">
+        ${readiness("产品灵魂", "完成", "时间切片机、人生旷野、90 天可讲述。")}
+        ${readiness("数据权利", "Demo 覆盖", "导出、导入、清空已可点击；生产需账户与恢复。")}
+        ${readiness("AI 边界", "PoC 覆盖", "分层架构和黄金样本已可看；生产需真实网关。")}
+        ${readiness("安装体验", "待做", "受不新建文件约束，本轮未添加 manifest/icon。")}
+        ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
+      </div>
+    </section>
+  `;
+}
+
+function trialStep(num, title, copy, view) {
+  return `<button class="trial-step" data-view="${view}"><span>${num}</span><strong>${title}</strong><em>${copy}</em></button>`;
+}
+
+function boundaryColumn(title, items, tone) {
+  return `<div class="boundary-column ${tone}"><strong>${title}</strong>${items.map(item => `<span>${escapeHtml(item)}</span>`).join("")}</div>`;
+}
+
+function readiness(label, stateLabel, copy) {
+  return `<div class="readiness-item"><span>${label}</span><strong>${stateLabel}</strong><em>${copy}</em></div>`;
+}
+
 function monthPrompt(label, attr, value) {
   return `<label class="month-prompt"><span>${label}</span><textarea ${attr} rows="2">${escapeHtml(value)}</textarea></label>`;
 }
@@ -1023,7 +1113,16 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">记忆保险箱 <span class="micro">v7 · 本地优先</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v8 · 公网导览</span></h2>
+      <div class="chapter-list">
+        <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
+        <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
+      </div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="settings-card">
+      <h2 class="section-title">记忆保险箱 <span class="micro">v8 · 本地优先</span></h2>
       <div class="vault-grid">
         ${vaultStat("切片", stats.moments, "条")}
         ${vaultStat("认领", stats.claimed, "个")}
@@ -1086,7 +1185,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : state.view === "guide" ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -1114,7 +1213,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v7 聚焦 90 天回忆仪式：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱与月度/季度回忆已经可以在公网试用。下一步继续补真实同步/AI 边界与 App Store 级隐私说明。</p>
+      <p>当前 v8 聚焦外部试用：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆和试用指南已经可以在公网试用。下一步继续补安装资产、真实同步/AI 边界与 App Store 级合规文本。</p>
     </section>
   </aside>`;
 }
