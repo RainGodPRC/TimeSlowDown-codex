@@ -809,11 +809,166 @@ public enum DeletionAPIClientPlan {
     }
 }
 
+public struct DeletionServiceResponseContract: Codable, Equatable, Sendable {
+    public var acceptedStatusCode: Int
+    public var completedStatusCode: Int
+    public var alreadyCompletedStatusCode: Int
+    public var cancellationWindowStatusCode: Int
+    public var returnsDeletionReceiptID: Bool
+    public var returnsAuditEventID: Bool
+    public var returnsTombstoneID: Bool
+    public var returnsPerSystemResults: Bool
+    public var responseContainsRawMemoryPayload: Bool
+    public var responseContainsRawMedia: Bool
+    public var userCanDownloadReceiptAfterCompletion: Bool
+
+    public init(
+        acceptedStatusCode: Int = 202,
+        completedStatusCode: Int = 200,
+        alreadyCompletedStatusCode: Int = 208,
+        cancellationWindowStatusCode: Int = 409,
+        returnsDeletionReceiptID: Bool = true,
+        returnsAuditEventID: Bool = true,
+        returnsTombstoneID: Bool = true,
+        returnsPerSystemResults: Bool = true,
+        responseContainsRawMemoryPayload: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        userCanDownloadReceiptAfterCompletion: Bool = true
+    ) {
+        self.acceptedStatusCode = acceptedStatusCode
+        self.completedStatusCode = completedStatusCode
+        self.alreadyCompletedStatusCode = alreadyCompletedStatusCode
+        self.cancellationWindowStatusCode = cancellationWindowStatusCode
+        self.returnsDeletionReceiptID = returnsDeletionReceiptID
+        self.returnsAuditEventID = returnsAuditEventID
+        self.returnsTombstoneID = returnsTombstoneID
+        self.returnsPerSystemResults = returnsPerSystemResults
+        self.responseContainsRawMemoryPayload = responseContainsRawMemoryPayload
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.userCanDownloadReceiptAfterCompletion = userCanDownloadReceiptAfterCompletion
+    }
+}
+
+public struct DeletionServiceIntegrationEnvelope: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var clientEnvelope: DeletionAPIClientEnvelope
+    public var serviceEndpointPath: String
+    public var queueName: String
+    public var jobID: String
+    public var deletionReceiptID: String
+    public var exportFileName: String?
+    public var systemsToErase: [String]
+    public var systemsRequiringTombstone: [String]
+    public var freezesNewWritesBeforeErase: Bool
+    public var requiresReauthentication: Bool
+    public var requiresExportOpportunity: Bool
+    public var availableAfterSubscriptionEnds: Bool
+    public var containsRawMemoryPayload: Bool
+    public var containsRawMedia: Bool
+    public var maxCompletionHours: Int
+    public var auditRetentionDays: Int
+    public var backupErasePolicy: String
+    public var aiDraftErasePolicy: String
+    public var responseContract: DeletionServiceResponseContract
+
+    public init(
+        id: String,
+        clientEnvelope: DeletionAPIClientEnvelope,
+        serviceEndpointPath: String = "/v1/account/deletion-jobs",
+        queueName: String = "account-deletion",
+        jobID: String,
+        deletionReceiptID: String,
+        exportFileName: String?,
+        systemsToErase: [String],
+        systemsRequiringTombstone: [String],
+        freezesNewWritesBeforeErase: Bool = true,
+        requiresReauthentication: Bool = true,
+        requiresExportOpportunity: Bool = true,
+        availableAfterSubscriptionEnds: Bool = true,
+        containsRawMemoryPayload: Bool = false,
+        containsRawMedia: Bool = false,
+        maxCompletionHours: Int = 24,
+        auditRetentionDays: Int = 30,
+        backupErasePolicy: String = "delete-encrypted-backup-and-next-snapshot",
+        aiDraftErasePolicy: String = "purge-ai-draft-cache",
+        responseContract: DeletionServiceResponseContract = DeletionServiceResponseContract()
+    ) {
+        self.id = id
+        self.clientEnvelope = clientEnvelope
+        self.serviceEndpointPath = serviceEndpointPath
+        self.queueName = queueName
+        self.jobID = jobID
+        self.deletionReceiptID = deletionReceiptID
+        self.exportFileName = exportFileName
+        self.systemsToErase = systemsToErase
+        self.systemsRequiringTombstone = systemsRequiringTombstone
+        self.freezesNewWritesBeforeErase = freezesNewWritesBeforeErase
+        self.requiresReauthentication = requiresReauthentication
+        self.requiresExportOpportunity = requiresExportOpportunity
+        self.availableAfterSubscriptionEnds = availableAfterSubscriptionEnds
+        self.containsRawMemoryPayload = containsRawMemoryPayload
+        self.containsRawMedia = containsRawMedia
+        self.maxCompletionHours = maxCompletionHours
+        self.auditRetentionDays = auditRetentionDays
+        self.backupErasePolicy = backupErasePolicy
+        self.aiDraftErasePolicy = aiDraftErasePolicy
+        self.responseContract = responseContract
+    }
+
+    public var isDeletionRightsSafe: Bool {
+        clientEnvelope.isPrivacyReviewSafe &&
+        serviceEndpointPath == "/v1/account/deletion-jobs" &&
+        !jobID.isEmpty &&
+        deletionReceiptID == clientEnvelope.request.receipt.id &&
+        systemsToErase.contains("encrypted-backup") &&
+        systemsToErase.contains("ai-draft-cache") &&
+        systemsToErase.contains("thumbnail-cache") &&
+        systemsRequiringTombstone.contains("account-ledger") &&
+        freezesNewWritesBeforeErase &&
+        requiresReauthentication &&
+        requiresExportOpportunity &&
+        availableAfterSubscriptionEnds &&
+        !containsRawMemoryPayload &&
+        !containsRawMedia &&
+        maxCompletionHours <= 24 &&
+        auditRetentionDays >= 30 &&
+        backupErasePolicy == "delete-encrypted-backup-and-next-snapshot" &&
+        aiDraftErasePolicy == "purge-ai-draft-cache" &&
+        responseContract.returnsDeletionReceiptID &&
+        responseContract.returnsAuditEventID &&
+        responseContract.returnsTombstoneID &&
+        responseContract.returnsPerSystemResults &&
+        !responseContract.responseContainsRawMemoryPayload &&
+        !responseContract.responseContainsRawMedia &&
+        responseContract.userCanDownloadReceiptAfterCompletion
+    }
+}
+
+public enum DeletionServiceIntegrationPlan {
+    public static func envelope(for clientEnvelope: DeletionAPIClientEnvelope) -> DeletionServiceIntegrationEnvelope {
+        let digest = TrustDigest.checksum([
+            clientEnvelope.id,
+            clientEnvelope.request.receipt.id,
+            clientEnvelope.request.idempotencyKey,
+            clientEnvelope.exportFileName ?? "no-export-file"
+        ])
+        return DeletionServiceIntegrationEnvelope(
+            id: "deletion-service-\(digest.prefix(12))",
+            clientEnvelope: clientEnvelope,
+            jobID: "delete-job-\(digest.prefix(12))",
+            deletionReceiptID: clientEnvelope.request.receipt.id,
+            exportFileName: clientEnvelope.exportFileName,
+            systemsToErase: clientEnvelope.request.receipt.affectedRemoteSystems.sorted(),
+            systemsRequiringTombstone: ["account-ledger", "billing-entitlement-ledger"]
+        )
+    }
+}
+
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
-        .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends, and v45 adds a privacy-review-safe client audit envelope.")
+        .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope and v47 adds a deletion service integration boundary.")
     ]
 }
