@@ -45,6 +45,7 @@ const defaultState = {
   chapterTitle: "",
   chapterStory: "",
   shareMode: "private",
+  meadowScale: "month",
   toast: "",
   age: 36,
   quietMode: false
@@ -300,6 +301,7 @@ function bindEvents() {
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
   $("[data-ai-mode]")?.addEventListener("click", () => setState({ aiMode: state.aiMode === "rules" ? "deepseek" : "rules" }));
   $("[data-quiet]")?.addEventListener("click", () => setState({ quietMode: !state.quietMode }));
+  $$("[data-scale]").forEach(btn => btn.addEventListener("click", () => setState({ meadowScale: btn.dataset.scale })));
   $$("[data-claim]").forEach(btn => btn.addEventListener("click", () => toggleClaim(btn.dataset.claim)));
   $$("[data-share-mode]").forEach(btn => btn.addEventListener("click", () => setState({ shareMode: btn.dataset.shareMode })));
   $("[data-age]")?.addEventListener("input", (e) => setState({ age: Number(e.target.value || 36) }));
@@ -436,6 +438,7 @@ function gateBadges(gates) {
 }
 
 function meadowView() {
+  const scale = state.meadowScale || "month";
   return `
     <div class="topline"><div><div class="brand">人生旷野</div><div class="micro">有些日子长成花，有些日子只是草。都算人生。</div></div></div>
     <section class="hero-card">
@@ -443,14 +446,108 @@ function meadowView() {
       <h1 class="hero-title">这不是相册，<br/>是一片会生长的草原。</h1>
       <p class="hero-subtitle">今天、月、年、十年以后，同一批记忆会在不同尺度下显影。</p>
     </section>
-    <div class="meadow" data-meadow><span class="hill"></span></div>
-    <section class="grid-card">
-      <h2 class="section-title">人生周格 <span class="micro">每周一个格子</span></h2>
-      <input data-age type="range" min="18" max="90" value="${state.age}" />
-      <p class="micro">当前年龄 ${state.age} 岁。不是制造焦虑，而是提醒每一周都可以留下一个锚点。</p>
-      <div class="life-grid" data-life-grid></div>
+    <section class="zoom-card">
+      <div class="scale-tabs">
+        ${scaleButton("day", "日", "切片")}
+        ${scaleButton("week", "周", "章节")}
+        ${scaleButton("month", "月", "花丛")}
+        ${scaleButton("year", "年", "图册")}
+        ${scaleButton("life", "一生", "周格")}
+      </div>
+      ${semanticLens(scale)}
     </section>
+    ${scale === "life" ? lifeScalePanel() : ""}
+    ${scale === "year" ? yearAtlasPanel() : ""}
+    ${scale === "month" ? monthLandscapePanel() : ""}
   `;
+}
+
+function scaleButton(id, label, sub) {
+  return `<button class="scale-tab ${state.meadowScale === id ? "active" : ""}" data-scale="${id}"><strong>${label}</strong><span>${sub}</span></button>`;
+}
+
+function semanticLens(scale) {
+  const claimed = getClaimedMoments().slice(0, 3);
+  const chapterTitle = state.chapterTitle || deriveChapterTitle(claimed);
+  const copy = {
+    day: ["今日切片", state.moments[0]?.title || "今天还没有切片", "日尺度只回答：今天有什么不一样？"],
+    week: ["本周章节", chapterTitle, "周尺度把 3 个被认领的瞬间放成一段可以讲的故事。"],
+    month: ["月度风景", "七月：压力、家人和一次完成", "月尺度不数记录数量，而是看主题、人物和变化长成什么地貌。"],
+    year: ["年度图册", "四季里有花，也有雨", "年尺度把每个月变成一页图册，让阶段变化看得见。"],
+    life: ["一生周格", `${state.age} 岁 · 站在这一周`, "一生尺度用每周一个格子提醒时间珍贵，再放大当前阶段。"]
+  }[scale];
+  return `<div class="semantic-lens ${scale}">
+    <div class="meadow" data-meadow><span class="hill"></span></div>
+    <div class="lens-copy">
+      <div class="eyebrow">${copy[0]}</div>
+      <h2>${escapeHtml(copy[1])}</h2>
+      <p>${escapeHtml(copy[2])}</p>
+    </div>
+  </div>`;
+}
+
+function monthLandscapePanel() {
+  const themes = summarizeThemes();
+  return `<section class="grid-card">
+    <h2 class="section-title">月度风景 <span class="micro">花丛与主题</span></h2>
+    <div class="month-map">
+      ${themes.map((theme, index) => `<div class="theme-cluster cluster-${index}">
+        <span class="cluster-flower"></span>
+        <strong>${escapeHtml(theme.name)}</strong>
+        <em>${theme.count} 个线索</em>
+        <p>${escapeHtml(theme.copy)}</p>
+      </div>`).join("")}
+    </div>
+    <div class="chapter-strip">
+      ${["第 1 周", "第 2 周", "第 3 周", "第 4 周"].map((week, index) => `<button class="week-chip ${index === 0 ? "active" : ""}" data-view="chapter"><strong>${week}</strong><span>${index === 0 ? "已成章" : "待认领"}</span></button>`).join("")}
+    </div>
+    <p class="source-line">月度风景来自周章节和切片主题；平淡日子仍是草地，不因未记录而变成空白。</p>
+  </section>`;
+}
+
+function summarizeThemes() {
+  const allTags = state.moments.flatMap(moment => moment.tags);
+  const count = tag => allTags.filter(item => item === tag).length || 1;
+  return [
+    { name: "家人与连接", count: count("家人") + count("人"), copy: "那些与人有关的短句，会在月尺度聚成一片花丛。" },
+    { name: "完成与第一次", count: count("第一次") + count("成就"), copy: "不是宏大胜利，而是“我确实做到了”的小峰丘。" },
+    { name: "雨天也算", count: count("低落") + count("允许不开心"), copy: "压力和沉默不被美化，也不被隐藏。它们是这片地貌的天气。" }
+  ];
+}
+
+function yearAtlasPanel() {
+  const months = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"];
+  return `<section class="grid-card">
+    <h2 class="section-title">年度章节图册 <span class="micro">12 页风景</span></h2>
+    <div class="atlas-grid">
+      ${months.map((month, index) => `<button class="atlas-page ${index === 6 ? "current" : index < 6 ? "past" : ""}" data-scale="month">
+        <span>${month}</span>
+        <strong>${index === 6 ? "正在生长" : index < 6 ? "已有草纹" : "还在雾里"}</strong>
+        <i style="--seed:${index + 1}"></i>
+      </button>`).join("")}
+    </div>
+    <p class="source-line">年度不是一次性年终总结，而是 12 页逐月长出来的图册。</p>
+  </section>`;
+}
+
+function lifeScalePanel() {
+  return `<section class="grid-card life-panel">
+    <h2 class="section-title">人生周格 <span class="micro">缩略全景 + 局部放大</span></h2>
+    <input data-age type="range" min="18" max="90" value="${state.age}" />
+    <p class="micro">当前年龄 ${state.age} 岁。全景负责提醒时间有限，局部放大负责告诉你：下一步可以从这一周开始。</p>
+    <div class="life-grid mini" data-life-grid></div>
+    <div class="focus-year">
+      <div><strong>当前这一年</strong><span>52 周里的几个被记住瞬间</span></div>
+      <div class="year-grid">${yearFocusCells()}</div>
+    </div>
+  </section>`;
+}
+
+function yearFocusCells() {
+  return Array.from({ length: 52 }, (_, i) => {
+    const cls = [4, 18, 31, 37].includes(i) ? "memory" : i === 27 ? "now" : "";
+    return `<i class="week-cell ${cls}" title="week ${i + 1}"></i>`;
+  }).join("");
 }
 
 function chapterView() {
