@@ -27,3 +27,4 @@ Current demo focus:
 - People/place lens: regroup slices by user-written people and places without contacts, GPS, or face recognition
 - Media library production facade: Photos permission strategy, E2EE vault, thumbnails, export/delete, and Web Share boundaries
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
+- Demo QA Console: public-trial smoke route, pass/PoC/todo checklist, and copyable QA report

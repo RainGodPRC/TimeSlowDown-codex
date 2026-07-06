@@ -587,6 +587,43 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .processing-boundary.safe { background: rgba(223,234,215,.38); border-color: rgba(85,116,95,.22); }
 .processing-boundary.poc { background: rgba(112,148,163,.12); border-color: rgba(112,148,163,.24); }
 .processing-boundary.warn { background: rgba(215,168,95,.12); border-color: rgba(215,168,95,.28); }
+.qa-hero { background: linear-gradient(145deg, rgba(255,253,247,.86), rgba(112,148,163,.12), rgba(223,234,215,.48)); }
+.qa-scoreboard { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.qa-metric {
+  min-height: 78px; border:1px solid rgba(85,116,95,.15); border-radius: 18px; padding: 11px;
+  background: rgba(255,255,255,.58); display:flex; flex-direction:column; justify-content:space-between;
+}
+.qa-metric strong { font-size: 24px; font-variant-numeric: tabular-nums; }
+.qa-metric span { color: var(--moss); font-size: 10px; font-weight:900; letter-spacing:.08em; }
+.qa-metric em { color: var(--muted); font-size: 10px; line-height:1.3; font-style:normal; }
+.qa-state-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.qa-state {
+  min-height: 72px; border:1px solid var(--line); border-radius: 18px; padding: 10px;
+  background: rgba(255,255,255,.56); display:flex; flex-direction:column; justify-content:space-between;
+}
+.qa-state span { color: var(--moss); font-size: 10px; font-weight:900; }
+.qa-state strong { color: var(--ink); font-size: 18px; line-height:1.15; overflow-wrap:anywhere; }
+.qa-state em { color: var(--muted); font-size: 10px; font-style:normal; }
+.qa-checklist, .qa-route { display:grid; gap: 8px; }
+.qa-check {
+  display:grid; grid-template-columns: 54px minmax(0,1fr) 68px; grid-template-areas:"status title route" "status copy copy";
+  gap: 3px 9px; border:1px solid var(--line); border-radius: 17px; padding: 10px; background: rgba(255,255,255,.56);
+}
+.qa-check span { grid-area:status; align-self:center; border-radius: 999px; padding: 6px 5px; text-align:center; color:#fff; background: var(--moss); font-size: 9px; font-weight:900; }
+.qa-check strong { grid-area:title; font-size: 12px; }
+.qa-check em { grid-area:route; justify-self:end; color: var(--moss); font-size: 10px; font-weight:900; font-style:normal; }
+.qa-check small { grid-area:copy; color: var(--muted); font-size: 11px; line-height:1.35; }
+.qa-check.poc span { background: var(--blue); }
+.qa-check.todo span, .qa-check.warn span { background: var(--amber); color: var(--ink); }
+.qa-route-step {
+  min-height: 64px; border-radius: 18px; padding: 11px; text-align:left; color: var(--ink); background: rgba(255,253,247,.66);
+  display:grid; grid-template-columns: 42px minmax(0,1fr); grid-template-areas:"num title" "num copy"; gap: 2px 10px; align-items:center;
+  box-shadow: inset 0 0 0 1px rgba(39,55,46,.1); transition-property: transform, background-color; transition-duration:.18s; transition-timing-function:cubic-bezier(.2,0,0,1);
+}
+.qa-route-step:active { transform: scale(.96); }
+.qa-route-step span { grid-area:num; width:34px; height:34px; border-radius:13px; display:grid; place-items:center; background: rgba(112,148,163,.14); color: var(--blue); font-weight:900; font-variant-numeric: tabular-nums; }
+.qa-route-step strong { grid-area:title; font-size:13px; }
+.qa-route-step em { grid-area:copy; color: var(--muted); font-size:11px; line-height:1.35; font-style:normal; }
 .permission-grid { display:grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
 .permission-card {
   min-height: 98px; border:1px solid var(--line); border-radius: 18px; padding: 12px;
@@ -772,6 +809,9 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
   .readiness-item { grid-template-columns: 1fr; }
   .permission-grid { grid-template-columns: 1fr; }
   .nutrition-grid { grid-template-columns: 1fr; }
+  .qa-state-grid { grid-template-columns: repeat(2, 1fr); }
+  .qa-check { grid-template-columns: 54px minmax(0,1fr); grid-template-areas:"status title" "status route" "copy copy"; }
+  .qa-check em { justify-self:start; }
   .sync-map { grid-template-columns: 1fr; }
   .sync-console { grid-template-columns: 1fr; }
   .task-grid { grid-template-columns: 1fr; }
