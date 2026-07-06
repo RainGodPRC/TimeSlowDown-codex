@@ -105,8 +105,40 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>39</string>"), "Info.plist should carry v39 build number")
+check(infoPlistText.contains("<string>40</string>"), "Info.plist should carry v40 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
+
+func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
+    let data = try Data(contentsOf: url)
+    let pngSignature: [UInt8] = [137, 80, 78, 71, 13, 10, 26, 10]
+    check(data.count >= 24, "PNG file should contain an IHDR chunk: \(url.lastPathComponent)")
+    for (offset, byte) in pngSignature.enumerated() {
+        check(data[offset] == byte, "PNG file should have a valid signature: \(url.lastPathComponent)")
+    }
+    func readBigEndianUInt32(_ offset: Int) -> Int {
+        (Int(data[offset]) << 24) |
+        (Int(data[offset + 1]) << 16) |
+        (Int(data[offset + 2]) << 8) |
+        Int(data[offset + 3])
+    }
+    return (readBigEndianUInt32(16), readBigEndianUInt32(20), data[25])
+}
+
+let appIconContentsText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appIconPath), encoding: .utf8)
+check(AppIconAssetContract.slots.count == 9, "App Icon contract should track nine required iOS slots")
+for slot in AppIconAssetContract.slots {
+    check(appIconContentsText.contains(slot.filename), "AppIcon Contents.json should reference \(slot.filename)")
+    let iconURL = packageRoot
+        .appendingPathComponent(AppIconAssetContract.assetCatalogPath)
+        .appendingPathComponent(slot.filename)
+    check(FileManager.default.fileExists(atPath: iconURL.path), "App Icon PNG should exist: \(slot.filename)")
+    let metadata = try pngMetadata(at: iconURL)
+    check(metadata.width == slot.pixelSize, "App Icon width should match slot pixels for \(slot.filename)")
+    check(metadata.height == slot.pixelSize, "App Icon height should match slot pixels for \(slot.filename)")
+    check(metadata.colorType == 2, "App Icon should be RGB without alpha for \(slot.filename)")
+}
+check(AppIconAssetContract.requiredVisualMotifs.contains("no-copyrighted-asset"), "App Icon contract should forbid third-party assets")
+check(AppIconAssetContract.requiredVisualMotifs.contains("no-alpha-channel"), "App Icon contract should require no alpha channel")
 
 let fixedDate = Date(timeIntervalSince1970: 1_788_249_600)
 let deviceKey = KeychainVaultStub.bootstrapDeviceKey(
@@ -194,4 +226,26 @@ check(deletionRequest.retryPolicy == "idempotent-retry-24h", "Deletion API reque
 check(ProductionImplementationChecklist.rows.count == 4, "Production Implementation Checklist should track four v39 implementation adapters")
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, and v39 implementation adapters are aligned.")
+let buildNotes = TestFlightBuildNotes()
+check(buildNotes.buildNumber == "40", "TestFlight build notes should match v40")
+check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
+check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
+check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
+
+let reviewRoute = AppReviewRoute()
+check(reviewRoute.isGuestReviewFriendly, "App Review route should not require login")
+check(reviewRoute.steps.count == 6, "App Review route should keep six focused steps")
+check(reviewRoute.steps.joined(separator: " ").localizedCaseInsensitiveContains("Memory Camera"), "App Review route should include Memory Camera")
+check(reviewRoute.steps.joined(separator: " ").localizedCaseInsensitiveContains("export"), "App Review route should include export/delete rights")
+
+let signingPlan = SigningReadinessPlan()
+check(signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown", "Signing plan should preserve bundle identifier")
+check(signingPlan.doesNotFakeSigning, "Signing plan should not fake a Team ID")
+check(signingPlan.archiveCommandWhenXcodeAvailable.contains("xcodebuild"), "Signing plan should name the future Xcode archive command")
+
+check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist should track four v40 asset contracts")
+check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
+check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
+
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, and v40 App Store launch assets are aligned.")
