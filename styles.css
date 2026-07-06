@@ -614,7 +614,7 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .install-step span { display:block; color: var(--muted); font-size: 11px; line-height:1.45; }
 .launch-hero { background: linear-gradient(145deg, rgba(32,52,43,.92), rgba(85,116,95,.78), rgba(215,168,95,.22)); color:#fff; }
 .launch-hero .eyebrow, .launch-hero .hero-subtitle, .launch-hero .source-line { color: rgba(255,255,255,.78); border-color: rgba(255,255,255,.22); }
-.launch-score-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.launch-score-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
 .launch-metric {
   min-height: 82px; border-radius: 18px; padding: 10px; border:1px solid rgba(255,255,255,.22);
   background: rgba(255,255,255,.12); display:flex; flex-direction:column; justify-content:space-between;
@@ -641,6 +641,40 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .launch-row strong { font-size: 12px; }
 .launch-row span { border-radius:999px; padding:4px 7px; font-size:9px; font-weight:900; background: rgba(32,52,43,.07); color: var(--muted); text-transform:uppercase; }
 .launch-row em { grid-column: 1 / -1; color: var(--muted); font-size: 11px; line-height:1.35; font-style:normal; }
+.native-handoff-card { background: linear-gradient(145deg, rgba(255,253,247,.78), rgba(112,148,163,.12), rgba(223,234,215,.4)); }
+.native-score-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 12px 0; }
+.native-score-grid .launch-metric {
+  color: var(--ink); border-color: rgba(85,116,95,.14);
+  background: rgba(255,255,255,.58);
+}
+.native-score-grid .launch-metric em { color: var(--muted); }
+.native-ledger { display:grid; gap: 8px; }
+.native-row {
+  border:1px solid var(--line); border-radius: 18px; padding: 11px;
+  background: rgba(255,255,255,.58);
+  display:grid; grid-template-columns: 54px minmax(0,1fr) auto;
+  grid-template-areas:"status title owner" "status copy copy";
+  gap: 3px 9px; align-items:center;
+}
+.native-row > span {
+  grid-area:status; justify-self:start; border-radius:999px; padding:6px 7px;
+  background: rgba(32,52,43,.08); color: var(--muted); font-size:9px; font-weight:900; text-transform:uppercase;
+}
+.native-row strong { grid-area:title; font-size: 12px; }
+.native-row small {
+  grid-area:owner; color: var(--moss); background: rgba(85,116,95,.1);
+  border-radius:999px; padding:5px 7px; font-size:9px; font-weight:900;
+}
+.native-row em { grid-area:copy; color: var(--muted); font-size:11px; line-height:1.35; font-style:normal; }
+.native-row.poc > span { background: rgba(112,148,163,.14); color: var(--blue); }
+.native-row.todo > span { background: rgba(215,168,95,.18); color: #9a6a25; }
+.native-source-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.native-source {
+  border:1px solid rgba(85,116,95,.14); border-radius: 17px; padding: 11px;
+  background: rgba(255,253,247,.62);
+}
+.native-source strong { display:block; font-size: 11px; color: var(--ink); }
+.native-source span { display:block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height:1.35; }
 .launch-receipt-card {
   border:1px dashed rgba(85,116,95,.24); border-radius: 20px; padding: 13px; background: rgba(255,253,247,.62);
 }
@@ -1197,7 +1231,11 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
   .nutrition-grid { grid-template-columns: 1fr; }
   .media-vault-dashboard { grid-template-columns: 1fr; }
   .media-audit-strip { grid-template-columns: 1fr; }
-  .launch-score-grid { grid-template-columns: repeat(3, 1fr); }
+  .launch-score-grid { grid-template-columns: repeat(2, 1fr); }
+  .native-score-grid { grid-template-columns: repeat(3, 1fr); }
+  .native-row { grid-template-columns: 54px minmax(0,1fr); grid-template-areas:"status title" "status owner" "copy copy"; }
+  .native-row small { justify-self:start; }
+  .native-source-grid { grid-template-columns: 1fr; }
   .launch-step { grid-template-columns: 38px minmax(0,1fr); grid-template-areas:"num title" "num status" "copy copy"; }
   .launch-step small { justify-self:start; }
   .delete-receipt-grid, .review-pack-grid { grid-template-columns: 1fr; }
