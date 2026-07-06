@@ -25,6 +25,8 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
     public var nativeTodoCount: Int
     public var submissionTodoCount: Int
     public var privacySafe: Bool
+    public var hasExportPackage: Bool
+    public var lastExportEntryCount: Int
 
     public init(
         routeCount: Int,
@@ -32,7 +34,9 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
         mediaAnchorCount: Int,
         nativeTodoCount: Int,
         submissionTodoCount: Int,
-        privacySafe: Bool
+        privacySafe: Bool,
+        hasExportPackage: Bool = false,
+        lastExportEntryCount: Int = 0
     ) {
         self.routeCount = routeCount
         self.sliceCount = sliceCount
@@ -40,6 +44,54 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
         self.nativeTodoCount = nativeTodoCount
         self.submissionTodoCount = submissionTodoCount
         self.privacySafe = privacySafe
+        self.hasExportPackage = hasExportPackage
+        self.lastExportEntryCount = lastExportEntryCount
+    }
+}
+
+public struct NativeExportSummary: Codable, Equatable, Sendable {
+    public var fileName: String
+    public var entryCount: Int
+    public var fileSizeBytes: Int
+    public var generatedOnDevice: Bool
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+    public var excludesRawMediaAndAITranscripts: Bool
+
+    public init(
+        fileName: String,
+        entryCount: Int,
+        fileSizeBytes: Int,
+        generatedOnDevice: Bool,
+        canBeGeneratedAfterSubscriptionEnds: Bool,
+        excludesRawMediaAndAITranscripts: Bool
+    ) {
+        self.fileName = fileName
+        self.entryCount = entryCount
+        self.fileSizeBytes = fileSizeBytes
+        self.generatedOnDevice = generatedOnDevice
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+        self.excludesRawMediaAndAITranscripts = excludesRawMediaAndAITranscripts
+    }
+
+    public static func from(_ package: ExportZIPPackage) -> NativeExportSummary {
+        NativeExportSummary(
+            fileName: package.fileName,
+            entryCount: package.entries.count,
+            fileSizeBytes: package.data.count,
+            generatedOnDevice: package.generatedOnDevice,
+            canBeGeneratedAfterSubscriptionEnds: package.canBeGeneratedAfterSubscriptionEnds,
+            excludesRawMediaAndAITranscripts: package.entries.allSatisfy {
+                !$0.containsRawMedia && !$0.containsAITranscript
+            }
+        )
+    }
+
+    public var isTSDMemoryRightsSafe: Bool {
+        generatedOnDevice &&
+        canBeGeneratedAfterSubscriptionEnds &&
+        excludesRawMediaAndAITranscripts &&
+        entryCount >= 5 &&
+        fileName.hasSuffix(".zip")
     }
 }
 
@@ -47,15 +99,21 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public var selectedRoute: NativeShellRoute
     public var slices: [MemorySlice]
     public var privacyBoundary: PrivacyBoundary
+    public var latestExportSummary: NativeExportSummary?
+    public var latestExportError: String?
 
     public init(
         selectedRoute: NativeShellRoute = .now,
         slices: [MemorySlice] = [],
-        privacyBoundary: PrivacyBoundary = PrivacyBoundary()
+        privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
+        latestExportSummary: NativeExportSummary? = nil,
+        latestExportError: String? = nil
     ) {
         self.selectedRoute = selectedRoute
         self.slices = slices
         self.privacyBoundary = privacyBoundary
+        self.latestExportSummary = latestExportSummary
+        self.latestExportError = latestExportError
     }
 
     public static func seeded(now: Date = Date()) -> NativeShellStore {
@@ -91,7 +149,9 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             mediaAnchorCount: slices.filter(\.hasMediaAnchor).count,
             nativeTodoCount: NativeHandoffLedger.rows.filter { $0.status == .todo }.count,
             submissionTodoCount: SubmissionPacket.rows.filter { $0.status == .todo }.count,
-            privacySafe: privacyBoundary.isAppStoreSafeDefault
+            privacySafe: privacyBoundary.isAppStoreSafeDefault,
+            hasExportPackage: latestExportSummary != nil,
+            lastExportEntryCount: latestExportSummary?.entryCount ?? 0
         )
     }
 
@@ -104,6 +164,45 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         slices.insert(slice, at: 0)
         selectedRoute = .slices
         return slice
+    }
+
+    @discardableResult
+    public mutating func exportMemoryVault(now: Date = Date()) throws -> ExportZIPPackage {
+        let key = KeychainVaultStub.bootstrapDeviceKey(
+            accountID: "guest-pass",
+            deviceName: "This iPhone",
+            createdAt: now
+        )
+        let chapter = SliceFactory.compileWeeklyChapter(
+            title: "本周没有消失",
+            claimed: Array(slices.prefix(3))
+        )
+        let manifest = ExportManifestSigner.sign(
+            slices: slices,
+            chapters: [chapter],
+            with: key,
+            generatedAt: now
+        )
+        let plan = ExportArchivePlan.zipPlan(for: manifest)
+        let deletionReceipt = DeletionReceipt.issue(
+            scopes: [.localCache, .encryptedCloudBackup, .aiDrafts, .mediaThumbnails],
+            requestedAt: now
+        )
+        let package = try OnDeviceExportZIPBuilder.package(
+            for: plan,
+            slices: slices,
+            chapters: [chapter],
+            deletionReceipt: deletionReceipt
+        )
+        latestExportSummary = NativeExportSummary.from(package)
+        latestExportError = nil
+        selectedRoute = .account
+        return package
+    }
+
+    public mutating func recordExportError(_ message: String) {
+        latestExportError = message
+        selectedRoute = .account
     }
 
     public func weeklyPreviewTitle() -> String {

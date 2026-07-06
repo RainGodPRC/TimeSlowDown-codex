@@ -57,6 +57,7 @@ check(!boundary.allowsGPSInference, "Default boundary should not infer GPS")
 check(!boundary.allowsFaceRecognition, "Default boundary should not do face recognition")
 check(!boundary.subscriptionCanBlockExport, "Subscription should not block memory export")
 
+let fixedDate = Date(timeIntervalSince1970: 1_788_249_600)
 var shell = NativeShellStore.seeded()
 let firstSnapshot = shell.snapshot
 check(firstSnapshot.routeCount == NativeShellRoute.allCases.count, "Native shell should expose all expected routes")
@@ -65,6 +66,8 @@ check(firstSnapshot.mediaAnchorCount == 1, "Seeded native shell should include o
 check(firstSnapshot.nativeTodoCount == NativeHandoffLedger.rows.filter { $0.status == .todo }.count, "Native shell should summarize native todo rows")
 check(firstSnapshot.submissionTodoCount == SubmissionPacket.rows.filter { $0.status == .todo }.count, "Native shell should summarize submission todo rows")
 check(firstSnapshot.privacySafe, "Native shell should start with a safe privacy boundary")
+check(!firstSnapshot.hasExportPackage, "Native shell should not claim an export package before the user asks")
+check(firstSnapshot.lastExportEntryCount == 0, "Native shell should start with no export entries")
 
 let captured = shell.captureFromMemoryCamera(
     MediaAnchor(kind: .image, label: "native-memory-camera.jpg", note: "SwiftUI Memory Camera")
@@ -74,6 +77,17 @@ check(shell.slices.first == captured, "Memory Camera capture should insert the n
 check(shell.snapshot.sliceCount == 4, "Memory Camera capture should increase slice count")
 check(shell.snapshot.mediaAnchorCount == 2, "Memory Camera capture should increase media anchor count")
 check(shell.weeklyPreviewTitle() == "本周没有消失", "Native shell should expose weekly chapter preview")
+
+let shellExport = try shell.exportMemoryVault(now: fixedDate)
+check(shell.selectedRoute == .account, "Exporting memory vault should keep users in Account Rights")
+check(shellExport.hasZIPMagic, "Native shell export should generate a real ZIP package")
+check(shellExport.isMemorySafeDefault, "Native shell export should preserve TSD memory rights")
+check(shell.latestExportSummary?.fileName == shellExport.fileName, "Native shell should retain the latest export file name")
+check(shell.latestExportSummary?.entryCount == 5, "Native shell export summary should expose the five default documents")
+check(shell.latestExportSummary?.isTSDMemoryRightsSafe == true, "Native shell export summary should be memory-rights safe")
+check(shell.snapshot.hasExportPackage, "Native shell snapshot should show that an export package exists after export")
+check(shell.snapshot.lastExportEntryCount == 5, "Native shell snapshot should expose latest export entry count")
+check(shell.latestExportError == nil, "Native shell should clear export errors after a successful export")
 
 let requiredRoutes = ["此刻", "切片", "旷野", "上架", "我的"]
 check(NativeShellRoute.allCases.map(\.title) == requiredRoutes, "Native shell route titles should match the App Store shell")
@@ -105,7 +119,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>42</string>"), "Info.plist should carry v42 build number")
+check(infoPlistText.contains("<string>43</string>"), "Info.plist should carry v43 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -140,7 +154,6 @@ for slot in AppIconAssetContract.slots {
 check(AppIconAssetContract.requiredVisualMotifs.contains("no-copyrighted-asset"), "App Icon contract should forbid third-party assets")
 check(AppIconAssetContract.requiredVisualMotifs.contains("no-alpha-channel"), "App Icon contract should require no alpha channel")
 
-let fixedDate = Date(timeIntervalSince1970: 1_788_249_600)
 let deviceKey = KeychainVaultStub.bootstrapDeviceKey(
     accountID: "guest-pass",
     deviceName: "Geralt iPhone",
@@ -267,10 +280,11 @@ check(ProductionImplementationChecklist.rows.count == 4, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "42", "TestFlight build notes should match v42")
+check(buildNotes.buildNumber == "43", "TestFlight build notes should match v43")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Account Rights"), "TestFlight build notes should mention Account Rights export UI")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -290,4 +304,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, and v42 export ZIP builder are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, and v43 native export UI state are aligned.")

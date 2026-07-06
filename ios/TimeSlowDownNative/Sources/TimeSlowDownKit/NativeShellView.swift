@@ -142,6 +142,35 @@ private struct NativeAccountView: View {
                 Label("不上传原始影像", systemImage: store.privacyBoundary.allowsRawMediaUpload ? "xmark.circle" : "checkmark.circle")
                 Label("不读取通讯录/GPS/人脸", systemImage: store.privacyBoundary.isAppStoreSafeDefault ? "checkmark.circle" : "exclamationmark.triangle")
                 Label("订阅不得扣留导出", systemImage: store.privacyBoundary.subscriptionCanBlockExport ? "xmark.circle" : "checkmark.circle")
+                Button("导出我的记忆 ZIP") {
+                    do {
+                        _ = try store.exportMemoryVault()
+                    } catch {
+                        store.recordExportError("导出失败：\(error)")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+
+                if let summary = store.latestExportSummary {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(summary.fileName, systemImage: "archivebox")
+                            .font(.headline)
+                        Text("\(summary.entryCount) 个文档 · \(summary.fileSizeBytes) bytes")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Label("设备本地生成，退订后仍可导出", systemImage: summary.isTSDMemoryRightsSafe ? "checkmark.seal" : "exclamationmark.triangle")
+                            .font(.caption.weight(.semibold))
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                }
+
+                if let exportError = store.latestExportError {
+                    Text(exportError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
                 Spacer()
             }
             .padding()
