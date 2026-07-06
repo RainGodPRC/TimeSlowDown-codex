@@ -91,7 +91,10 @@ const defaultState = {
   syncPausedAt: "",
   recoveryUntil: "",
   subscriptionState: "free",
-  connectedDevices: 1
+  connectedDevices: 1,
+  lastMediaExportAt: "",
+  mediaDeleteRequestAt: "",
+  mediaShareAt: ""
 };
 
 let state = loadState();
@@ -381,7 +384,10 @@ function vaultPayload() {
       syncPausedAt: state.syncPausedAt,
       recoveryUntil: state.recoveryUntil,
       subscriptionState: state.subscriptionState,
-      connectedDevices: state.connectedDevices
+      connectedDevices: state.connectedDevices,
+      lastMediaExportAt: state.lastMediaExportAt,
+      mediaDeleteRequestAt: state.mediaDeleteRequestAt,
+      mediaShareAt: state.mediaShareAt
     }
   };
 }
@@ -476,6 +482,76 @@ function lensTimeline() {
       place: place?.label || "未命名地点"
     };
   });
+}
+
+function mediaLibraryStats() {
+  const items = mediaMoments();
+  const local = items.filter(moment => moment.media?.storage === "browser-local-demo").length;
+  const external = items.filter(moment => moment.media?.storage === "external-link" || moment.media?.kind === "link").length;
+  const previews = items.filter(moment => moment.media?.previewUrl).length;
+  return {
+    total: items.length,
+    local,
+    external,
+    previews,
+    encrypted: items.length,
+    deleteQueue: state.mediaDeleteRequestAt ? 1 : 0
+  };
+}
+
+function mediaLibraryManifest() {
+  return {
+    product: "TimeSlowDown Media Library Production Facade",
+    version: "v18-demo",
+    generatedAt: new Date().toISOString(),
+    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service.",
+    media: mediaMoments().map(moment => ({
+      sliceId: moment.id,
+      date: moment.date,
+      title: moment.title,
+      kind: moment.media?.kind,
+      label: moment.media?.label,
+      storage: moment.media?.storage,
+      hasPreview: Boolean(moment.media?.previewUrl),
+      source: moment.media?.source || "unknown"
+    }))
+  };
+}
+
+async function copyMediaLibraryReport() {
+  const manifest = JSON.stringify(mediaLibraryManifest(), null, 2);
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(manifest);
+    setState({ lastMediaExportAt: new Date().toLocaleString("zh-CN"), toast: "媒体库清单已复制。生产版应导出原图/视频与缩略图包。" });
+  } catch {
+    setState({ lastMediaExportAt: new Date().toLocaleString("zh-CN"), toast: "浏览器不允许复制；已模拟生成媒体库清单。" });
+  }
+}
+
+function simulateMediaDelete() {
+  setState({
+    mediaDeleteRequestAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟提交原始影像删除请求。生产版应删除原图、缩略图、云副本和模型任务缓存。"
+  });
+}
+
+async function shareMediaLibraryDemo() {
+  const shareText = `我用 TimeSlowDown 留下了 ${mediaMoments().length} 个带影像锚点的记忆。公开分享只包含时间风景，不包含原图、地点、人名或原文。`;
+  const stamp = new Date().toLocaleString("zh-CN");
+  try {
+    if (navigator.share) {
+      setState({ mediaShareAt: stamp, toast: "正在调用系统分享面板；原始影像不会被自动分享。" });
+      await navigator.share({ title: "TimeSlowDown 媒体记忆", text: shareText, url: PUBLIC_DEMO_URL });
+      setState({ mediaShareAt: stamp, toast: "已调用系统分享面板。生产版应先生成去隐私分享包。" });
+      return;
+    }
+    if (!navigator.clipboard) throw new Error("share unavailable");
+    await navigator.clipboard.writeText(shareText);
+    setState({ mediaShareAt: stamp, toast: "当前浏览器无 Web Share；已复制去隐私分享文案。" });
+  } catch {
+    setState({ mediaShareAt: stamp, toast: "分享被取消或不可用；记忆仍保留在本机 Demo 中。" });
+  }
 }
 
 function exportVault() {
@@ -704,9 +780,10 @@ async function copyPrivacySummary() {
     "TimeSlowDown Codex Demo 隐私摘要：",
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
-    "3. v14 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
-    "5. AI 只做忠实编辑，不替用户决定人生意义。"
+    "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
+    "4. v18 已把媒体库生产边界做成可点击演示：有限相册选择、E2EE 影像库、缩略图、导出删除和去隐私分享。",
+    "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
+    "6. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -724,8 +801,9 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
-    "6. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
+    "5. 媒体策略：v18 演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
+    "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -942,6 +1020,9 @@ function bindEvents() {
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
   $("[data-copy-review]")?.addEventListener("click", copyReviewPacket);
+  $$("[data-copy-media-library]").forEach(btn => btn.addEventListener("click", copyMediaLibraryReport));
+  $$("[data-delete-media-library]").forEach(btn => btn.addEventListener("click", simulateMediaDelete));
+  $$("[data-share-media-library]").forEach(btn => btn.addEventListener("click", shareMediaLibraryDemo));
   $$("[data-simulate-ai-task]").forEach(btn => btn.addEventListener("click", simulateAiTask));
   $$("[data-revoke-ai-draft]").forEach(btn => btn.addEventListener("click", revokeAiDraft));
   $$("[data-copy-ai-task]").forEach(btn => btn.addEventListener("click", copyAiTaskSheet));
@@ -1042,7 +1123,7 @@ function shell(content) {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, lens: lensView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, lens: lensView, library: mediaLibraryView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -1107,8 +1188,9 @@ function nowView() {
         ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
         ${journeyStep("04", "打开媒体记忆墙", "看照片、视频如何把切片串成时间线。", "media")}
         ${journeyStep("05", "打开人物地点镜头", "从谁和哪里，重新讲起最近的瞬间。", "lens")}
-        ${journeyStep("06", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${journeyStep("07", "生成视觉成品", "把周章节、季度回忆和人生旷野变成可分享卡片。", "studio")}
+        ${journeyStep("06", "检查媒体库边界", "看相册权限、加密库、导出删除和分享。", "library")}
+        ${journeyStep("07", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
+        ${journeyStep("08", "生成视觉成品", "把周章节、季度回忆和人生旷野变成可分享卡片。", "studio")}
       </div>
     </section>
   `;
@@ -1353,7 +1435,7 @@ function mediaView() {
         ${mediaStat("视频", stats.video, "段")}
         ${mediaStat("链接", stats.link, "条")}
       </div>
-      <div class="action-row"><button class="primary" data-view="slice">添加影像切片</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="chapter">回到周章节</button></div>
+      <div class="action-row"><button class="primary" data-view="slice">添加影像切片</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="chapter">回到周章节</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="guide-card">
@@ -1379,7 +1461,64 @@ function mediaView() {
         <div class="chapter-line"><strong>原始影像权利属于用户</strong><span>生产版需要原图/视频导出、删除、仅设备保存、E2EE 同步和缩略图边界。</span></div>
         <div class="chapter-line"><strong>AI 不默认看图</strong><span>没有用户授权和任务单，模型不能读取原始影像；最多先处理用户写下的影像备注和最小元信息。</span></div>
       </div>
-      <div class="action-row"><button class="secondary" data-view="review">查看审核中心</button><button class="secondary" data-view="settings">记忆保险箱</button></div>
+      <div class="action-row"><button class="secondary" data-view="library">媒体库生产假面</button><button class="secondary" data-view="review">查看审核中心</button><button class="secondary" data-view="settings">记忆保险箱</button></div>
+    </section>
+  `;
+}
+
+function mediaLibraryView() {
+  const stats = mediaLibraryStats();
+  return `
+    <div class="topline"><div><div class="brand">媒体库生产</div><div class="micro">把照片/视频从 Demo 能力推进到上架前必须说清的边界。</div></div></div>
+    <section class="guide-card library-hero">
+      <div class="eyebrow">Media Library · v18</div>
+      <h1 class="hero-title">不是普通相册，<br/>而是可带走、可删除的记忆库。</h1>
+      <p class="hero-subtitle">这里演示生产版媒体层应如何处理：有限相册选择、端到端加密影像库、缩略图、原始文件导出/删除、去隐私分享。当前仍是 Web Demo，不请求持久相册权限。</p>
+      <div class="library-stats">
+        ${libraryStat("影像锚点", stats.total, "个")}
+        ${libraryStat("本地文件", stats.local, "个")}
+        ${libraryStat("外部链接", stats.external, "条")}
+        ${libraryStat("缩略预览", stats.previews, "张")}
+      </div>
+      <div class="action-row"><button class="primary" data-copy-media-library>复制媒体库清单</button><button class="secondary" data-share-media-library>模拟系统分享</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">权限策略 <span class="micro">Photos Picker first</span></h2>
+      <div class="library-flow">
+        ${libraryStep("01", "单次/有限选择", "首发不请求完整相册。用户主动选择照片/视频后，TSD 才能把它绑定到切片。", "ready")}
+        ${libraryStep("02", "不扫全库", "不自动扫描相册、不做人脸识别、不从 EXIF/GPS 推断地点。", "safe")}
+        ${libraryStep("03", "权限升级有理由", "只有当用户明确要批量整理时，才解释为什么需要更多相册访问。", "todo")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">加密影像库 <span class="micro">E2EE vault</span></h2>
+      <div class="library-vault">
+        ${vaultLayer("原始文件", "保留用户可导出的原图/视频；不因订阅状态扣留。", stats.encrypted)}
+        ${vaultLayer("缩略图", "设备端生成小预览，用于媒体墙/人物地点镜头；可单独清除。", stats.previews)}
+        ${vaultLayer("索引元信息", "只保存用户写下的备注、source、切片 ID 和最小类型信息。", stats.total)}
+      </div>
+      <p class="source-line">Demo 只保存小图预览或文件元信息；生产版需要真正的加密文件库、密钥恢复和多设备同步策略。</p>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">导出与删除 <span class="micro">用户权利</span></h2>
+      <div class="chapter-list">
+        <div class="chapter-line"><strong>导出包应包含什么</strong><span>原图/视频、缩略图、切片 JSON、source 追溯和用户可读说明。</span></div>
+        <div class="chapter-line"><strong>删除必须删干净</strong><span>删除原始影像时，同步删除缩略图、云副本、任务缓存和分享草稿。</span></div>
+        <div class="chapter-line"><strong>退订不能扣留记忆</strong><span>Plus 过期后仍应允许查看、导出和删除已有媒体。</span></div>
+      </div>
+      <div class="action-row"><button class="secondary" data-copy-media-library>复制导出清单</button><button class="ghost danger" data-delete-media-library>模拟删除请求</button></div>
+      <p class="source-line">上次媒体导出：${escapeHtml(state.lastMediaExportAt || "尚未导出")}；上次删除请求：${escapeHtml(state.mediaDeleteRequestAt || "尚未请求")}。</p>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">Web Share / 图片导出 <span class="micro">去隐私分享包</span></h2>
+      <div class="library-share-grid">
+        ${shareBoundary("公开分享", "只分享时间风景和主题，不包含原图、人名、地点和原文。")}
+        ${shareBoundary("私密分享", "适合发给亲友，可包含更多故事，但仍需二次确认。")}
+        ${shareBoundary("真实图片导出", "后续需把分享工作室 DOM 卡片导出 PNG，并标注是否含敏感信息。")}
+      </div>
+      <div class="action-row"><button class="primary" data-share-media-library>模拟 Web Share</button><button class="secondary" data-view="studio">打开分享工作室</button></div>
+      <p class="source-line">上次分享：${escapeHtml(state.mediaShareAt || "尚未分享")}。当前 Web Demo 只复制文案或调用可用的系统分享；未上传原始影像。</p>
     </section>
   `;
 }
@@ -1462,6 +1601,22 @@ function lensTimeRow(item, index) {
 
 function mediaStat(label, value, unit) {
   return `<div class="media-stat"><strong>${value}</strong><span>${label} · ${unit}</span></div>`;
+}
+
+function libraryStat(label, value, unit) {
+  return `<div class="library-stat"><strong>${value}</strong><span>${label} · ${unit}</span></div>`;
+}
+
+function libraryStep(num, title, copy, tone) {
+  return `<div class="library-step ${tone}"><span>${num}</span><strong>${title}</strong><em>${copy}</em></div>`;
+}
+
+function vaultLayer(title, copy, count) {
+  return `<div class="vault-layer"><strong>${title}<span>${count}</span></strong><em>${copy}</em></div>`;
+}
+
+function shareBoundary(title, copy) {
+  return `<div class="share-boundary"><strong>${title}</strong><span>${copy}</span></div>`;
 }
 
 function mediaFilterButton(filter, label) {
@@ -1653,10 +1808,11 @@ function guideView() {
         ${trialStep("03", "缩放人生旷野", "从月度花丛看到一生周格。", "meadow")}
         ${trialStep("04", "看媒体记忆墙", "照片/视频如何把切片串成回忆时间线。", "media")}
         ${trialStep("05", "看人物地点镜头", "从人和地点重新讲起一段时间。", "lens")}
-        ${trialStep("06", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${trialStep("07", "生成视觉成品", "看周章节海报、季度卡和人生旷野卡。", "studio")}
-        ${trialStep("08", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
-        ${trialStep("09", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
+        ${trialStep("06", "看媒体库生产", "相册权限、加密库、缩略图、导出删除。", "library")}
+        ${trialStep("07", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
+        ${trialStep("08", "生成视觉成品", "看周章节海报、季度卡和人生旷野卡。", "studio")}
+        ${trialStep("09", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
+        ${trialStep("10", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
       </div>
     </section>
     <section class="guide-card">
@@ -1670,6 +1826,7 @@ function guideView() {
           "分享工作室三类视觉成品",
           "记忆保险箱导出/导入/清空",
           "同步控制台与数据离机账本",
+          "媒体库生产假面",
           "90 天回忆仪式"
         ], "ok")}
         ${boundaryColumn("PoC 模拟", [
@@ -1696,7 +1853,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v17</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v18</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1704,7 +1861,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v17 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙和人物地点镜头说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v18 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头和媒体库生产假面说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1719,8 +1876,9 @@ function guideView() {
         ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
+        ${readiness("媒体库生产", "v18", "相册权限、E2EE 影像库、缩略图、导出删除与 Web Share 边界。")}
       </div>
-      <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button></div>
+      <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button></div>
     </section>
   `;
 }
@@ -1745,7 +1903,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v15</div>
+      <div class="eyebrow">Review Packet · v18</div>
       <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
       <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -1754,7 +1912,7 @@ function reviewView() {
     <section class="guide-card">
       <h2 class="section-title">权限说明 <span class="micro">Demo 当前请求</span></h2>
       <div class="permission-grid">
-        ${permissionCard("相册", "用户主动选择", "Web Demo 不请求持久相册权限；只处理用户本次选择的照片/视频或粘贴的链接。")}
+        ${permissionCard("相册", "有限选择优先", "Web Demo 不请求持久相册权限；生产首发也应优先用单次/有限选择器。")}
         ${permissionCard("定位", "未请求", "地点只来自用户手写，不读取 GPS 或轨迹。")}
         ${permissionCard("通讯录", "未请求", "人物关系由用户输入，不访问联系人。")}
         ${permissionCard("通知", "未请求", "时间唤醒为界面演示，不发系统推送。")}
@@ -1767,7 +1925,7 @@ function reviewView() {
       <div class="nutrition-grid">
         ${nutritionItem("当前收集", "浏览器本地 Demo 数据、影像链接/元信息、小图预览", "local")}
         ${nutritionItem("当前不收集", "身份、联系人、定位、自动相册扫描", "safe")}
-        ${nutritionItem("未来可选", "账户、E2EE 同步、加密影像库、模型任务摘要", "poc")}
+        ${nutritionItem("未来可选", "账户、E2EE 同步、加密影像库、缩略图、模型任务摘要", "poc")}
         ${nutritionItem("用户权利", "导出、清空、撤销草稿、暂停同步", "safe")}
       </div>
       <p class="source-line">生产版必须用正式法务文本和平台表单重做；这里的价值是提前把数据类别和用户权利放进产品界面。</p>
@@ -1787,6 +1945,7 @@ function reviewView() {
       <div class="readiness-list">
         ${readiness("原生壳", "待做", "iOS 项目、权限弹窗、安装资产、App Icon。")}
         ${readiness("账户同步", "待做", "真实登录、E2EE、密钥恢复、设备管理。")}
+        ${readiness("媒体库", "v18 雏形", "相册权限、加密影像库、缩略图、导出删除和分享边界已产品化。")}
         ${readiness("模型网关", "待做", "DeepSeek 适配、限流、成本预算、供应商条款。")}
         ${readiness("合规文本", "待做", "正式隐私政策、用户协议、数据处理活动台账。")}
         ${readiness("审核材料", "雏形", "本页可作为未来审核/法务任务清单，不代表已通过。")}
@@ -2027,12 +2186,12 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v17 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v18 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
       </div>
-      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
@@ -2159,7 +2318,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : ["media", "lens"].includes(state.view) ? "meadow" : ["guide", "studio", "review"].includes(state.view) ? "settings" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : ["media", "lens"].includes(state.view) ? "meadow" : ["guide", "studio", "review", "library"].includes(state.view) ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -2187,7 +2346,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v17 已补人物与地点镜头：用户可以从照片、视频和切片中按“谁 / 哪里”重新讲起一段时间；媒体记忆墙、影像时间线、分享卡片和隐私边界已经进入同一个体验。下一步继续补媒体库生产假面、安装资产、真实模型网关或真实图片导出。</p>
+      <p>当前 v18 已补媒体库生产假面：用户可以看到相册权限、加密影像库、缩略图、导出删除和 Web Share 的商品级边界；媒体记忆墙、人物地点镜头、分享卡片和隐私边界已经进入同一个体验。下一步继续补安装资产、真实模型网关或真实图片导出。</p>
     </section>
   </aside>`;
 }

@@ -23,3 +23,4 @@ Current demo focus:
 - Media memory wall: filter bound media by image/video/link and browse a recall timeline
 - Media-first Quick Mark: start a slice directly from a photo/video, then optionally add text later
 - People/place lens: regroup slices by user-written people and places without contacts, GPS, or face recognition
+- Media library production facade: Photos permission strategy, E2EE vault, thumbnails, export/delete, and Web Share boundaries
