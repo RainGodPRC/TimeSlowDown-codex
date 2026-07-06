@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "45",
-        summary: String = "TimeSlowDown v45 tests the native Memory Camera shell, media-first slice capture, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, deletion audit envelope, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "46",
+        summary: String = "TimeSlowDown v46 tests the native Memory Camera shell, media-first slice capture, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, deletion audit envelope, DeepSeek server gateway envelope, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",

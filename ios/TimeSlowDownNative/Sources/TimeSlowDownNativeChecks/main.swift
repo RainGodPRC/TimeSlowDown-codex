@@ -131,7 +131,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>45</string>"), "Info.plist should carry v45 build number")
+check(infoPlistText.contains("<string>46</string>"), "Info.plist should carry v46 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -255,6 +255,42 @@ check(!gatewayRequest.sendsRawMedia, "Client gateway request must not send raw m
 check(!gatewayRequest.sendsFullArchive, "Client gateway request must not send full archive")
 check(gatewayRequest.fallbackMode == "local-rules", "Gateway request should preserve local fallback")
 
+let serverGateway = DeepSeekServerGatewayPlan.envelope(
+    for: gatewayRequest,
+    accountID: deviceKey.accountID,
+    consentReceiptID: "consent-weekly-chapter-demo"
+)
+check(serverGateway.request == gatewayRequest, "Server gateway envelope should preserve the reviewed client gateway request")
+check(serverGateway.headers["Content-Type"] == "application/json", "Server gateway envelope should use JSON content type")
+check(serverGateway.headers["Idempotency-Key"] == gatewayRequest.idempotencyKey, "Server gateway envelope should surface the idempotency key")
+check(serverGateway.headers["X-TSD-AI-Consent"] == "consent-weekly-chapter-demo", "Server gateway envelope should include an AI consent receipt")
+check(serverGateway.headers["X-TSD-Task-Digest"] == aiEnvelope.minimalPayloadDigest, "Server gateway envelope should surface the minimal task digest")
+check(!serverGateway.requestBodyDigest.isEmpty, "Server gateway envelope should include an auditable body digest")
+check(serverGateway.auditEventName == "ai.weekly_chapter.requested", "Server gateway envelope should name the AI audit event")
+check(serverGateway.serverCredentialLocation == "server-secret-manager", "Provider credentials should live in the server secret manager")
+check(!serverGateway.providerCredentialVisibleToClient, "Provider credential should never be visible to the client")
+check(serverGateway.requiresAuthenticatedAccount, "Server gateway should require an authenticated account")
+check(serverGateway.requiresUserConsent, "Server gateway should require user consent")
+check(serverGateway.budgetCeilingCents == aiEnvelope.maxBudgetCents, "Server gateway budget ceiling should match the reviewed AI envelope")
+check(serverGateway.retentionHours <= 24, "Server gateway should keep transient task retention short")
+check(serverGateway.dataResidencyPolicy == "user-region-pinned", "Server gateway should declare user-region-pinned data residency")
+check(serverGateway.queueName == "ai-weekly-chapter", "Server gateway should route to the weekly chapter queue")
+check(serverGateway.mockableWithoutProviderCall, "Server gateway should be mockable without a provider call")
+check(serverGateway.responseContract.acceptedStatusCode == 202, "Server gateway response contract should use 202 for queued AI work")
+check(serverGateway.responseContract.completedStatusCode == 200, "Server gateway response contract should use 200 for completed AI work")
+check(serverGateway.responseContract.localFallbackStatusCode == 206, "Server gateway response contract should support partial local fallback")
+check(serverGateway.responseContract.providerUnavailableStatusCode == 503, "Server gateway response contract should model provider outage")
+check(serverGateway.responseContract.budgetExceededStatusCode == 402, "Server gateway response contract should model budget exceeded")
+check(!serverGateway.responseContract.responseContainsProviderAPIKey, "Server gateway response should not expose provider API key")
+check(!serverGateway.responseContract.responseContainsRawMedia, "Server gateway response should not echo raw media")
+check(!serverGateway.responseContract.responseContainsFullMemoryArchive, "Server gateway response should not echo full memory archive")
+check(serverGateway.responseContract.returnsGatewayJobID, "Server gateway response should return a gateway job ID")
+check(serverGateway.responseContract.returnsAuditEventID, "Server gateway response should return an audit event ID")
+check(serverGateway.responseContract.returnsModelName, "Server gateway response should name the model used")
+check(serverGateway.responseContract.returnsCostEstimate, "Server gateway response should return a cost estimate")
+check(serverGateway.responseContract.preservesUserEditableDraft, "Server gateway response should preserve user-editable draft semantics")
+check(serverGateway.isProductionSafeBoundary, "Server gateway envelope should be production-safe at the client/backend boundary")
+
 let archivePlan = ExportArchivePlan.zipPlan(for: exportManifest)
 check(archivePlan.fileName.hasSuffix(".zip"), "Export archive should use a zip file name")
 check(archivePlan.generatedOnDevice, "Export archive should be generated on device by default")
@@ -312,13 +348,14 @@ check(ProductionImplementationChecklist.rows.count == 4, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "45", "TestFlight build notes should match v45")
+check(buildNotes.buildNumber == "46", "TestFlight build notes should match v46")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Account Rights"), "TestFlight build notes should mention Account Rights export UI")
 check(buildNotes.summary.localizedCaseInsensitiveContains("fileExporter"), "TestFlight build notes should mention SwiftUI fileExporter bridge")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion audit"), "TestFlight build notes should mention deletion audit envelope")
+check(buildNotes.summary.localizedCaseInsensitiveContains("server gateway"), "TestFlight build notes should mention server gateway envelope")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -338,4 +375,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, and v45 deletion API audit envelope are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, and v46 DeepSeek server gateway envelope are aligned.")

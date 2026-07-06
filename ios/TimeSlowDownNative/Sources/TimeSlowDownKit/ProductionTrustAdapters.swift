@@ -118,6 +118,154 @@ public enum DeepSeekGatewayClientPlan {
     }
 }
 
+public struct DeepSeekGatewayResponseContract: Codable, Equatable, Sendable {
+    public var acceptedStatusCode: Int
+    public var completedStatusCode: Int
+    public var localFallbackStatusCode: Int
+    public var providerUnavailableStatusCode: Int
+    public var budgetExceededStatusCode: Int
+    public var responseContainsProviderAPIKey: Bool
+    public var responseContainsRawMedia: Bool
+    public var responseContainsFullMemoryArchive: Bool
+    public var returnsGatewayJobID: Bool
+    public var returnsAuditEventID: Bool
+    public var returnsModelName: Bool
+    public var returnsCostEstimate: Bool
+    public var preservesUserEditableDraft: Bool
+
+    public init(
+        acceptedStatusCode: Int = 202,
+        completedStatusCode: Int = 200,
+        localFallbackStatusCode: Int = 206,
+        providerUnavailableStatusCode: Int = 503,
+        budgetExceededStatusCode: Int = 402,
+        responseContainsProviderAPIKey: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        responseContainsFullMemoryArchive: Bool = false,
+        returnsGatewayJobID: Bool = true,
+        returnsAuditEventID: Bool = true,
+        returnsModelName: Bool = true,
+        returnsCostEstimate: Bool = true,
+        preservesUserEditableDraft: Bool = true
+    ) {
+        self.acceptedStatusCode = acceptedStatusCode
+        self.completedStatusCode = completedStatusCode
+        self.localFallbackStatusCode = localFallbackStatusCode
+        self.providerUnavailableStatusCode = providerUnavailableStatusCode
+        self.budgetExceededStatusCode = budgetExceededStatusCode
+        self.responseContainsProviderAPIKey = responseContainsProviderAPIKey
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.responseContainsFullMemoryArchive = responseContainsFullMemoryArchive
+        self.returnsGatewayJobID = returnsGatewayJobID
+        self.returnsAuditEventID = returnsAuditEventID
+        self.returnsModelName = returnsModelName
+        self.returnsCostEstimate = returnsCostEstimate
+        self.preservesUserEditableDraft = preservesUserEditableDraft
+    }
+}
+
+public struct DeepSeekServerGatewayEnvelope: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var request: DeepSeekGatewayRequest
+    public var headers: [String: String]
+    public var requestBodyDigest: String
+    public var consentReceiptID: String
+    public var auditEventName: String
+    public var serverCredentialLocation: String
+    public var providerCredentialVisibleToClient: Bool
+    public var requiresAuthenticatedAccount: Bool
+    public var requiresUserConsent: Bool
+    public var budgetCeilingCents: Int
+    public var retentionHours: Int
+    public var dataResidencyPolicy: String
+    public var queueName: String
+    public var mockableWithoutProviderCall: Bool
+    public var responseContract: DeepSeekGatewayResponseContract
+
+    public init(
+        id: String,
+        request: DeepSeekGatewayRequest,
+        headers: [String: String],
+        requestBodyDigest: String,
+        consentReceiptID: String,
+        auditEventName: String = "ai.weekly_chapter.requested",
+        serverCredentialLocation: String = "server-secret-manager",
+        providerCredentialVisibleToClient: Bool = false,
+        requiresAuthenticatedAccount: Bool = true,
+        requiresUserConsent: Bool = true,
+        budgetCeilingCents: Int,
+        retentionHours: Int = 24,
+        dataResidencyPolicy: String = "user-region-pinned",
+        queueName: String = "ai-weekly-chapter",
+        mockableWithoutProviderCall: Bool = true,
+        responseContract: DeepSeekGatewayResponseContract = DeepSeekGatewayResponseContract()
+    ) {
+        self.id = id
+        self.request = request
+        self.headers = headers
+        self.requestBodyDigest = requestBodyDigest
+        self.consentReceiptID = consentReceiptID
+        self.auditEventName = auditEventName
+        self.serverCredentialLocation = serverCredentialLocation
+        self.providerCredentialVisibleToClient = providerCredentialVisibleToClient
+        self.requiresAuthenticatedAccount = requiresAuthenticatedAccount
+        self.requiresUserConsent = requiresUserConsent
+        self.budgetCeilingCents = budgetCeilingCents
+        self.retentionHours = retentionHours
+        self.dataResidencyPolicy = dataResidencyPolicy
+        self.queueName = queueName
+        self.mockableWithoutProviderCall = mockableWithoutProviderCall
+        self.responseContract = responseContract
+    }
+
+    public var isProductionSafeBoundary: Bool {
+        request.requiresServerSideCredential &&
+        !request.containsProviderAPIKey &&
+        !request.sendsRawMedia &&
+        !request.sendsFullArchive &&
+        !providerCredentialVisibleToClient &&
+        requiresAuthenticatedAccount &&
+        requiresUserConsent &&
+        budgetCeilingCents <= request.task.maxBudgetCents &&
+        retentionHours <= 24 &&
+        mockableWithoutProviderCall &&
+        !responseContract.responseContainsProviderAPIKey &&
+        !responseContract.responseContainsRawMedia &&
+        !responseContract.responseContainsFullMemoryArchive &&
+        responseContract.returnsGatewayJobID &&
+        responseContract.returnsAuditEventID &&
+        responseContract.preservesUserEditableDraft
+    }
+}
+
+public enum DeepSeekServerGatewayPlan {
+    public static func envelope(
+        for request: DeepSeekGatewayRequest,
+        accountID: String,
+        consentReceiptID: String
+    ) -> DeepSeekServerGatewayEnvelope {
+        let bodyDigest = TrustDigest.checksum([
+            accountID,
+            request.id,
+            request.task.minimalPayloadDigest,
+            consentReceiptID
+        ])
+        return DeepSeekServerGatewayEnvelope(
+            id: "server-gateway-\(bodyDigest.prefix(12))",
+            request: request,
+            headers: [
+                "Content-Type": "application/json",
+                "Idempotency-Key": request.idempotencyKey,
+                "X-TSD-AI-Consent": consentReceiptID,
+                "X-TSD-Task-Digest": request.task.minimalPayloadDigest
+            ],
+            requestBodyDigest: bodyDigest,
+            consentReceiptID: consentReceiptID,
+            budgetCeilingCents: request.task.maxBudgetCents
+        )
+    }
+}
+
 public enum ExportArchiveEntryKind: String, Codable, Equatable, Sendable {
     case manifest
     case slices
@@ -664,7 +812,7 @@ public enum DeletionAPIClientPlan {
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
-        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, and keeps local-rules fallback."),
+        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends, and v45 adds a privacy-review-safe client audit envelope.")
     ]
