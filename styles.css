@@ -177,6 +177,32 @@ button { cursor: pointer; border: 0; }
 .chapter-line strong { display:block; font-size: 13px; margin-bottom: 4px; }
 .chapter-line span { color: var(--muted); font-size: 12px; line-height: 1.45; }
 .source-chip { display:inline-flex; margin-top: 8px; font-size:10px; color: var(--moss); background: rgba(85,116,95,.1); border-radius: 999px; padding: 5px 8px; }
+.claim-list { display:grid; gap: 10px; margin-top: 12px; }
+.claim-card {
+  width: 100%; text-align:left; display:grid; grid-template-columns: 34px minmax(0, 1fr); gap: 11px; align-items:start;
+  border-radius: 18px; border: 1px solid var(--line); background: rgba(255,255,255,.54); padding: 12px; color: var(--ink);
+}
+.claim-card.active { border-color: rgba(85,116,95,.42); background: linear-gradient(135deg, rgba(223,234,215,.78), rgba(255,253,247,.7)); }
+.claim-check { width: 28px; height: 28px; border-radius: 11px; display:grid; place-items:center; background: rgba(85,116,95,.12); color: var(--moss); font-weight: 900; }
+.claim-card.active .claim-check { background: var(--ink); color: #fff; }
+.claim-card strong { display:block; font-size: 13px; margin-bottom: 4px; }
+.claim-card em { display:block; font-style: normal; color: var(--muted); font-size: 12px; line-height: 1.45; max-height: 52px; overflow:hidden; }
+.claim-card small { display:block; color: rgba(85,116,95,.8); font-size: 10px; margin-top: 7px; }
+.chapter-title-input, .story-input {
+  width: 100%; border: 1px solid rgba(32,52,43,.13); background: rgba(255,253,247,.86); color: var(--ink); outline: none;
+  border-radius: 16px; padding: 12px;
+}
+.chapter-title-input { font-family: "Songti SC", serif; font-size: 22px; font-weight: 800; margin-top: 8px; }
+.story-input { min-height: 220px; resize: vertical; margin-top: 10px; line-height: 1.62; font-size: 13px; }
+.chapter-title-input:focus, .story-input:focus { border-color: rgba(85,116,95,.55); box-shadow: 0 0 0 4px rgba(85,116,95,.08); }
+.share-mode { display:grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+.share-mode button { border-radius: 14px; padding: 10px 8px; background: rgba(85,116,95,.1); color: var(--moss); font-size: 12px; font-weight: 900; }
+.share-mode button.active { background: var(--ink); color: #fff; }
+.share-preview {
+  border: 1px solid var(--line); border-radius: 18px; background: linear-gradient(180deg, rgba(255,253,247,.88), rgba(244,239,228,.74));
+  padding: 14px; color: var(--ink); font-size: 13px; line-height: 1.65;
+}
+.toast { margin: 12px 0 0; border-radius: 14px; background: rgba(85,116,95,.1); color: var(--moss); padding: 10px 12px; font-size: 12px; font-weight: 800; }
 
 .ai-eval { display:grid; gap: 10px; }
 .eval-row { display:flex; justify-content:space-between; align-items:center; padding: 11px; border-radius: 16px; background: rgba(255,255,255,.56); border:1px solid var(--line); }

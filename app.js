@@ -42,6 +42,10 @@ const defaultState = {
   aiMode: "rules",
   selectedGolden: "G001",
   weeklyClaimed: ["m1", "m2", "m3"],
+  chapterTitle: "",
+  chapterStory: "",
+  shareMode: "private",
+  toast: "",
   age: 36,
   quietMode: false
 };
@@ -180,6 +184,74 @@ function addMoment() {
   setState({ moments: [moment, ...state.moments], view: "slice", draft: "" });
 }
 
+function getClaimedMoments() {
+  const claimed = state.weeklyClaimed
+    .map(id => state.moments.find(moment => moment.id === id))
+    .filter(Boolean);
+  return claimed.length ? claimed : state.moments.slice(0, 3);
+}
+
+function toggleClaim(id) {
+  const current = state.weeklyClaimed.includes(id)
+    ? state.weeklyClaimed.filter(item => item !== id)
+    : [...state.weeklyClaimed, id];
+  const trimmed = current.slice(Math.max(0, current.length - 3));
+  setState({ weeklyClaimed: trimmed, toast: trimmed.length === 3 ? "已认领 3 个瞬间，可以编译本周章节。" : "" });
+}
+
+function compileChapter() {
+  const claimed = getClaimedMoments().slice(0, 3);
+  const title = deriveChapterTitle(claimed);
+  const story = buildChapterStory(claimed);
+  setState({
+    chapterTitle: title,
+    chapterStory: story,
+    weeklyClaimed: claimed.map(moment => moment.id),
+    toast: "本周章节草稿已生成。你可以直接改成自己的话。"
+  });
+}
+
+function deriveChapterTitle(moments) {
+  const titles = moments.map(moment => moment.title);
+  if (moments.some(moment => moment.tags.includes("低落")) && moments.some(moment => moment.tags.includes("成就"))) return "这一周：有压力，也有完成";
+  if (moments.some(moment => moment.tags.includes("家人")) && moments.some(moment => moment.tags.includes("第一次"))) return "这一周：家人、第一次和一点点变化";
+  if (titles.length >= 2) return `这一周：${titles[0]}，和另外 ${titles.length - 1} 个瞬间`;
+  return "这一周没有消失";
+}
+
+function buildChapterStory(moments) {
+  if (!moments.length) return "这一周还没有被认领的瞬间。先留下一个很短的 Mark，也算开始。";
+  const lines = moments.map((moment, index) => {
+    const plain = moment.text.replace(/^这条记忆的时间有些不确定，TSD 先原样保存：/, "").replace(/^“|”$/g, "");
+    return `${index + 1}. ${plain}（source: ${moment.id}）`;
+  });
+  return [
+    `这一周，我认领了 ${moments.length} 个瞬间。`,
+    ...lines,
+    "TSD 没有替我总结人生，只把这些已经确认的线索放在一起。以后讲起这一周，我可以从这里开始。"
+  ].join("\n");
+}
+
+function makeShareText() {
+  const title = state.chapterTitle || deriveChapterTitle(getClaimedMoments());
+  const story = state.chapterStory || buildChapterStory(getClaimedMoments());
+  if (state.shareMode === "public") {
+    return `${title}\n\n我用 TimeSlowDown 留下了这一周的几个瞬间。具体人名、地点和原文已隐藏，只分享这片小小的时间痕迹。`;
+  }
+  return `${title}\n\n${story}\n\n— 来自 TimeSlowDown`;
+}
+
+async function copyShareText() {
+  const text = makeShareText();
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ toast: state.shareMode === "public" ? "已复制公开版分享文案。" : "已复制私密版章节文案。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；你仍可以手动选中文案。" });
+  }
+}
+
 function deriveTitle(text) {
   if (text.includes("滑梯")) return "第一次自己爬上滑梯";
   if (text.includes("5公里") || text.includes("5 公里")) return "第一个 5 公里";
@@ -224,9 +296,23 @@ function bindEvents() {
     render();
   });
   $("[data-add]")?.addEventListener("click", addMoment);
+  $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
+  $("[data-copy-share]")?.addEventListener("click", copyShareText);
   $("[data-ai-mode]")?.addEventListener("click", () => setState({ aiMode: state.aiMode === "rules" ? "deepseek" : "rules" }));
   $("[data-quiet]")?.addEventListener("click", () => setState({ quietMode: !state.quietMode }));
+  $$("[data-claim]").forEach(btn => btn.addEventListener("click", () => toggleClaim(btn.dataset.claim)));
+  $$("[data-share-mode]").forEach(btn => btn.addEventListener("click", () => setState({ shareMode: btn.dataset.shareMode })));
   $("[data-age]")?.addEventListener("input", (e) => setState({ age: Number(e.target.value || 36) }));
+  const titleInput = $("[data-chapter-title]");
+  titleInput?.addEventListener("input", e => {
+    state.chapterTitle = e.target.value;
+    saveState();
+  });
+  const storyInput = $("[data-chapter-story]");
+  storyInput?.addEventListener("input", e => {
+    state.chapterStory = e.target.value;
+    saveState();
+  });
   const input = $("[data-draft]");
   input?.addEventListener("input", e => {
     state.draft = e.target.value;
@@ -329,9 +415,9 @@ function latestSliceCard() {
   const m = state.moments[0];
   return `<section class="slice-card">
     <div class="eyebrow">Latest Slice</div>
-    <h2 class="slice-title">${m.title}</h2>
-    <p class="hero-subtitle">${m.text}</p>
-    <div class="slice-meta">${m.tags.map(t => `<span class="meta">${t}</span>`).join("")}</div>
+    <h2 class="slice-title">${escapeHtml(m.title)}</h2>
+    <p class="hero-subtitle">${escapeHtml(m.text)}</p>
+    <div class="slice-meta">${m.tags.map(t => `<span class="meta">${escapeHtml(t)}</span>`).join("")}</div>
     ${gateBadges(m.gates)}
     <div class="source-line">来源：${m.sources.join(" · ")}。无来源的漂亮句子不会进入最终故事。</div>
   </section>`;
@@ -368,18 +454,47 @@ function meadowView() {
 }
 
 function chapterView() {
+  const claimed = getClaimedMoments().slice(0, 3);
+  const title = state.chapterTitle || deriveChapterTitle(claimed);
+  const story = state.chapterStory || buildChapterStory(claimed);
+  const shareText = makeShareText();
   return `
     <div class="topline"><div><div class="brand">本周章节</div><div class="micro">先由你认领三个瞬间，TSD 再编译成可讲述故事。</div></div></div>
     <section class="chapter-card">
       <div class="eyebrow">Claim 3 Moments</div>
-      <h2 class="slice-title">这一周：扎根，与开花</h2>
-      <p class="hero-subtitle">这不是总结你的人生，只是把你已经确认的三个片段放在一起。</p>
-      <div class="chapter-list">
-        ${state.moments.slice(0,3).map((m, i) => `<div class="chapter-line"><strong>${i + 1}. ${m.title}</strong><span>${m.text}</span><br/><span class="source-chip">source: ${m.id}</span></div>`).join("")}
+      <h2 class="slice-title">先认领，再编译</h2>
+      <p class="hero-subtitle">AI 可以推荐候选，但这一周由你亲自认领。最多 3 个，少也可以。</p>
+      <div class="claim-list">
+        ${state.moments.slice(0, 6).map(moment => claimCard(moment)).join("")}
       </div>
-      <div class="action-row"><button class="primary" data-view="ai">检查 AI 四道门</button><button class="secondary" data-view="slice">再补一张切片</button></div>
+      <div class="action-row"><button class="primary" data-compile-chapter>编译本周章节</button><button class="secondary" data-view="slice">再补一张切片</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="chapter-card">
+      <div class="eyebrow">Editable Chapter</div>
+      <input class="chapter-title-input" data-chapter-title value="${escapeHtml(title)}" aria-label="本周章节标题" />
+      <textarea class="story-input" data-chapter-story aria-label="本周章节正文">${escapeHtml(story)}</textarea>
+      <div class="source-line">每个句子必须能追溯到 source；如果你改掉了来源，TSD 应该提醒你重新确认。</div>
+    </section>
+    <section class="chapter-card">
+      <div class="eyebrow">Share Preview</div>
+      <h2 class="section-title">隐私试衣间 <span class="micro">${state.shareMode === "public" ? "公开风景" : "讲给一个人"}</span></h2>
+      <div class="share-mode">
+        <button class="${state.shareMode === "private" ? "active" : ""}" data-share-mode="private">讲给一个人</button>
+        <button class="${state.shareMode === "public" ? "active" : ""}" data-share-mode="public">分享一幅风景</button>
+      </div>
+      <div class="share-preview">${escapeHtml(shareText).replace(/\n/g, "<br/>")}</div>
+      <div class="action-row"><button class="primary" data-copy-share>复制分享文案</button><button class="secondary" data-view="ai">检查 AI 四道门</button></div>
     </section>
   `;
+}
+
+function claimCard(moment) {
+  const active = state.weeklyClaimed.includes(moment.id);
+  return `<button class="claim-card ${active ? "active" : ""}" data-claim="${escapeHtml(moment.id)}">
+    <span class="claim-check">${active ? "✓" : "+"}</span>
+    <span><strong>${escapeHtml(moment.title)}</strong><em>${escapeHtml(moment.text)}</em><small>${escapeHtml(moment.tags.join(" · "))} · source: ${escapeHtml(moment.id)}</small></span>
+  </button>`;
 }
 
 function aiView() {
