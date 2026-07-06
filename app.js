@@ -53,7 +53,13 @@ const defaultState = {
   deviceOnlyMode: true,
   lastExportAt: "",
   lastImportAt: "",
-  vaultDeletedAt: ""
+  vaultDeletedAt: "",
+  monthName: "七月：压力、家人和一次完成",
+  monthStarted: "开始把跑步当成一件属于自己的小事。",
+  monthEnded: "不再把所有普通日子都当成空白。",
+  monthChanged: "我开始承认：晴天雨天加在一起，才是完整。",
+  quarterRecallDraft: "5 公里、和爸爸吃面、开会后那段沉默的回家路。",
+  quarterRevealed: false
 };
 
 let state = loadState();
@@ -209,7 +215,13 @@ function vaultPayload() {
       meadowScale: state.meadowScale,
       age: state.age,
       quietMode: state.quietMode,
-      activeTags: state.activeTags
+      activeTags: state.activeTags,
+      monthName: state.monthName,
+      monthStarted: state.monthStarted,
+      monthEnded: state.monthEnded,
+      monthChanged: state.monthChanged,
+      quarterRecallDraft: state.quarterRecallDraft,
+      quarterRevealed: state.quarterRevealed
     }
   };
 }
@@ -369,6 +381,80 @@ async function copyShareText() {
   }
 }
 
+function saveQuarterRecall() {
+  setState({ toast: "已保存自由回忆。现在可以揭开季度风景，对照哪些是主动想起、哪些是被线索唤回。" });
+}
+
+function revealQuarter() {
+  setState({ quarterRevealed: true, view: "ritual", toast: "季度风景已展开：先看主动想起，再看被线索唤回。" });
+}
+
+function resetQuarterRitual() {
+  setState({ quarterRevealed: false, toast: "已收起季度风景。你可以重新先自由回忆。" });
+}
+
+function quarterMemoryCandidates() {
+  const demoCandidates = [
+    {
+      id: "q-demo-1",
+      date: "本季度",
+      title: "孩子第一次自己爬上滑梯",
+      text: "我在下面有点紧张，但他自己爬上去了。这是一张适合补录的亲子切片。",
+      tags: ["第一次", "家人", "补录线索"],
+      strength: "memory",
+      sources: ["Demo 候选线索"]
+    },
+    {
+      id: "q-demo-2",
+      date: "上个月",
+      title: "一次开心的额度刷新",
+      text: "不是宏大的事，但那一刻确实开心。TSD 允许这种小小的高兴被留下。",
+      tags: ["普通但值得", "月度补录"],
+      strength: "memory",
+      sources: ["Demo 候选线索"]
+    },
+    {
+      id: "q-demo-3",
+      date: "20岁那年",
+      title: "20 岁才学会骑自行车",
+      text: "具体哪天已经不重要，但它可以作为年粒度旧回忆被放进人生旷野。",
+      tags: ["人生补录", "模糊时间"],
+      strength: "memory",
+      sources: ["Demo 候选线索"]
+    }
+  ];
+  const seen = new Set();
+  return [...state.moments, ...demoCandidates].filter(moment => {
+    const key = moment.title;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 8);
+}
+
+function recallHit(moment) {
+  const recall = (state.quarterRecallDraft || "").replace(/\s/g, "");
+  if (!recall) return false;
+  const title = moment.title.replace(/\s/g, "");
+  const text = moment.text.replace(/\s/g, "");
+  const keywords = [
+    title.slice(0, 2),
+    title.slice(-2),
+    ...moment.tags.map(tag => tag.replace(/\s/g, "").slice(0, 2))
+  ].filter(token => token.length >= 2);
+  return keywords.some(token => recall.includes(token)) || recall.includes(text.slice(0, 4));
+}
+
+function quarterStats() {
+  const candidates = quarterMemoryCandidates();
+  const recalled = candidates.filter(recallHit);
+  return {
+    candidates,
+    recalled,
+    assisted: candidates.filter(moment => !recallHit(moment))
+  };
+}
+
 function deriveTitle(text) {
   if (text.includes("滑梯")) return "第一次自己爬上滑梯";
   if (text.includes("5公里") || text.includes("5 公里")) return "第一个 5 公里";
@@ -415,6 +501,9 @@ function bindEvents() {
   $("[data-add]")?.addEventListener("click", addMoment);
   $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
+  $("[data-save-recall]")?.addEventListener("click", saveQuarterRecall);
+  $("[data-reveal-quarter]")?.addEventListener("click", revealQuarter);
+  $("[data-reset-ritual]")?.addEventListener("click", resetQuarterRitual);
   $("[data-export-vault]")?.addEventListener("click", exportVault);
   $("[data-copy-vault]")?.addEventListener("click", copyVault);
   $("[data-import-demo]")?.addEventListener("click", importDemoVault);
@@ -441,6 +530,31 @@ function bindEvents() {
     state.draft = e.target.value;
     saveState();
   });
+  const quarterRecall = $("[data-quarter-recall]");
+  quarterRecall?.addEventListener("input", e => {
+    state.quarterRecallDraft = e.target.value;
+    saveState();
+  });
+  const monthName = $("[data-month-name]");
+  monthName?.addEventListener("input", e => {
+    state.monthName = e.target.value;
+    saveState();
+  });
+  const monthStarted = $("[data-month-started]");
+  monthStarted?.addEventListener("input", e => {
+    state.monthStarted = e.target.value;
+    saveState();
+  });
+  const monthEnded = $("[data-month-ended]");
+  monthEnded?.addEventListener("input", e => {
+    state.monthEnded = e.target.value;
+    saveState();
+  });
+  const monthChanged = $("[data-month-changed]");
+  monthChanged?.addEventListener("input", e => {
+    state.monthChanged = e.target.value;
+    saveState();
+  });
   $$("[data-tag]").forEach(tag => tag.addEventListener("click", () => {
     const value = tag.dataset.tag;
     const active = state.activeTags.includes(value);
@@ -465,7 +579,7 @@ function shell(content) {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, chapter: chapterView, ritual: ritualView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -517,6 +631,7 @@ function nowView() {
         ${journeyStep("01", "留下一张切片", "用 Quick Mark 写一句今天不同的地方。", "slice")}
         ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
         ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
+        ${journeyStep("04", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
       </div>
     </section>
   `;
@@ -647,6 +762,11 @@ function monthLandscapePanel() {
     <div class="chapter-strip">
       ${["第 1 周", "第 2 周", "第 3 周", "第 4 周"].map((week, index) => `<button class="week-chip ${index === 0 ? "active" : ""}" data-view="chapter"><strong>${week}</strong><span>${index === 0 ? "已成章" : "待认领"}</span></button>`).join("")}
     </div>
+    <div class="month-ritual-card">
+      <strong>${escapeHtml(state.monthName)}</strong>
+      <span>这个月开始了什么、结束了什么、悄悄改变了什么？</span>
+      <button class="secondary" data-view="ritual">进入月度 / 季度仪式</button>
+    </div>
     <p class="source-line">月度风景来自周章节和切片主题；平淡日子仍是草地，不因未记录而变成空白。</p>
   </section>`;
 }
@@ -729,7 +849,115 @@ function chapterView() {
       <div class="share-preview">${escapeHtml(shareText).replace(/\n/g, "<br/>")}</div>
       <div class="action-row"><button class="primary" data-copy-share>复制分享文案</button><button class="secondary" data-view="ai">检查 AI 四道门</button></div>
     </section>
+    <section class="chapter-card ritual-teaser">
+      <div class="eyebrow">90-Day Recall</div>
+      <h2 class="slice-title">这三个月，不该像 90 个相同的一天。</h2>
+      <p class="hero-subtitle">先不看答案，写下你脑中最先浮出来的几件事；再让 TSD 展开季度风景，区分“主动想起”和“被线索唤回”。</p>
+      <div class="action-row"><button class="primary" data-view="ritual">开始季度回忆仪式</button><button class="secondary" data-scale="month" data-view="meadow">先看月度风景</button></div>
+    </section>
   `;
+}
+
+function ritualView() {
+  const { candidates, recalled, assisted } = quarterStats();
+  const revealed = state.quarterRevealed;
+  return `
+    <div class="topline"><div><div class="brand">回忆仪式</div><div class="micro">先自由回忆，再看线索。TSD 不考你，只帮你看见时间去哪了。</div></div></div>
+    <section class="hero-card">
+      <div class="eyebrow">90-Day Ceremony</div>
+      <h1 class="hero-title">过去三个月，<br/>有哪些瞬间还亮着？</h1>
+      <p class="hero-subtitle">先写下你不看档案也能想到的事。揭开风景后，TSD 会把主动想起和线索唤回分开。</p>
+    </section>
+    <section class="ritual-card">
+      <h2 class="section-title">月度命名 <span class="micro">3 个问题</span></h2>
+      <input class="chapter-title-input" data-month-name value="${escapeHtml(state.monthName)}" aria-label="月度名字" />
+      <div class="month-prompts">
+        ${monthPrompt("开始", "data-month-started", state.monthStarted)}
+        ${monthPrompt("结束", "data-month-ended", state.monthEnded)}
+        ${monthPrompt("改变", "data-month-changed", state.monthChanged)}
+      </div>
+      <p class="source-line">月度仪式只问开始、结束、改变，不要求写完整月记；跳过也不会产生欠债。</p>
+    </section>
+    <section class="ritual-card">
+      <div class="eyebrow">Step 1 · Free Recall</div>
+      <h2 class="slice-title">60 秒自由回忆</h2>
+      <textarea class="story-input recall-input" data-quarter-recall aria-label="季度自由回忆">${escapeHtml(state.quarterRecallDraft)}</textarea>
+      <div class="action-row">
+        <button class="secondary" data-save-recall>保存自由回忆</button>
+        <button class="primary" data-reveal-quarter>揭开季度风景</button>
+        ${revealed ? `<button class="ghost" data-reset-ritual>重新遮住</button>` : ""}
+      </div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    ${revealed ? quarterLandscape(candidates, recalled, assisted) : quarterLocked()}
+  `;
+}
+
+function monthPrompt(label, attr, value) {
+  return `<label class="month-prompt"><span>${label}</span><textarea ${attr} rows="2">${escapeHtml(value)}</textarea></label>`;
+}
+
+function quarterLocked() {
+  return `<section class="ritual-card locked-landscape">
+    <div class="eyebrow">Step 2 · Hidden Landscape</div>
+    <h2 class="slice-title">先别急着看答案。</h2>
+    <p class="hero-subtitle">真正有价值的是：哪些事你不用提醒也能讲出来？哪些事看到线索后才重新回来？</p>
+    <div class="quarter-week-grid">${quarterWeekCells(false)}</div>
+  </section>`;
+}
+
+function quarterLandscape(candidates, recalled, assisted) {
+  return `<section class="ritual-card">
+    <div class="eyebrow">Step 2 · Quarter Landscape</div>
+    <h2 class="section-title">季度风景 <span class="micro">${recalled.length} 个主动想起 · ${assisted.length} 个线索唤回</span></h2>
+    <div class="quarter-stats">
+      ${vaultStat("周格", 13, "周")}
+      ${vaultStat("月景", 3, "幅")}
+      ${vaultStat("主动", recalled.length, "个")}
+      ${vaultStat("可讲", candidates.length, "个")}
+    </div>
+    <div class="quarter-week-grid">${quarterWeekCells(true)}</div>
+    <div class="quarter-months">
+      ${quarterMonth("第一个月", "草地开始有纹路", "普通日子被保留下来，不再完全蒸发。")}
+      ${quarterMonth("第二个月", state.monthName, state.monthChanged)}
+      ${quarterMonth("第三个月", "下一片风景正在长", "今天的 Quick Mark 会成为下个季度的线索。")}
+    </div>
+    <h2 class="section-title">可讲述瞬间 <span class="micro">5–10 个目标</span></h2>
+    <div class="tellable-list">
+      ${candidates.map(moment => tellableMoment(moment, recallHit(moment))).join("")}
+    </div>
+    <p class="source-line">这里不是记忆力分数。主动想起说明它已经在你心里变厚；线索唤回说明这段时间没有白过，只是需要一个入口。</p>
+  </section>`;
+}
+
+function quarterWeekCells(revealed) {
+  return Array.from({ length: 13 }, (_, index) => {
+    const cls = revealed && [1, 4, 7, 10, 12].includes(index) ? "memory" : revealed && index === 8 ? "strong" : "";
+    return `<i class="quarter-week ${cls}"><span>W${index + 1}</span></i>`;
+  }).join("");
+}
+
+function quarterMonth(label, title, copy) {
+  return `<div class="quarter-month-card"><span>${label}</span><strong>${escapeHtml(title)}</strong><em>${escapeHtml(copy)}</em></div>`;
+}
+
+function tellableMoment(moment, recalled) {
+  const who = moment.tags.includes("家人") ? "家人" : moment.tags.includes("工作") ? "工作里的自己" : moment.tags.includes("第一次") ? "第一次尝试的自己" : "当时的我";
+  const why = moment.tags.includes("低落") || moment.tags.includes("允许不开心")
+    ? "它让雨天也被看见"
+    : moment.tags.includes("成就") || moment.tags.includes("第一次")
+      ? "它留下了一个完成感"
+      : "它让普通日子有了一个锚点";
+  return `<article class="tellable-card ${recalled ? "recalled" : ""}">
+    <div><span class="gate-badge ${recalled ? "ok" : "soft"}">${recalled ? "主动想起" : "线索唤回"}</span><span class="source-chip">${escapeHtml(moment.date)}</span></div>
+    <h3>${escapeHtml(moment.title)}</h3>
+    <p>${escapeHtml(moment.text)}</p>
+    <dl>
+      <div><dt>发生了什么</dt><dd>${escapeHtml(moment.title)}</dd></div>
+      <div><dt>和谁有关</dt><dd>${escapeHtml(who)}</dd></div>
+      <div><dt>为什么重要</dt><dd>${escapeHtml(why)}</dd></div>
+    </dl>
+  </article>`;
 }
 
 function claimCard(moment) {
@@ -795,7 +1023,7 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">记忆保险箱 <span class="micro">v6 · 本地优先</span></h2>
+      <h2 class="section-title">记忆保险箱 <span class="micro">v7 · 本地优先</span></h2>
       <div class="vault-grid">
         ${vaultStat("切片", stats.moments, "条")}
         ${vaultStat("认领", stats.claimed, "个")}
@@ -834,7 +1062,7 @@ function settingsView() {
       <div class="paywall-grid">
         ${plan("记住 Free", "核心记录永久可用，不是残缺试用版。")}
         ${plan("本地典藏 Pass", "一次买断：高级本地视图与导出。")}
-        ${plan("时光生长 Plus", "同步、DeepSeek 编译、季度旷野。")}
+        ${plan("时光生长 Plus", "同步、DeepSeek 编译、月度/季度旷野。")}
         ${plan("BYOK", "高级用户自带模型 Key，自担成本。")}
       </div>
     </section>
@@ -858,7 +1086,8 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${state.view === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
+  const activeView = state.view === "ritual" ? "chapter" : state.view;
+  return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
 function sidePanel() {
@@ -885,7 +1114,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v6 聚焦信任底座：底部安全区、体验路线、语义缩放、周章节成品与记忆保险箱已经可以在公网试用。下一步继续补月度/季度仪式和更真实的同步/AI 边界。</p>
+      <p>当前 v7 聚焦 90 天回忆仪式：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱与月度/季度回忆已经可以在公网试用。下一步继续补真实同步/AI 边界与 App Store 级隐私说明。</p>
     </section>
   </aside>`;
 }
