@@ -2,6 +2,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const STORAGE_KEY = "tsd-codex-demo-state-v1";
+const VAULT_SCHEMA_VERSION = "tsd-codex-vault-v1";
 
 const seedMoments = [
   {
@@ -48,7 +49,11 @@ const defaultState = {
   meadowScale: "month",
   toast: "",
   age: 36,
-  quietMode: false
+  quietMode: false,
+  deviceOnlyMode: true,
+  lastExportAt: "",
+  lastImportAt: "",
+  vaultDeletedAt: ""
 };
 
 let state = loadState();
@@ -185,6 +190,117 @@ function addMoment() {
   setState({ moments: [moment, ...state.moments], view: "slice", draft: "" });
 }
 
+function vaultPayload() {
+  return {
+    schemaVersion: VAULT_SCHEMA_VERSION,
+    app: "TimeSlowDown Codex",
+    exportedAt: new Date().toISOString(),
+    privacy: {
+      storage: "browser-localStorage-demo",
+      deviceOnlyMode: state.deviceOnlyMode,
+      note: "Demo 版只导出当前浏览器里的本地数据；生产版需要 E2EE、账户同步和地区数据边界。"
+    },
+    data: {
+      moments: state.moments,
+      weeklyClaimed: state.weeklyClaimed,
+      chapterTitle: state.chapterTitle,
+      chapterStory: state.chapterStory,
+      shareMode: state.shareMode,
+      meadowScale: state.meadowScale,
+      age: state.age,
+      quietMode: state.quietMode,
+      activeTags: state.activeTags
+    }
+  };
+}
+
+function vaultStats() {
+  const payload = vaultPayload();
+  const bytes = new Blob([JSON.stringify(payload)]).size;
+  return {
+    moments: state.moments.length,
+    claimed: state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length,
+    chapters: state.chapterTitle || state.chapterStory ? 1 : 0,
+    bytes
+  };
+}
+
+function exportVault() {
+  const payload = vaultPayload();
+  const text = JSON.stringify(payload, null, 2);
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  anchor.href = url;
+  anchor.download = `timeslowdown-memory-vault-${stamp}.json`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  setState({ lastExportAt: new Date().toLocaleString("zh-CN"), toast: "记忆保险箱 JSON 已导出到本机。" });
+}
+
+async function copyVault() {
+  const text = JSON.stringify(vaultPayload(), null, 2);
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ lastExportAt: new Date().toLocaleString("zh-CN"), toast: "记忆保险箱 JSON 已复制。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请使用“导出 JSON”保存到本机。" });
+  }
+}
+
+function importDemoVault() {
+  const imported = [
+    {
+      id: `import-${Date.now()}-1`,
+      date: "20岁那年",
+      title: "20 岁才学会骑自行车",
+      text: "我记得自己 20 岁那年才学会骑自行车，具体哪天已经不重要了，但那种突然会了的感觉还在。",
+      tags: ["人生补录", "第一次", "模糊时间"],
+      strength: "memory",
+      gates: { timeConflict: true, sparse: false, photoPlaceholder: false, sensitiveHint: false },
+      sources: ["用户补录", "导入示例"]
+    },
+    {
+      id: `import-${Date.now()}-2`,
+      date: "上个月",
+      title: "一次开心的额度刷新",
+      text: "上个月遇到 GPT 额度刷新，那一刻很开心。它不宏大，但确实是那天的亮点。",
+      tags: ["普通但值得", "开心", "月度补录"],
+      strength: "memory",
+      gates: { timeConflict: false, sparse: false, photoPlaceholder: false, sensitiveHint: false },
+      sources: ["用户补录", "导入示例"]
+    }
+  ];
+  setState({
+    moments: [...imported, ...state.moments],
+    lastImportAt: new Date().toLocaleString("zh-CN"),
+    vaultDeletedAt: "",
+    view: "settings",
+    toast: "已导入 2 条跨时间粒度的示例回忆：年级别和月级别都可以被 TSD 接住。"
+  });
+}
+
+function wipeLocalVault() {
+  state = {
+    ...defaultState,
+    onboarded: true,
+    view: "settings",
+    moments: [],
+    weeklyClaimed: [],
+    chapterTitle: "",
+    chapterStory: "",
+    draft: "",
+    vaultDeletedAt: new Date().toLocaleString("zh-CN"),
+    toast: "本地记忆保险箱已清空。需要恢复 Demo 示例时，可点“重置 Demo”。"
+  };
+  saveState();
+  render();
+}
+
 function getClaimedMoments() {
   const claimed = state.weeklyClaimed
     .map(id => state.moments.find(moment => moment.id === id))
@@ -299,6 +415,11 @@ function bindEvents() {
   $("[data-add]")?.addEventListener("click", addMoment);
   $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
+  $("[data-export-vault]")?.addEventListener("click", exportVault);
+  $("[data-copy-vault]")?.addEventListener("click", copyVault);
+  $("[data-import-demo]")?.addEventListener("click", importDemoVault);
+  $("[data-wipe-vault]")?.addEventListener("click", wipeLocalVault);
+  $("[data-device-only]")?.addEventListener("click", () => setState({ deviceOnlyMode: !state.deviceOnlyMode, toast: state.deviceOnlyMode ? "已切换为可同步演示模式。" : "已切回仅设备优先模式。" }));
   $("[data-ai-mode]")?.addEventListener("click", () => setState({ aiMode: state.aiMode === "rules" ? "deepseek" : "rules" }));
   $("[data-quiet]")?.addEventListener("click", () => setState({ quietMode: !state.quietMode }));
   $$("[data-scale]").forEach(btn => btn.addEventListener("click", () => setState({ meadowScale: btn.dataset.scale })));
@@ -432,6 +553,14 @@ function sliceView() {
 
 function latestSliceCard() {
   const m = state.moments[0];
+  if (!m) {
+    return `<section class="slice-card empty-state">
+      <div class="eyebrow">Latest Slice</div>
+      <h2 class="slice-title">本地记忆保险箱是空的</h2>
+      <p class="hero-subtitle">你可以写一句新的 Quick Mark，也可以在“我的”里导入示例备份。</p>
+      <div class="action-row"><button class="primary" data-view="settings">去记忆保险箱</button></div>
+    </section>`;
+  }
   return `<section class="slice-card">
     <div class="eyebrow">Latest Slice</div>
     <h2 class="slice-title">${escapeHtml(m.title)}</h2>
@@ -662,14 +791,41 @@ function evalRow(title, copy, value) {
 }
 
 function settingsView() {
+  const stats = vaultStats();
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
+    <section class="settings-card">
+      <h2 class="section-title">记忆保险箱 <span class="micro">v6 · 本地优先</span></h2>
+      <div class="vault-grid">
+        ${vaultStat("切片", stats.moments, "条")}
+        ${vaultStat("认领", stats.claimed, "个")}
+        ${vaultStat("章节", stats.chapters, "篇")}
+        ${vaultStat("大小", Math.max(1, Math.ceil(stats.bytes / 1024)), "KB")}
+      </div>
+      <div class="chapter-list">
+        <div class="chapter-line"><strong>导出我的记忆</strong><span>把当前浏览器里的切片、章节、偏好导出为 JSON。Demo 不上传你的原文。</span></div>
+        <div class="chapter-line"><strong>导入旧回忆</strong><span>支持“20 岁那年”“上个月”这类年/月粒度补录；具体日期不知道也可以先保存。</span></div>
+        <div class="chapter-line"><strong>删除本地数据</strong><span>清空当前浏览器的记忆保险箱。生产版应加入二次确认、恢复窗口和同步状态说明。</span></div>
+      </div>
+      <div class="action-row">
+        <button class="primary" data-export-vault>导出 JSON</button>
+        <button class="secondary" data-copy-vault>复制备份</button>
+        <button class="secondary" data-import-demo>导入示例</button>
+        <button class="ghost danger" data-wipe-vault>清空本地</button>
+      </div>
+      <p class="source-line">上次导出：${escapeHtml(state.lastExportAt || "尚未导出")}；上次导入：${escapeHtml(state.lastImportAt || "尚未导入")}；上次清空：${escapeHtml(state.vaultDeletedAt || "从未清空")}。</p>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
     <section class="settings-card">
       <h2 class="section-title">隐私中心</h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>中国区原始记忆默认不出境</strong><span>生产真实记忆进入云端前必须通过数据处理条款审查。</span></div>
         <div class="chapter-line"><strong>每条敏感记忆可设为仅设备</strong><span>儿童、健康、位置和亲密关系默认更谨慎。</span></div>
         <div class="chapter-line"><strong>AI 草稿可撤销</strong><span>事实不对、不像我、太煽情，都可以直接反馈。</span></div>
+      </div>
+      <div class="privacy-toggle">
+        <span><strong>${state.deviceOnlyMode ? "仅设备优先" : "允许同步演示"}</strong><em>${state.deviceOnlyMode ? "敏感记忆默认留在本机，AI 只处理必要摘要。" : "当前只是演示开关，生产同步必须另有加密和条款。"}</em></span>
+        <button class="secondary" data-device-only>${state.deviceOnlyMode ? "切到同步演示" : "切回仅设备"}</button>
       </div>
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
@@ -683,6 +839,10 @@ function settingsView() {
       </div>
     </section>
   `;
+}
+
+function vaultStat(label, value, unit) {
+  return `<div class="vault-stat"><strong>${value}</strong><span>${label} · ${unit}</span></div>`;
 }
 
 function plan(name, copy) {
@@ -725,7 +885,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v5 聚焦产品手感：底部安全区、体验路线、语义缩放与周章节成品已经可以在公网试用。下一步继续补月度/季度仪式和更真实的数据模型。</p>
+      <p>当前 v6 聚焦信任底座：底部安全区、体验路线、语义缩放、周章节成品与记忆保险箱已经可以在公网试用。下一步继续补月度/季度仪式和更真实的同步/AI 边界。</p>
     </section>
   </aside>`;
 }

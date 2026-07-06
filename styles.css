@@ -90,6 +90,7 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .ghost { background: transparent; color: var(--muted); }
 .primary:hover, .secondary:hover { transform: translateY(-1px); }
 .primary:active, .secondary:active, .nav-btn:active, .scale-tab:active, .claim-card:active, .atlas-page:active, .week-chip:active, .journey-step:active { transform: scale(.96); }
+.ghost.danger { color: var(--rose); }
 .action-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
 
 .radar { margin-top: 18px; display: grid; gap: 10px; }
@@ -273,6 +274,21 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 }
 .toast { margin: 12px 0 0; border-radius: 14px; background: rgba(85,116,95,.1); color: var(--moss); padding: 10px 12px; font-size: 12px; font-weight: 800; }
 
+.empty-state { background: linear-gradient(145deg, rgba(255,253,247,.7), rgba(223,234,215,.45)); }
+.vault-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+.vault-stat {
+  min-height: 72px; border-radius: 18px; padding: 11px; background: linear-gradient(180deg, rgba(255,253,247,.8), rgba(223,234,215,.5));
+  border:1px solid rgba(85,116,95,.14); display:flex; flex-direction:column; justify-content:space-between;
+}
+.vault-stat strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.vault-stat span { color: var(--muted); font-size: 10px; line-height:1.3; font-weight:800; }
+.privacy-toggle {
+  margin-top: 12px; border:1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.54);
+  padding: 12px; display:grid; grid-template-columns: minmax(0,1fr) auto; align-items:center; gap: 10px;
+}
+.privacy-toggle strong { display:block; font-size: 13px; }
+.privacy-toggle em { display:block; margin-top: 4px; color: var(--muted); font-size: 11px; line-height:1.35; font-style:normal; }
+
 .ai-eval { display:grid; gap: 10px; }
 .eval-row { display:flex; justify-content:space-between; align-items:center; padding: 11px; border-radius: 16px; background: rgba(255,255,255,.56); border:1px solid var(--line); }
 .score { font-weight: 900; color: var(--moss); }
@@ -322,6 +338,8 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
   .bottom-nav { position: fixed; left: 14px; right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); z-index: 20; }
   .side-panel { display: none; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .vault-grid { grid-template-columns: repeat(2, 1fr); }
+  .privacy-toggle { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
