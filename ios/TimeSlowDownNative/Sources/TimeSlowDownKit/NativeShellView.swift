@@ -1,5 +1,45 @@
 #if canImport(SwiftUI)
 import SwiftUI
+import UniformTypeIdentifiers
+
+@available(iOS 17.0, macOS 14.0, *)
+public struct TSDExportZIPDocument: FileDocument, Equatable {
+    public static let exportedContentType = UTType(filenameExtension: "zip") ?? .data
+    public static let exportedFilenameExtension = "zip"
+    public static var readableContentTypes: [UTType] { [exportedContentType] }
+
+    public var fileName: String
+    public var data: Data
+    public var entryCount: Int
+    public var isMemoryRightsSafe: Bool
+
+    public init(package: ExportZIPPackage) {
+        self.fileName = package.fileName
+        self.data = package.data
+        self.entryCount = package.entries.count
+        self.isMemoryRightsSafe = package.isMemorySafeDefault
+    }
+
+    public init(configuration: ReadConfiguration) throws {
+        self.fileName = "imported-timeslowdown-export.zip"
+        self.data = configuration.file.regularFileContents ?? Data()
+        self.entryCount = 0
+        self.isMemoryRightsSafe = false
+    }
+
+    public func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+
+    public var byteCount: Int { data.count }
+
+    public var isReadyForSystemExporter: Bool {
+        fileName.hasSuffix(".\(Self.exportedFilenameExtension)") &&
+        byteCount > 22 &&
+        entryCount >= 5 &&
+        isMemoryRightsSafe
+    }
+}
 
 @available(iOS 17.0, macOS 14.0, *)
 public struct TSDNativeShellView: View {
@@ -133,6 +173,8 @@ private struct NativeLaunchView: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeAccountView: View {
     @Binding var store: NativeShellStore
+    @State private var exportDocument: TSDExportZIPDocument?
+    @State private var isFileExporterPresented = false
 
     var body: some View {
         NavigationStack {
@@ -144,7 +186,9 @@ private struct NativeAccountView: View {
                 Label("订阅不得扣留导出", systemImage: store.privacyBoundary.subscriptionCanBlockExport ? "xmark.circle" : "checkmark.circle")
                 Button("导出我的记忆 ZIP") {
                     do {
-                        _ = try store.exportMemoryVault()
+                        let package = try store.exportMemoryVault()
+                        exportDocument = TSDExportZIPDocument(package: package)
+                        isFileExporterPresented = true
                     } catch {
                         store.recordExportError("导出失败：\(error)")
                     }
@@ -175,6 +219,16 @@ private struct NativeAccountView: View {
             }
             .padding()
             .navigationTitle("我的")
+            .fileExporter(
+                isPresented: $isFileExporterPresented,
+                document: exportDocument,
+                contentType: TSDExportZIPDocument.exportedContentType,
+                defaultFilename: exportDocument?.fileName ?? "timeslowdown-export.zip"
+            ) { result in
+                if case .failure(let error) = result {
+                    store.recordExportError("系统导出失败：\(error.localizedDescription)")
+                }
+            }
         }
     }
 }

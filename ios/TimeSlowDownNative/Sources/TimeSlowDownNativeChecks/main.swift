@@ -1,5 +1,8 @@
 import Foundation
 import TimeSlowDownKit
+#if canImport(SwiftUI)
+import SwiftUI
+#endif
 
 func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message)
@@ -88,6 +91,15 @@ check(shell.latestExportSummary?.isTSDMemoryRightsSafe == true, "Native shell ex
 check(shell.snapshot.hasExportPackage, "Native shell snapshot should show that an export package exists after export")
 check(shell.snapshot.lastExportEntryCount == 5, "Native shell snapshot should expose latest export entry count")
 check(shell.latestExportError == nil, "Native shell should clear export errors after a successful export")
+#if canImport(SwiftUI)
+let shellDocument = TSDExportZIPDocument(package: shellExport)
+check(shellDocument.fileName == shellExport.fileName, "System exporter document should preserve export file name")
+check(shellDocument.byteCount == shellExport.data.count, "System exporter document should preserve ZIP bytes")
+check(shellDocument.entryCount == 5, "System exporter document should expose the five default documents")
+check(shellDocument.isMemoryRightsSafe, "System exporter document should preserve memory-rights boundary")
+check(shellDocument.isReadyForSystemExporter, "System exporter document should be ready for SwiftUI fileExporter")
+check(TSDExportZIPDocument.exportedFilenameExtension == "zip", "System exporter document should use zip extension")
+#endif
 
 let requiredRoutes = ["此刻", "切片", "旷野", "上架", "我的"]
 check(NativeShellRoute.allCases.map(\.title) == requiredRoutes, "Native shell route titles should match the App Store shell")
@@ -119,7 +131,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>43</string>"), "Info.plist should carry v43 build number")
+check(infoPlistText.contains("<string>44</string>"), "Info.plist should carry v44 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -280,11 +292,12 @@ check(ProductionImplementationChecklist.rows.count == 4, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "43", "TestFlight build notes should match v43")
+check(buildNotes.buildNumber == "44", "TestFlight build notes should match v44")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Account Rights"), "TestFlight build notes should mention Account Rights export UI")
+check(buildNotes.summary.localizedCaseInsensitiveContains("fileExporter"), "TestFlight build notes should mention SwiftUI fileExporter bridge")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -304,4 +317,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, and v43 native export UI state are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, and v44 system file exporter bridge are aligned.")

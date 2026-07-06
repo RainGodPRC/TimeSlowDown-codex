@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "43",
-        summary: String = "TimeSlowDown v43 tests the native Memory Camera shell, media-first slice capture, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, on-device export ZIP builder, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "44",
+        summary: String = "TimeSlowDown v44 tests the native Memory Camera shell, media-first slice capture, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -70,7 +70,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
         knownLimitations: [String] = [
             "No production backend, account sync, or DeepSeek provider call is bundled in this build.",
             "No real Secure Enclave private-key generation, signed-device Keychain validation, or E2EE media vault is claimed yet.",
-            "Archive, signing, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
+            "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
     ) {
