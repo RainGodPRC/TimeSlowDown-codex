@@ -389,11 +389,28 @@ function nowView() {
       ${radarItem("人", "今天有没有一个人，比平时更清晰？", "♙")}
       ${radarItem("情绪转弯", "从烦到松、从紧张到开心，都算。", "↺")}
     </div>
+    <section class="journey-card">
+      <div class="eyebrow">Try This Demo</div>
+      <h2 class="section-title">推荐体验路线 <span class="micro">3 分钟</span></h2>
+      <div class="journey-steps">
+        ${journeyStep("01", "留下一张切片", "用 Quick Mark 写一句今天不同的地方。", "slice")}
+        ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
+        ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
+      </div>
+    </section>
   `;
 }
 
 function radarItem(title, copy, icon) {
   return `<div class="radar-item"><div class="radar-copy"><strong>${title}</strong><span>${copy}</span></div><div class="radar-icon">${icon}</div></div>`;
+}
+
+function journeyStep(num, title, copy, view) {
+  return `<button class="journey-step" data-view="${view}">
+    <span>${num}</span>
+    <strong>${title}</strong>
+    <em>${copy}</em>
+  </button>`;
 }
 
 function sliceView() {
@@ -708,7 +725,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>这是商品级 Web Demo 的第一轮可运行版本。后续会继续打磨真实交互、动画、测试集、部署和 GitHub Pages。</p>
+      <p>当前 v5 聚焦产品手感：底部安全区、体验路线、语义缩放与周章节成品已经可以在公网试用。下一步继续补月度/季度仪式和更真实的数据模型。</p>
     </section>
   </aside>`;
 }
