@@ -48,6 +48,7 @@ check(NativeHandoffLedger.rows.map(\.id).contains("keychain-e2ee"), "Native Hand
 check(SubmissionPacket.rows.map(\.id).contains("privacy-questionnaire"), "Submission Packet should include privacy questionnaire")
 check(SubmissionPacket.rows.map(\.id).contains("subscription-copy"), "Submission Packet should include subscription wording")
 check(NativeHandoffLedger.rows.first { $0.id == "swiftui-shell" }?.status == .poc, "SwiftUI shell should be promoted to PoC after v37 Xcode project skeleton")
+check(NativeHandoffLedger.rows.first { $0.id == "photos-picker" }?.status == .poc, "PhotosPicker should be promoted to PoC after v50 byte import adapter")
 check(NativeHandoffLedger.rows.first { $0.id == "keychain-e2ee" }?.status == .poc, "Keychain/E2EE should be promoted to PoC after v38 trust contracts")
 check(NativeHandoffLedger.rows.first { $0.id == "media-package" }?.status == .poc, "Media package should be promoted to PoC after v38 export/delete contracts")
 check(NativeHandoffLedger.rows.first { $0.id == "deepseek-gateway" }?.status == .poc, "DeepSeek gateway should be promoted to PoC after v38 AI task envelope")
@@ -131,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>49</string>"), "Info.plist should carry v49 build number")
+check(infoPlistText.contains("<string>50</string>"), "Info.plist should carry v50 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -391,8 +392,56 @@ let photoThumbnailBytes = Data("thumb-photo-demo".utf8)
 let photoOriginalBytes = Data("RAW_ORIGINAL_PHOTO_BYTES_DO_NOT_INCLUDE_BY_DEFAULT".utf8)
 let videoThumbnailBytes = Data("thumb-video-demo".utf8)
 let videoOriginalBytes = Data("RAW_ORIGINAL_VIDEO_BYTES_UNSELECTED".utf8)
+
+let thumbnailImportRequest = PhotosLibraryByteImportAdapter.request(
+    for: photo,
+    representation: .thumbnailOnly
+)
+check(thumbnailImportRequest.isTSDPhotosImportSafe, "Photos byte import request should be safe for limited-library thumbnail import")
+check(!thumbnailImportRequest.allowsOriginalBytes, "Thumbnail import request should not allow original bytes")
+let thumbnailImport = try PhotosLibraryByteImportAdapter.importPayload(
+    request: thumbnailImportRequest,
+    thumbnailData: photoThumbnailBytes
+)
+check(thumbnailImport.payload.anchorID == photo.id.uuidString, "Photos byte import should preserve anchor ID")
+check(thumbnailImport.thumbnailByteCount == photoThumbnailBytes.count, "Photos byte import should preserve thumbnail byte count")
+check(thumbnailImport.originalByteCount == 0, "Thumbnail import should not include original bytes")
+check(thumbnailImport.request.usesLimitedLibraryPicker, "Photos byte import should use limited library picker")
+check(!thumbnailImport.request.readsEntireLibrary, "Photos byte import should not scan the full library")
+check(!thumbnailImport.request.infersLocation, "Photos byte import should not infer location")
+check(!thumbnailImport.request.performsFaceRecognition, "Photos byte import should not perform face recognition")
+check(!thumbnailImport.request.uploadsToCloud, "Photos byte import should not upload to cloud")
+check(thumbnailImport.stripsLocationMetadataByPolicy, "Photos byte import should strip location metadata by policy")
+check(thumbnailImport.isTSDPhotosByteImportSafe, "Photos thumbnail byte import should be TSD-safe")
+
+do {
+    _ = try PhotosLibraryByteImportAdapter.importPayload(
+        request: thumbnailImportRequest,
+        thumbnailData: photoThumbnailBytes,
+        originalData: photoOriginalBytes
+    )
+    check(false, "Thumbnail import should reject unconsented original bytes")
+} catch PhotosLibraryByteImporterError.originalBytesNotAllowed(let anchorID) {
+    check(anchorID == photo.id.uuidString, "Original-not-allowed error should name the anchor")
+}
+
+let selectedOriginalImportRequest = PhotosLibraryByteImportAdapter.request(
+    for: photo,
+    representation: .selectedOriginal,
+    consentReceiptID: "consent-raw-media-export-demo"
+)
+check(selectedOriginalImportRequest.allowsOriginalBytes, "Selected-original Photos import should allow original bytes after consent")
+let selectedOriginalImport = try PhotosLibraryByteImportAdapter.importPayload(
+    request: selectedOriginalImportRequest,
+    thumbnailData: photoThumbnailBytes,
+    originalData: photoOriginalBytes
+)
+check(selectedOriginalImport.originalByteCount == photoOriginalBytes.count, "Selected-original Photos import should preserve original byte count")
+check(selectedOriginalImport.payload.originalData == photoOriginalBytes, "Selected-original Photos import should preserve original bytes")
+check(selectedOriginalImport.isTSDPhotosByteImportSafe, "Selected-original Photos import should be TSD-safe after consent")
+
 let rawMediaAssets = [
-    RawMediaAssetPayload(anchorID: photo.id.uuidString, thumbnailData: photoThumbnailBytes, originalData: photoOriginalBytes),
+    selectedOriginalImport.payload,
     RawMediaAssetPayload(anchorID: video.id.uuidString, thumbnailData: videoThumbnailBytes, originalData: videoOriginalBytes)
 ]
 
@@ -508,8 +557,9 @@ check(ProductionImplementationChecklist.rows.count == 5, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "49", "TestFlight build notes should match v49")
+check(buildNotes.buildNumber == "50", "TestFlight build notes should match v50")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -538,4 +588,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, and v49 raw media staged export builder are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, and v50 Photos-library byte import adapter are aligned.")

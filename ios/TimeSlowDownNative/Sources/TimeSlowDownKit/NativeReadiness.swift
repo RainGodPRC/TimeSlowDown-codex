@@ -25,7 +25,7 @@ public struct ReadinessRow: Codable, Equatable, Identifiable, Sendable {
 public enum NativeHandoffLedger {
     public static let rows: [ReadinessRow] = [
         .init(id: "swiftui-shell", title: "SwiftUI shell", status: .poc, owner: "iOS", evidence: "SwiftUI shell, app entry, Xcode project skeleton, launch screen, real App Icon PNG asset catalog, main navigation."),
-        .init(id: "photos-picker", title: "PhotosPicker", status: .todo, owner: "iOS", evidence: "Limited library picker, media import pipeline, no full-library scan."),
+        .init(id: "photos-picker", title: "PhotosPicker", status: .poc, owner: "iOS", evidence: "Limited library picker, no full-library scan; v50 adds a Photos-library byte import adapter that turns user-selected media bytes into RawMediaAssetPayload without GPS/contact/face inference or cloud upload."),
         .init(id: "keychain-e2ee", title: "Keychain + E2EE", status: .poc, owner: "iOS/backend", evidence: "v38 trust contracts cover device key record and E2EE envelope; v41 adds a Security.framework Keychain record store adapter; real Secure Enclave key generation, cryptography, and signed-device validation still required."),
         .init(id: "media-package", title: "Media package", status: .poc, owner: "iOS/backend", evidence: "v38 export manifest signature and deletion receipt contracts cover package integrity and user rights; real media storage still required."),
         .init(id: "deepseek-gateway", title: "DeepSeek gateway", status: .poc, owner: "backend", evidence: "v38 DeepSeek task envelope constrains provider, budget, fallback, and forbidden fields; real server gateway still required."),
