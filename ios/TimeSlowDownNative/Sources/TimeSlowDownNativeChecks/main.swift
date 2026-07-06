@@ -105,7 +105,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>38</string>"), "Info.plist should carry v38 build number")
+check(infoPlistText.contains("<string>39</string>"), "Info.plist should carry v39 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 let fixedDate = Date(timeIntervalSince1970: 1_788_249_600)
@@ -161,4 +161,37 @@ check(aiEnvelope.forbiddenPayloadKeys.contains("full_memory_archive"), "AI envel
 check(ProductionTrustChecklist.rows.count == 5, "Production Trust Checklist should track five v38 trust contracts")
 check(ProductionTrustChecklist.rows.allSatisfy { $0.status == .poc }, "Production Trust Checklist rows should remain PoC, not falsely ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, and v38 production trust contracts are aligned.")
+let keychainPlan = KeychainPersistencePlan.deviceKeyPlan(for: deviceKey)
+check(keychainPlan.isSafeDefault, "Keychain plan should use safe this-device-only defaults")
+check(keychainPlan.accessGroup == nil, "Keychain plan should not invent an access group without Team ID")
+check(!keychainPlan.synchronizable, "Device key should not be synchronizable by default")
+check(!keychainPlan.storesSecretMaterialOutsideKeychain, "Device key plan should not store secret material outside Keychain")
+
+let gatewayRequest = DeepSeekGatewayClientPlan.request(for: aiEnvelope, accountID: deviceKey.accountID)
+check(gatewayRequest.endpointPath == "/v1/ai/tasks/weekly-chapter", "Gateway request should target the TSD backend task endpoint")
+check(gatewayRequest.requiresServerSideCredential, "Gateway request should require server-side provider credential")
+check(!gatewayRequest.containsProviderAPIKey, "Client gateway request must not contain provider API key")
+check(!gatewayRequest.sendsRawMedia, "Client gateway request must not send raw media")
+check(!gatewayRequest.sendsFullArchive, "Client gateway request must not send full archive")
+check(gatewayRequest.fallbackMode == "local-rules", "Gateway request should preserve local fallback")
+
+let archivePlan = ExportArchivePlan.zipPlan(for: exportManifest)
+check(archivePlan.fileName.hasSuffix(".zip"), "Export archive should use a zip file name")
+check(archivePlan.generatedOnDevice, "Export archive should be generated on device by default")
+check(archivePlan.canBeGeneratedAfterSubscriptionEnds, "Export archive should remain available after subscription ends")
+check(archivePlan.entries.map(\.kind).contains(.manifest), "Export archive should include manifest")
+check(archivePlan.entries.map(\.kind).contains(.mediaIndex), "Export archive should include media index")
+check(archivePlan.entries.map(\.kind).contains(.deletionRights), "Export archive should include deletion rights")
+check(archivePlan.entries.allSatisfy { !$0.containsRawMedia }, "Export archive plan should not include raw media by default")
+
+let deletionRequest = DeletionAPIRequest.request(for: deletion, accountID: deviceKey.accountID)
+check(deletionRequest.endpointPath == "/v1/account/deletion-receipts", "Deletion API request should target receipt endpoint")
+check(deletionRequest.requiresAuthenticatedUser, "Deletion API request should require authenticated user")
+check(deletionRequest.canBeCreatedAfterSubscriptionEnds, "Deletion API request should remain available after subscription ends")
+check(!deletionRequest.containsRawMemoryPayload, "Deletion API request should not carry raw memory payload")
+check(deletionRequest.retryPolicy == "idempotent-retry-24h", "Deletion API request should have idempotent retry policy")
+
+check(ProductionImplementationChecklist.rows.count == 4, "Production Implementation Checklist should track four v39 implementation adapters")
+check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
+
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, and v39 implementation adapters are aligned.")
