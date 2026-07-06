@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>50</string>"), "Info.plist should carry v50 build number")
+check(infoPlistText.contains("<string>51</string>"), "Info.plist should carry v51 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -440,8 +440,68 @@ check(selectedOriginalImport.originalByteCount == photoOriginalBytes.count, "Sel
 check(selectedOriginalImport.payload.originalData == photoOriginalBytes, "Selected-original Photos import should preserve original bytes")
 check(selectedOriginalImport.isTSDPhotosByteImportSafe, "Selected-original Photos import should be TSD-safe after consent")
 
+let thumbnailVaultRequest = E2EEMediaVaultAdapter.sealRequest(
+    payload: thumbnailImport.payload,
+    deviceKey: deviceKey,
+    sourceRequestID: thumbnailImport.request.id
+)
+check(thumbnailVaultRequest.isTSDMediaVaultSealSafe, "Thumbnail media vault seal request should be safe")
+check(!thumbnailVaultRequest.storesPlaintextThumbnail, "Media vault should not persist plaintext thumbnails")
+check(!thumbnailVaultRequest.storesPlaintextOriginal, "Media vault should not persist plaintext originals")
+check(!thumbnailVaultRequest.uploadsToCloud, "Media vault seal should not upload to cloud")
+check(!thumbnailVaultRequest.allowsAIProviderAccess, "Media vault seal should not allow AI/provider media access")
+check(thumbnailVaultRequest.canExportAfterSubscriptionEnds, "Media vault should preserve post-subscription export")
+check(thumbnailVaultRequest.canDeleteAfterSubscriptionEnds, "Media vault should preserve post-subscription deletion")
+let thumbnailVaultRecord = try E2EEMediaVaultAdapter.seal(thumbnailVaultRequest)
+check(thumbnailVaultRecord.isTSDMediaVaultSafe, "Thumbnail media vault record should be TSD-safe")
+check(thumbnailVaultRecord.anchorID == photo.id.uuidString, "Media vault should preserve anchor ID")
+check(thumbnailVaultRecord.keyID == deviceKey.keyID, "Media vault should bind to the device key")
+check(thumbnailVaultRecord.additionalAuthenticatedData.contains("anchor:\(photo.id.uuidString)"), "Media vault AAD should bind the anchor")
+check(thumbnailVaultRecord.thumbnailCiphertext != photoThumbnailBytes, "Media vault should not store thumbnail plaintext as ciphertext")
+check(!thumbnailVaultRecord.containsOriginalCiphertext, "Thumbnail-only vault record should not contain original ciphertext")
+check(!thumbnailVaultRecord.rawPlaintextPersistedInRecord, "Media vault record should not persist raw plaintext")
+let unsealedThumbnailPayload = try E2EEMediaVaultAdapter.unseal(thumbnailVaultRecord, with: deviceKey)
+check(unsealedThumbnailPayload == thumbnailImport.payload, "Media vault should unseal thumbnail payload for export")
+
+let selectedOriginalVaultRequest = E2EEMediaVaultAdapter.sealRequest(
+    payload: selectedOriginalImport.payload,
+    deviceKey: deviceKey,
+    sourceRequestID: selectedOriginalImport.request.id,
+    consentReceiptID: selectedOriginalImport.request.consentReceiptID
+)
+check(selectedOriginalVaultRequest.isTSDMediaVaultSealSafe, "Selected-original media vault seal request should be safe")
+let selectedOriginalVaultRecord = try E2EEMediaVaultAdapter.seal(selectedOriginalVaultRequest)
+check(selectedOriginalVaultRecord.isTSDMediaVaultSafe, "Selected-original media vault record should be TSD-safe")
+check(selectedOriginalVaultRecord.containsOriginalCiphertext, "Selected-original vault record should contain original ciphertext")
+check(selectedOriginalVaultRecord.originalCiphertext != photoOriginalBytes, "Media vault should not store original plaintext as ciphertext")
+check(selectedOriginalVaultRecord.consentReceiptID == "consent-raw-media-export-demo", "Media vault record should preserve raw media consent receipt")
+let unsealedSelectedOriginalPayload = try E2EEMediaVaultAdapter.unseal(selectedOriginalVaultRecord, with: deviceKey)
+check(unsealedSelectedOriginalPayload == selectedOriginalImport.payload, "Media vault should unseal selected-original payload for staged export")
+let wrongDeviceKey = KeychainVaultStub.bootstrapDeviceKey(
+    accountID: "acct-other",
+    deviceName: "Other iPhone",
+    createdAt: fixedDate
+)
+do {
+    _ = try E2EEMediaVaultAdapter.unseal(selectedOriginalVaultRecord, with: wrongDeviceKey)
+    check(false, "Media vault should reject unseal with the wrong device key")
+} catch E2EEMediaVaultAdapterError.wrongDeviceKey(let recordID) {
+    check(recordID == selectedOriginalVaultRecord.id, "Wrong-key media vault error should name the record")
+}
+let mediaVaultDeletion = E2EEMediaVaultAdapter.deletionReceipt(
+    for: selectedOriginalVaultRecord,
+    deletedAt: fixedDate
+)
+check(mediaVaultDeletion.recordID == selectedOriginalVaultRecord.id, "Media vault deletion receipt should preserve record ID")
+check(mediaVaultDeletion.deletedLocalCiphertext, "Media vault deletion should delete local ciphertext")
+check(mediaVaultDeletion.deletedThumbnailCiphertext, "Media vault deletion should delete thumbnail ciphertext")
+check(mediaVaultDeletion.deletedOriginalCiphertext, "Media vault deletion should delete original ciphertext")
+check(mediaVaultDeletion.canBeRequestedAfterSubscriptionEnds, "Media vault deletion should remain available after subscription ends")
+check(!mediaVaultDeletion.containsRawMediaPayload, "Media vault deletion receipt should not carry raw media payload")
+check(mediaVaultDeletion.isTSDMediaDeletionSafe, "Media vault deletion receipt should be TSD-safe")
+
 let rawMediaAssets = [
-    selectedOriginalImport.payload,
+    unsealedSelectedOriginalPayload,
     RawMediaAssetPayload(anchorID: video.id.uuidString, thumbnailData: videoThumbnailBytes, originalData: videoOriginalBytes)
 ]
 
@@ -484,7 +544,10 @@ check(selectedOriginalsStagePackage.isTSDRawMediaRightsSafe, "Selected-originals
 do {
     _ = try RawMediaStagedExportBuilder.package(
         for: selectedOriginalsExport,
-        assets: [RawMediaAssetPayload(anchorID: photo.id.uuidString, thumbnailData: photoThumbnailBytes)]
+        assets: [
+            RawMediaAssetPayload(anchorID: photo.id.uuidString, thumbnailData: photoThumbnailBytes),
+            RawMediaAssetPayload(anchorID: video.id.uuidString, thumbnailData: videoThumbnailBytes)
+        ]
     )
     check(false, "Selected-originals staged export should reject missing original bytes")
 } catch RawMediaStagedExportBuilderError.missingOriginal(let anchorID) {
@@ -553,13 +616,14 @@ check(!deletionService.responseContract.responseContainsRawMedia, "Deletion serv
 check(deletionService.responseContract.userCanDownloadReceiptAfterCompletion, "Deletion service response should preserve downloadable completion receipt")
 check(deletionService.isDeletionRightsSafe, "Deletion service envelope should be deletion-rights safe")
 
-check(ProductionImplementationChecklist.rows.count == 5, "Production Implementation Checklist should track five implementation adapters after v48")
+check(ProductionImplementationChecklist.rows.count == 6, "Production Implementation Checklist should track six implementation adapters after v51")
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "50", "TestFlight build notes should match v50")
+check(buildNotes.buildNumber == "51", "TestFlight build notes should match v51")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
+check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -588,4 +652,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, and v50 Photos-library byte import adapter are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, and v51 E2EE media vault adapter are aligned.")

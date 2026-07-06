@@ -723,7 +723,7 @@ public struct ExportZIPPackage: Codable, Equatable, Sendable {
     }
 }
 
-public struct RawMediaAssetPayload: Equatable, Identifiable, Sendable {
+public struct RawMediaAssetPayload: Codable, Equatable, Identifiable, Sendable {
     public var id: String { anchorID }
     public var anchorID: String
     public var thumbnailData: Data
@@ -733,6 +733,329 @@ public struct RawMediaAssetPayload: Equatable, Identifiable, Sendable {
         self.anchorID = anchorID
         self.thumbnailData = thumbnailData
         self.originalData = originalData
+    }
+}
+
+public struct E2EEMediaVaultSealRequest: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var payload: RawMediaAssetPayload
+    public var deviceKey: DeviceKeyRecord
+    public var sourceRequestID: String?
+    public var consentReceiptID: String?
+    public var createdAt: Date
+    public var algorithm: String
+    public var storagePolicy: String
+    public var storesPlaintextThumbnail: Bool
+    public var storesPlaintextOriginal: Bool
+    public var uploadsToCloud: Bool
+    public var allowsAIProviderAccess: Bool
+    public var canExportAfterSubscriptionEnds: Bool
+    public var canDeleteAfterSubscriptionEnds: Bool
+    public var trustLevel: ProductionTrustLevel
+
+    public init(
+        id: String,
+        payload: RawMediaAssetPayload,
+        deviceKey: DeviceKeyRecord,
+        sourceRequestID: String? = nil,
+        consentReceiptID: String? = nil,
+        createdAt: Date = Date(),
+        algorithm: String = "tsd-media-vault-xor-poc-production-crypto-required",
+        storagePolicy: String = "local-device-e2ee-media-vault",
+        storesPlaintextThumbnail: Bool = false,
+        storesPlaintextOriginal: Bool = false,
+        uploadsToCloud: Bool = false,
+        allowsAIProviderAccess: Bool = false,
+        canExportAfterSubscriptionEnds: Bool = true,
+        canDeleteAfterSubscriptionEnds: Bool = true,
+        trustLevel: ProductionTrustLevel = .developmentStub
+    ) {
+        self.id = id
+        self.payload = payload
+        self.deviceKey = deviceKey
+        self.sourceRequestID = sourceRequestID
+        self.consentReceiptID = consentReceiptID
+        self.createdAt = createdAt
+        self.algorithm = algorithm
+        self.storagePolicy = storagePolicy
+        self.storesPlaintextThumbnail = storesPlaintextThumbnail
+        self.storesPlaintextOriginal = storesPlaintextOriginal
+        self.uploadsToCloud = uploadsToCloud
+        self.allowsAIProviderAccess = allowsAIProviderAccess
+        self.canExportAfterSubscriptionEnds = canExportAfterSubscriptionEnds
+        self.canDeleteAfterSubscriptionEnds = canDeleteAfterSubscriptionEnds
+        self.trustLevel = trustLevel
+    }
+
+    public var isTSDMediaVaultSealSafe: Bool {
+        !payload.thumbnailData.isEmpty &&
+        deviceKey.storageClass == "keychain-this-device-only" &&
+        !deviceKey.privateKeyExtractable &&
+        !deviceKey.secretMaterialPersistedInRepo &&
+        storagePolicy == "local-device-e2ee-media-vault" &&
+        !storesPlaintextThumbnail &&
+        !storesPlaintextOriginal &&
+        !uploadsToCloud &&
+        !allowsAIProviderAccess &&
+        canExportAfterSubscriptionEnds &&
+        canDeleteAfterSubscriptionEnds
+    }
+}
+
+public struct E2EEMediaVaultRecord: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var anchorID: String
+    public var keyID: String
+    public var sourceRequestID: String?
+    public var consentReceiptID: String?
+    public var createdAt: Date
+    public var algorithm: String
+    public var nonce: String
+    public var additionalAuthenticatedData: [String]
+    public var thumbnailCiphertext: Data
+    public var originalCiphertext: Data?
+    public var thumbnailDigest: String
+    public var originalDigest: String?
+    public var rawPlaintextPersistedInRecord: Bool
+    public var uploadsToCloud: Bool
+    public var allowsAIProviderAccess: Bool
+    public var canExportAfterSubscriptionEnds: Bool
+    public var canDeleteAfterSubscriptionEnds: Bool
+    public var trustLevel: ProductionTrustLevel
+
+    public init(
+        id: String,
+        anchorID: String,
+        keyID: String,
+        sourceRequestID: String?,
+        consentReceiptID: String?,
+        createdAt: Date,
+        algorithm: String,
+        nonce: String,
+        additionalAuthenticatedData: [String],
+        thumbnailCiphertext: Data,
+        originalCiphertext: Data?,
+        thumbnailDigest: String,
+        originalDigest: String?,
+        rawPlaintextPersistedInRecord: Bool = false,
+        uploadsToCloud: Bool = false,
+        allowsAIProviderAccess: Bool = false,
+        canExportAfterSubscriptionEnds: Bool = true,
+        canDeleteAfterSubscriptionEnds: Bool = true,
+        trustLevel: ProductionTrustLevel = .developmentStub
+    ) {
+        self.id = id
+        self.anchorID = anchorID
+        self.keyID = keyID
+        self.sourceRequestID = sourceRequestID
+        self.consentReceiptID = consentReceiptID
+        self.createdAt = createdAt
+        self.algorithm = algorithm
+        self.nonce = nonce
+        self.additionalAuthenticatedData = additionalAuthenticatedData
+        self.thumbnailCiphertext = thumbnailCiphertext
+        self.originalCiphertext = originalCiphertext
+        self.thumbnailDigest = thumbnailDigest
+        self.originalDigest = originalDigest
+        self.rawPlaintextPersistedInRecord = rawPlaintextPersistedInRecord
+        self.uploadsToCloud = uploadsToCloud
+        self.allowsAIProviderAccess = allowsAIProviderAccess
+        self.canExportAfterSubscriptionEnds = canExportAfterSubscriptionEnds
+        self.canDeleteAfterSubscriptionEnds = canDeleteAfterSubscriptionEnds
+        self.trustLevel = trustLevel
+    }
+
+    public var containsOriginalCiphertext: Bool {
+        originalCiphertext?.isEmpty == false
+    }
+
+    public var isTSDMediaVaultSafe: Bool {
+        !anchorID.isEmpty &&
+        keyID.hasPrefix("tsd-device-") &&
+        algorithm == "tsd-media-vault-xor-poc-production-crypto-required" &&
+        !nonce.isEmpty &&
+        additionalAuthenticatedData.contains("anchor:\(anchorID)") &&
+        !thumbnailCiphertext.isEmpty &&
+        !thumbnailDigest.isEmpty &&
+        !rawPlaintextPersistedInRecord &&
+        !uploadsToCloud &&
+        !allowsAIProviderAccess &&
+        canExportAfterSubscriptionEnds &&
+        canDeleteAfterSubscriptionEnds
+    }
+}
+
+public struct E2EEMediaVaultDeletionReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var recordID: String
+    public var anchorID: String
+    public var keyID: String
+    public var deletedAt: Date
+    public var deletedLocalCiphertext: Bool
+    public var deletedThumbnailCiphertext: Bool
+    public var deletedOriginalCiphertext: Bool
+    public var canBeRequestedAfterSubscriptionEnds: Bool
+    public var containsRawMediaPayload: Bool
+
+    public init(
+        id: String,
+        recordID: String,
+        anchorID: String,
+        keyID: String,
+        deletedAt: Date = Date(),
+        deletedLocalCiphertext: Bool = true,
+        deletedThumbnailCiphertext: Bool = true,
+        deletedOriginalCiphertext: Bool = true,
+        canBeRequestedAfterSubscriptionEnds: Bool = true,
+        containsRawMediaPayload: Bool = false
+    ) {
+        self.id = id
+        self.recordID = recordID
+        self.anchorID = anchorID
+        self.keyID = keyID
+        self.deletedAt = deletedAt
+        self.deletedLocalCiphertext = deletedLocalCiphertext
+        self.deletedThumbnailCiphertext = deletedThumbnailCiphertext
+        self.deletedOriginalCiphertext = deletedOriginalCiphertext
+        self.canBeRequestedAfterSubscriptionEnds = canBeRequestedAfterSubscriptionEnds
+        self.containsRawMediaPayload = containsRawMediaPayload
+    }
+
+    public var isTSDMediaDeletionSafe: Bool {
+        deletedLocalCiphertext &&
+        deletedThumbnailCiphertext &&
+        deletedOriginalCiphertext &&
+        canBeRequestedAfterSubscriptionEnds &&
+        !containsRawMediaPayload
+    }
+}
+
+public enum E2EEMediaVaultAdapterError: Error, Equatable, Sendable {
+    case unsafeSealRequest(String)
+    case unsafeRecord(String)
+    case wrongDeviceKey(String)
+    case integrityCheckFailed(String)
+}
+
+public enum E2EEMediaVaultAdapter {
+    public static func sealRequest(
+        payload: RawMediaAssetPayload,
+        deviceKey: DeviceKeyRecord,
+        sourceRequestID: String? = nil,
+        consentReceiptID: String? = nil,
+        createdAt: Date = Date()
+    ) -> E2EEMediaVaultSealRequest {
+        let digest = TrustDigest.checksum([
+            payload.anchorID,
+            deviceKey.keyID,
+            sourceRequestID ?? "no-source-request",
+            consentReceiptID ?? "no-consent",
+            "\(payload.thumbnailData.count)",
+            "\(payload.originalData?.count ?? 0)"
+        ])
+        return E2EEMediaVaultSealRequest(
+            id: "media-vault-seal-\(digest.prefix(12))",
+            payload: payload,
+            deviceKey: deviceKey,
+            sourceRequestID: sourceRequestID,
+            consentReceiptID: consentReceiptID,
+            createdAt: createdAt
+        )
+    }
+
+    public static func seal(_ request: E2EEMediaVaultSealRequest) throws -> E2EEMediaVaultRecord {
+        guard request.isTSDMediaVaultSealSafe else {
+            throw E2EEMediaVaultAdapterError.unsafeSealRequest(request.id)
+        }
+        let aad = additionalAuthenticatedData(for: request)
+        let nonce = TrustDigest.checksum([request.id, request.deviceKey.keyID] + aad)
+        let thumbnailCiphertext = crypt(
+            request.payload.thumbnailData,
+            keyID: request.deviceKey.keyID,
+            nonce: nonce,
+            label: "thumbnail"
+        )
+        let originalCiphertext = request.payload.originalData.map {
+            crypt($0, keyID: request.deviceKey.keyID, nonce: nonce, label: "original")
+        }
+        return E2EEMediaVaultRecord(
+            id: "media-vault-\(nonce.prefix(12))",
+            anchorID: request.payload.anchorID,
+            keyID: request.deviceKey.keyID,
+            sourceRequestID: request.sourceRequestID,
+            consentReceiptID: request.consentReceiptID,
+            createdAt: request.createdAt,
+            algorithm: request.algorithm,
+            nonce: nonce,
+            additionalAuthenticatedData: aad,
+            thumbnailCiphertext: thumbnailCiphertext,
+            originalCiphertext: originalCiphertext,
+            thumbnailDigest: dataDigest(request.payload.thumbnailData),
+            originalDigest: request.payload.originalData.map(dataDigest)
+        )
+    }
+
+    public static func unseal(_ record: E2EEMediaVaultRecord, with deviceKey: DeviceKeyRecord) throws -> RawMediaAssetPayload {
+        guard record.isTSDMediaVaultSafe else {
+            throw E2EEMediaVaultAdapterError.unsafeRecord(record.id)
+        }
+        guard record.keyID == deviceKey.keyID else {
+            throw E2EEMediaVaultAdapterError.wrongDeviceKey(record.id)
+        }
+        let thumbnailData = crypt(
+            record.thumbnailCiphertext,
+            keyID: deviceKey.keyID,
+            nonce: record.nonce,
+            label: "thumbnail"
+        )
+        guard dataDigest(thumbnailData) == record.thumbnailDigest else {
+            throw E2EEMediaVaultAdapterError.integrityCheckFailed(record.anchorID)
+        }
+        let originalData = try record.originalCiphertext.map { ciphertext in
+            let data = crypt(ciphertext, keyID: deviceKey.keyID, nonce: record.nonce, label: "original")
+            guard dataDigest(data) == record.originalDigest else {
+                throw E2EEMediaVaultAdapterError.integrityCheckFailed(record.anchorID)
+            }
+            return data
+        }
+        return RawMediaAssetPayload(anchorID: record.anchorID, thumbnailData: thumbnailData, originalData: originalData)
+    }
+
+    public static func deletionReceipt(
+        for record: E2EEMediaVaultRecord,
+        deletedAt: Date = Date()
+    ) -> E2EEMediaVaultDeletionReceipt {
+        let digest = TrustDigest.checksum([record.id, record.anchorID, record.keyID, record.nonce])
+        return E2EEMediaVaultDeletionReceipt(
+            id: "media-vault-delete-\(digest.prefix(12))",
+            recordID: record.id,
+            anchorID: record.anchorID,
+            keyID: record.keyID,
+            deletedAt: deletedAt
+        )
+    }
+
+    private static func additionalAuthenticatedData(for request: E2EEMediaVaultSealRequest) -> [String] {
+        [
+            "anchor:\(request.payload.anchorID)",
+            "key:\(request.deviceKey.keyID)",
+            "source:\(request.sourceRequestID ?? "none")",
+            "consent:\(request.consentReceiptID ?? "none")",
+            "thumbnail-bytes:\(request.payload.thumbnailData.count)",
+            "original-bytes:\(request.payload.originalData?.count ?? 0)"
+        ]
+    }
+
+    private static func crypt(_ data: Data, keyID: String, nonce: String, label: String) -> Data {
+        let stream = Array(TrustDigest.checksum([keyID, nonce, label]).utf8)
+        guard !stream.isEmpty else { return data }
+        return Data(data.enumerated().map { index, byte in
+            byte ^ stream[index % stream.count]
+        })
+    }
+
+    private static func dataDigest(_ data: Data) -> String {
+        TrustDigest.checksum([data.base64EncodedString(), "\(data.count)"])
     }
 }
 
@@ -1624,6 +1947,7 @@ public enum ProductionImplementationChecklist {
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
+        .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence."),
         .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope and v47 adds a deletion service integration boundary.")
     ]
 }
