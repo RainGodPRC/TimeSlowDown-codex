@@ -92,6 +92,9 @@ const defaultState = {
   recoveryUntil: "",
   subscriptionState: "free",
   connectedDevices: 1,
+  lastStudioExportAt: "",
+  lastStudioExportAsset: "",
+  lastStudioShareAt: "",
   lastMediaExportAt: "",
   mediaDeleteRequestAt: "",
   mediaShareAt: ""
@@ -387,6 +390,9 @@ function vaultPayload() {
       recoveryUntil: state.recoveryUntil,
       subscriptionState: state.subscriptionState,
       connectedDevices: state.connectedDevices,
+      lastStudioExportAt: state.lastStudioExportAt,
+      lastStudioExportAsset: state.lastStudioExportAsset,
+      lastStudioShareAt: state.lastStudioShareAt,
       lastMediaExportAt: state.lastMediaExportAt,
       mediaDeleteRequestAt: state.mediaDeleteRequestAt,
       mediaShareAt: state.mediaShareAt
@@ -504,7 +510,7 @@ function mediaLibraryStats() {
 function mediaLibraryManifest() {
   return {
     product: "TimeSlowDown Media Library Production Facade",
-    version: "v19-demo",
+    version: "v20-demo",
     generatedAt: new Date().toISOString(),
     boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service.",
     media: mediaMoments().map(moment => ({
@@ -767,6 +773,149 @@ async function copyStudioCard(event) {
   }
 }
 
+function studioAssetById(assetId = "week") {
+  return studioAssets().find(item => item.id === assetId) || studioAssets()[0];
+}
+
+function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines = 8) {
+  const normalized = String(text || "").replace(/\n/g, " ");
+  const tokens = normalized.match(/[\u4e00-\u9fa5]|[^\s\u4e00-\u9fa5]+/g) || [];
+  let line = "";
+  let lines = 0;
+  for (const token of tokens) {
+    const spacer = /^[\u4e00-\u9fa5]$/.test(token) || !line ? "" : " ";
+    const testLine = `${line}${spacer}${token}`;
+    if (ctx.measureText(testLine).width > maxWidth && line) {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+      lines += 1;
+      line = token;
+      if (lines >= maxLines - 1) break;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line && lines < maxLines) ctx.fillText(lines >= maxLines - 1 && line.length > 32 ? `${line.slice(0, 32)}…` : line, x, y);
+}
+
+function roundedRectPath(ctx, x, y, width, height, radius) {
+  const r = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + width, y, x + width, y + height, r);
+  ctx.arcTo(x + width, y + height, x, y + height, r);
+  ctx.arcTo(x, y + height, x, y, r);
+  ctx.arcTo(x, y, x + width, y, r);
+  ctx.closePath();
+}
+
+function renderStudioPng(asset) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const ctx = canvas.getContext("2d");
+  const gradient = ctx.createLinearGradient(0, 0, 1080, 1350);
+  gradient.addColorStop(0, "#fffdf7");
+  gradient.addColorStop(.48, asset.id === "quarter" ? "#dcead8" : "#f4efe4");
+  gradient.addColorStop(1, asset.id === "meadow" ? "#bdcfad" : "#d7e5ec");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 1080, 1350);
+
+  ctx.fillStyle = "rgba(85,116,95,.13)";
+  ctx.beginPath();
+  ctx.ellipse(540, 1035, 520, 260, 0, 0, Math.PI * 2);
+  ctx.fill();
+  [["#d7a85f", 250, 730, 52], ["#b8796c", 540, 630, 44], ["#55745f", 810, 760, 48]].forEach(([color, x, y, r]) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `${color}33`;
+    ctx.lineWidth = 26;
+    ctx.stroke();
+  });
+
+  roundedRectPath(ctx, 86, 86, 908, 1178, 56);
+  ctx.fillStyle = "rgba(255,253,247,.78)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(32,52,43,.12)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.fillStyle = "#55745f";
+  ctx.font = "700 30px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillText(asset.eyebrow.toUpperCase(), 142, 178);
+  ctx.fillStyle = "#20342b";
+  ctx.font = "700 68px Songti SC, STSong, serif";
+  wrapCanvasText(ctx, asset.title, 142, 284, 790, 82, 3);
+
+  ctx.fillStyle = "rgba(85,116,95,.12)";
+  roundedRectPath(ctx, 142, 432, 620, 64, 32);
+  ctx.fill();
+  ctx.fillStyle = "#55745f";
+  ctx.font = "800 28px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillText(asset.badge.slice(0, 34), 172, 474);
+
+  ctx.fillStyle = "#59685e";
+  ctx.font = "400 34px -apple-system, BlinkMacSystemFont, sans-serif";
+  wrapCanvasText(ctx, asset.body, 142, 585, 790, 52, 8);
+
+  ctx.fillStyle = "#b8796c";
+  ctx.font = "800 30px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillText(asset.footer, 142, 1148);
+  ctx.fillStyle = "rgba(32,52,43,.58)";
+  ctx.font = "700 26px -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillText("TimeSlowDown · 让走过的时间，长成你的人生", 142, 1204);
+  ctx.fillText(state.shareMode === "public" ? "公开版：已隐藏具体人名、地点、原文和原始影像" : "私密版：仅适合主动发给信任的人", 142, 1244);
+  return canvas.toDataURL("image/png");
+}
+
+function downloadDataUrl(dataUrl, filename) {
+  const anchor = document.createElement("a");
+  anchor.href = dataUrl;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+async function downloadStudioCard(event) {
+  const asset = studioAssetById(event?.currentTarget?.dataset.studioDownload || "week");
+  const stamp = new Date().toLocaleString("zh-CN");
+  try {
+    const dataUrl = renderStudioPng(asset);
+    downloadDataUrl(dataUrl, `timeslowdown-${asset.id}-${state.shareMode}.png`);
+    setState({
+      lastStudioExportAt: stamp,
+      lastStudioExportAsset: asset.id,
+      toast: `已生成 ${asset.title} 的 PNG 图片；${state.shareMode === "public" ? "公开版已去细节。" : "私密版请只发给信任的人。"}`
+    });
+  } catch {
+    setState({ toast: "当前浏览器无法生成 PNG；请先复制卡片文案或截图保存。" });
+  }
+}
+
+async function shareStudioCard(event) {
+  const asset = studioAssetById(event?.currentTarget?.dataset.studioShare || "week");
+  const stamp = new Date().toLocaleString("zh-CN");
+  const text = makeStudioText(asset.id);
+  try {
+    const dataUrl = renderStudioPng(asset);
+    const blob = await (await fetch(dataUrl)).blob();
+    const file = new File([blob], `timeslowdown-${asset.id}-${state.shareMode}.png`, { type: "image/png" });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: asset.title, text, files: [file] });
+      setState({ lastStudioShareAt: stamp, toast: "已调用系统分享面板；原始影像不会被自动分享。" });
+      return;
+    }
+    if (!navigator.clipboard) throw new Error("share unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ lastStudioShareAt: stamp, toast: "当前浏览器无图片分享；已复制去隐私分享文案。" });
+  } catch {
+    setState({ lastStudioShareAt: stamp, toast: "分享被取消或不可用；PNG 仍可手动导出，记忆仍保留在本机 Demo 中。" });
+  }
+}
+
 async function copyDemoLink() {
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -783,7 +932,7 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v19 已把照片/视频入口抬到首次进入路径，并保留媒体库生产边界：有限相册选择、E2EE 影像库、缩略图、导出删除和去隐私分享。",
+    "4. v20 已支持分享工作室 PNG 导出和分享成品边界，并保留媒体入口与媒体库生产边界。",
     "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "6. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -803,7 +952,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v19 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v20 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除、PNG 分享成品和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -1019,6 +1168,8 @@ function bindEvents() {
   $("[data-compile-chapter]")?.addEventListener("click", compileChapter);
   $("[data-copy-share]")?.addEventListener("click", copyShareText);
   $$("[data-studio-copy]").forEach(btn => btn.addEventListener("click", copyStudioCard));
+  $$("[data-studio-download]").forEach(btn => btn.addEventListener("click", downloadStudioCard));
+  $$("[data-studio-share]").forEach(btn => btn.addEventListener("click", shareStudioCard));
   $("[data-copy-demo-link]")?.addEventListener("click", copyDemoLink);
   $("[data-copy-privacy]")?.addEventListener("click", copyPrivacySummary);
   $("[data-copy-review]")?.addEventListener("click", copyReviewPacket);
@@ -1528,7 +1679,7 @@ function mediaLibraryView() {
       <div class="library-share-grid">
         ${shareBoundary("公开分享", "只分享时间风景和主题，不包含原图、人名、地点和原文。")}
         ${shareBoundary("私密分享", "适合发给亲友，可包含更多故事，但仍需二次确认。")}
-        ${shareBoundary("真实图片导出", "后续需把分享工作室 DOM 卡片导出 PNG，并标注是否含敏感信息。")}
+        ${shareBoundary("真实图片导出", "分享工作室可生成 PNG 成品；公开版默认去掉原图、人名、地点和原文。")}
       </div>
       <div class="action-row"><button class="primary" data-share-media-library>模拟 Web Share</button><button class="secondary" data-view="studio">打开分享工作室</button></div>
       <p class="source-line">上次分享：${escapeHtml(state.mediaShareAt || "尚未分享")}。当前 Web Demo 只复制文案或调用可用的系统分享；未上传原始影像。</p>
@@ -1758,12 +1909,18 @@ function studioView() {
   return `
     <div class="topline"><div><div class="brand">分享工作室</div><div class="micro">把记录变成可转述、可截图、可分享的视觉成品。</div></div></div>
     <section class="guide-card studio-hero">
-      <div class="eyebrow">Visual Share Studio · v14</div>
+      <div class="eyebrow">Visual Share Studio · v20</div>
       <h1 class="hero-title">不是发日记，<br/>是递出一张时间明信片。</h1>
-      <p class="hero-subtitle">TSD 的分享不追求炫耀连续打卡，而是把“这一周/这一季/这一片旷野”整理成一个可讲述入口。公开版隐藏具体人名、地点和原文；私密版适合讲给亲友。</p>
+      <p class="hero-subtitle">TSD 的分享不追求炫耀连续打卡，而是把“这一周/这一季/这一片旷野”整理成一个可讲述入口。现在可生成 PNG；公开版隐藏具体人名、地点、原文和原始影像，私密版适合讲给亲友。</p>
       <div class="share-mode studio-mode" aria-label="分享隐私模式">
         <button class="${state.shareMode === "private" ? "active" : ""}" data-share-mode="private">讲给一个人</button>
         <button class="${state.shareMode === "public" ? "active" : ""}" data-share-mode="public">分享一幅风景</button>
+      </div>
+      <div class="export-status">
+        <strong>上次导出</strong>
+        <span>${escapeHtml(state.lastStudioExportAt || "尚未导出 PNG")} ${state.lastStudioExportAsset ? `· ${escapeHtml(state.lastStudioExportAsset)}` : ""}</span>
+        <strong>上次分享</strong>
+        <span>${escapeHtml(state.lastStudioShareAt || "尚未调用分享")}</span>
       </div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
@@ -1771,6 +1928,14 @@ function studioView() {
       <h2 class="section-title">成品预览 <span class="micro">${state.shareMode === "public" ? "公开风景" : "私密叙述"}</span></h2>
       <div class="poster-grid">
         ${assets.map(asset => posterCard(asset)).join("")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">导出流水线 <span class="micro">PNG / Web Share / fallback</span></h2>
+      <div class="export-lab">
+        ${exportStep("01", "选择隐私模式", "公开版先去细节，私密版保留更多可讲述性；切换后再导出。")}
+        ${exportStep("02", "生成 PNG", "浏览器本地 canvas 生成图片，不上传原始记忆或照片。")}
+        ${exportStep("03", "分享或降级", "系统支持时调用分享面板；不支持时复制去隐私文案并保留 PNG 下载。")}
       </div>
     </section>
     <section class="guide-card">
@@ -1798,9 +1963,17 @@ function posterCard(asset) {
         <p>${escapeHtml(asset.body).replace(/\n/g, "<br/>")}</p>
         <footer>${escapeHtml(asset.footer)}</footer>
       </div>
-      <button class="secondary poster-action" data-studio-copy="${asset.id}">复制这张卡</button>
+      <div class="poster-actions">
+        <button class="primary poster-action" data-studio-download="${asset.id}">导出 PNG</button>
+        <button class="secondary poster-action" data-studio-share="${asset.id}">系统分享</button>
+        <button class="ghost poster-action" data-studio-copy="${asset.id}">复制文案</button>
+      </div>
     </article>
   `;
+}
+
+function exportStep(num, title, copy) {
+  return `<div class="export-step"><span>${num}</span><strong>${title}</strong><em>${copy}</em></div>`;
 }
 
 function guideView() {
@@ -1866,7 +2039,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v19</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v20</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1874,7 +2047,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v19 仍不调用真实模型和真实账户；它把“照片/视频优先”的入口前置到 onboarding，同时用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头和媒体库生产假面说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v20 仍不调用真实模型和真实账户；它把“照片/视频优先”的入口、媒体库边界和 PNG 分享成品放进同一条产品路径，同时用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1888,6 +2061,7 @@ function guideView() {
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
         ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
         ${readiness("媒体优先入口", "v19", "首次进入即可从照片/视频开始，文字可后补；影像被视为切片锚点而非附件。")}
+        ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
         ${readiness("媒体库生产", "v18", "相册权限、E2EE 影像库、缩略图、导出删除与 Web Share 边界。")}
@@ -1917,7 +2091,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v18</div>
+      <div class="eyebrow">Review Packet · v20</div>
       <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
       <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -1959,7 +2133,7 @@ function reviewView() {
       <div class="readiness-list">
         ${readiness("原生壳", "待做", "iOS 项目、权限弹窗、安装资产、App Icon。")}
         ${readiness("账户同步", "待做", "真实登录、E2EE、密钥恢复、设备管理。")}
-        ${readiness("媒体库", "v18 雏形", "相册权限、加密影像库、缩略图、导出删除和分享边界已产品化。")}
+        ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
         ${readiness("模型网关", "待做", "DeepSeek 适配、限流、成本预算、供应商条款。")}
         ${readiness("合规文本", "待做", "正式隐私政策、用户协议、数据处理活动台账。")}
         ${readiness("审核材料", "雏形", "本页可作为未来审核/法务任务清单，不代表已通过。")}
@@ -2360,7 +2534,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v19 已把媒体优先入口前置到 onboarding：用户可以从照片/视频开始，而不是被迫先写文字；媒体库生产假面、媒体记忆墙、人物地点镜头、分享卡片和隐私边界已经进入同一个体验。下一步继续补安装资产、真实模型网关或真实图片导出。</p>
+      <p>当前 v20 已把媒体优先入口、媒体库生产假面和 PNG 分享成品串起来：用户可以从照片/视频开始，生成切片、进入媒体墙，再把周章节/季度回忆/人生旷野导出成可分享图片。下一步继续补安装资产或真实模型网关。</p>
     </section>
   </aside>`;
 }

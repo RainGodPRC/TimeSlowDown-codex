@@ -18,7 +18,7 @@ Current demo focus:
 - AI task sheet and off-device ledger: what leaves, what never leaves, fallback, revoke
 - Sync console: encrypted-backup demo, pause/resume sync, cancellation recovery window
 - Review center: permissions, privacy-label draft, tester FAQ, production checklist
-- Visual share studio: weekly poster, 90-day card, life meadow card, public/private copy
+- Visual share studio: weekly poster, 90-day card, life meadow card, public/private copy, PNG export, and Web Share fallback
 - Media memory anchors: attach photo/video files, external media links, and notes to slices
 - Media memory wall: filter bound media by image/video/link and browse a recall timeline
 - Media-first Quick Mark: start a slice directly from a photo/video, then optionally add text later
