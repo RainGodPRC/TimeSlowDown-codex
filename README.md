@@ -32,6 +32,7 @@ Current demo focus:
 - Install center: inline manifest, iOS web-app meta, app-like shell detection, and copyable install instructions
 - Launch readiness center: production preflight ledger, export checksum, deletion receipt, App Store review packet, and copyable launch report
 - Native handoff ledger: SwiftUI shell, PhotosPicker, Keychain/E2EE, DeepSeek gateway, App Privacy Details, Privacy Manifest, required reason API, and TestFlight packet checklist
+- App Store submission packet: product page copy, screenshot/app preview plan, privacy questionnaire, age rating, review notes, support/privacy URLs, and subscription wording
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report

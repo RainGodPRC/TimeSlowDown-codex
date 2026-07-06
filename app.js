@@ -129,7 +129,12 @@ const defaultState = {
   launchReportCopiedAt: "",
   nativeMigrationReviewAt: "",
   privacyManifestAuditAt: "",
-  nativeHandoffCopiedAt: ""
+  nativeHandoffCopiedAt: "",
+  productPageReviewAt: "",
+  screenshotPlanAt: "",
+  privacyQuestionnaireAt: "",
+  ageRatingReviewAt: "",
+  submissionPacketCopiedAt: ""
 };
 
 let state = loadState();
@@ -648,9 +653,9 @@ function mediaLibraryManifest() {
   const stats = mediaLibraryStats();
   return {
     product: "TimeSlowDown Media Vault Path",
-    version: "v32-demo",
+    version: "v33-demo",
     generatedAt: new Date().toISOString(),
-    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v32 adds Native Handoff Ledger on top of Launch Readiness, mobile UI polish, Bento cards, Journal timeline, photo wall, and map-style media switching while keeping Memory Camera, account rights, media vault path, and app-like install boundaries.",
+    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v33 adds App Store Submission Packet on top of Native Handoff Ledger and Launch Readiness, while keeping Memory Camera, Bento cards, account rights, media vault path, and app-like install boundaries.",
     vaultState: {
       permission: state.mediaPermissionReviewAt ? "limited-picker-reviewed" : "single-picker-only",
       sealedAt: state.mediaVaultSealedAt || "",
@@ -1154,7 +1159,7 @@ async function requestInstallDemo() {
 async function copyInstallGuide() {
   const manifest = installManifestState();
   const text = [
-    "TimeSlowDown Codex 安装说明（Demo v32）：",
+    "TimeSlowDown Codex 安装说明（Demo v33）：",
     `公网地址：${PUBLIC_DEMO_URL}`,
     "",
     "iPhone / iPad：用 Safari 打开 → 点分享按钮 → 添加到主屏幕。",
@@ -1162,7 +1167,7 @@ async function copyInstallGuide() {
     "桌面 Chrome / Edge：打开地址栏右侧安装图标，或菜单 → 安装 TimeSlowDown。",
     "",
     `当前检测：manifest=${manifest.hasManifest ? "yes" : "no"}；apple-meta=${manifest.hasAppleMeta ? "yes" : "no"}；standalone=${manifest.standalone ? "yes" : "no"}；prompt=${manifest.promptReady ? "ready" : "manual"}.`,
-    "边界：v32 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
+    "边界：v33 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
   ].join("\n");
   const stamp = new Date().toLocaleString("zh-CN");
   try {
@@ -1232,6 +1237,28 @@ function nativeHandoffStats() {
   };
 }
 
+function submissionPacketRows() {
+  return [
+    ["产品页定位", state.productPageReviewAt ? "poc" : "todo", "App name / subtitle / description / keywords", "TimeSlowDown 的商店页应避免夸大医疗、心理诊断或生产完成度；主张聚焦“留住可讲述瞬间”。"],
+    ["截图与预览", state.screenshotPlanAt ? "poc" : "todo", "screenshots / app preview", "截图组覆盖 Memory Camera、今日切片、周章节、人生旷野、媒体墙、账户权利、隐私中心；公开版不展示真实隐私内容。"],
+    ["隐私问卷", state.privacyQuestionnaireAt ? "poc" : "todo", "App Privacy Details", "用户内容、照片/视频、账号、购买、诊断、AI 处理和可选同步需要逐项映射；当前 demo 不上传真实数据。"],
+    ["年龄分级", state.ageRatingReviewAt ? "poc" : "todo", "Age Rating", "产品允许 12+ 方向，但正式上架需按用户生成内容、家庭影像、AI 处理和外部链接复核分级。"],
+    ["审核备注", state.launchStoreReviewAt ? "poc" : "todo", "Review Notes", "提供 demo 路线：照片入口→生成切片→媒体墙→账户权利→隐私中心→删除/导出；说明 AI/API 均为 PoC 或生产受控。"],
+    ["支持与隐私 URL", state.productPageReviewAt ? "poc" : "todo", "Support URL / Privacy URL", "正式上架必须提供可访问的支持页、隐私政策和删除/导出说明；当前只在 demo 内可复制摘要。"],
+    ["订阅说明", state.accountReportCopiedAt || state.subscriptionState !== "free" ? "poc" : "todo", "IAP / subscription", "若进入 Plus，必须明确同步/AI/存储是增强，不得扣留已有记忆；退订后导出/查看/删除继续可用。"],
+    ["提交前证据包", state.submissionPacketCopiedAt ? "poc" : "todo", "Submission Packet", "把产品页、截图、隐私问卷、年龄分级、审核备注和权利说明复制成给 release/legal 的交接材料。"]
+  ];
+}
+
+function submissionPacketStats() {
+  const rows = submissionPacketRows();
+  return {
+    poc: rows.filter(row => row[1] === "poc").length,
+    todo: rows.filter(row => row[1] === "todo").length,
+    total: rows.length
+  };
+}
+
 function launchStats() {
   const rows = launchReadinessRows();
   return {
@@ -1285,12 +1312,40 @@ function markPrivacyManifestAudit() {
   });
 }
 
+function markProductPageReview() {
+  setState({
+    productPageReviewAt: new Date().toLocaleString("zh-CN"),
+    toast: "已标记产品页复核：名称、副标题、描述、关键词、支持 URL 和隐私 URL 进入 App Store 提交材料。"
+  });
+}
+
+function markScreenshotPlan() {
+  setState({
+    screenshotPlanAt: new Date().toLocaleString("zh-CN"),
+    toast: "已标记截图/预览计划：Memory Camera、切片、章节、旷野、媒体墙、账户权利和隐私中心进入截图清单。"
+  });
+}
+
+function markPrivacyQuestionnaire() {
+  setState({
+    privacyQuestionnaireAt: new Date().toLocaleString("zh-CN"),
+    toast: "已标记 App Privacy Details 问卷复核：用户内容、照片/视频、账号、购买、诊断、AI 处理和同步逐项映射。"
+  });
+}
+
+function markAgeRatingReview() {
+  setState({
+    ageRatingReviewAt: new Date().toLocaleString("zh-CN"),
+    toast: "已标记年龄分级复核：12+ 方向需结合用户生成内容、家庭影像、AI 处理和外部链接正式判断。"
+  });
+}
+
 async function copyNativeHandoffReport() {
   const stats = nativeHandoffStats();
   const text = [
-    "TimeSlowDown Native Handoff Ledger（Demo v32）：",
+    "TimeSlowDown Native Handoff Ledger（Demo v33）：",
     `公网：${PUBLIC_DEMO_URL}`,
-    `资源：styles.css?v=32 / app.js?v=32`,
+    `资源：styles.css?v=33 / app.js?v=33`,
     `原生迁移复核：${state.nativeMigrationReviewAt || "尚未标记"}`,
     `Privacy Manifest 审计：${state.privacyManifestAuditAt || "尚未标记"}`,
     `状态：poc=${stats.poc} / todo=${stats.todo} / total=${stats.total}`,
@@ -1309,24 +1364,56 @@ async function copyNativeHandoffReport() {
   }
 }
 
+async function copySubmissionPacketReport() {
+  const stats = submissionPacketStats();
+  const text = [
+    "TimeSlowDown App Store Submission Packet（Demo v33）：",
+    `公网：${PUBLIC_DEMO_URL}`,
+    `资源：styles.css?v=33 / app.js?v=33`,
+    `产品页复核：${state.productPageReviewAt || "尚未标记"}`,
+    `截图计划：${state.screenshotPlanAt || "尚未标记"}`,
+    `隐私问卷：${state.privacyQuestionnaireAt || "尚未标记"}`,
+    `年龄分级：${state.ageRatingReviewAt || "尚未标记"}`,
+    `状态：poc=${stats.poc} / todo=${stats.todo} / total=${stats.total}`,
+    "",
+    ...submissionPacketRows().map(([name, status, artifact, copy], index) => `${index + 1}. [${status.toUpperCase()}] ${name} · ${artifact} — ${copy}`),
+    "",
+    "商店页建议主张：不是日记、不是相册，而是帮用户把照片/视频/一句话绑定成可讲述的时间切片；90 天后能讲出 5–10 个鲜明瞬间。",
+    "边界：此提交包是 release/legal 交接材料，不代表已经填完 App Store Connect、完成法务审核或通过 Apple Review。"
+  ].join("\n");
+  const stamp = new Date().toLocaleString("zh-CN");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ submissionPacketCopiedAt: stamp, toast: "App Store Submission Packet 已复制，可交给 release / legal / App Store Connect 继续施工。" });
+  } catch {
+    setState({ submissionPacketCopiedAt: stamp, toast: "浏览器不允许自动复制；已在上架就绪中心生成 Submission Packet 内容。" });
+  }
+}
+
 async function copyLaunchReport() {
   const stats = launchStats();
   const nativeStats = nativeHandoffStats();
+  const submissionStats = submissionPacketStats();
   const text = [
-    "TimeSlowDown Launch Readiness Report（Demo v32）：",
+    "TimeSlowDown Launch Readiness Report（Demo v33）：",
     `公网：${PUBLIC_DEMO_URL}`,
-    `资源：styles.css?v=32 / app.js?v=32`,
+    `资源：styles.css?v=33 / app.js?v=33`,
     `预检：${state.launchPreflightAt || "尚未运行"}`,
     `导出校验：${state.launchChecksumAt ? launchChecksum() : "尚未生成"}`,
     `删除回执：${state.launchDeletionReceiptAt || "尚未生成"}`,
     `App Store 审核包：${state.launchStoreReviewAt || "尚未标记"}`,
     `状态：ready=${stats.ready} / poc=${stats.poc} / todo=${stats.todo} / total=${stats.total}`,
     `Native handoff：poc=${nativeStats.poc} / todo=${nativeStats.todo} / total=${nativeStats.total}`,
+    `Submission packet：poc=${submissionStats.poc} / todo=${submissionStats.todo} / total=${submissionStats.total}`,
     "",
     ...launchReadinessRows().map(([name, status, copy], index) => `${index + 1}. [${status.toUpperCase()}] ${name} — ${copy}`),
     "",
     "Native Handoff:",
     ...nativeHandoffRows().map(([name, status, owner, copy], index) => `${index + 1}. [${status.toUpperCase()}] ${name} · ${owner} — ${copy}`),
+    "",
+    "App Store Submission Packet:",
+    ...submissionPacketRows().map(([name, status, artifact, copy], index) => `${index + 1}. [${status.toUpperCase()}] ${name} · ${artifact} — ${copy}`),
     "",
     "说明：这是 Web Demo 的上架就绪账本，不代表真实 iOS 原生壳、真实 E2EE、真实 DeepSeek API 或正式法律文本已完成。"
   ].join("\n");
@@ -1346,8 +1433,8 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v32 已支持生产隐私中心、账户权利中心、模型网关控制台、分享工作室 PNG 导出、Memory Camera、媒体保险箱路径、安装中心、Launch Readiness、Native Handoff Ledger 和 Demo QA Console。",
-    "5. 媒体策略：照片/视频是切片入口，不是事后附件；v32 保留顶部 Dock、底部“＋影像”、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、旧切片补影像主路径。",
+    "4. v33 已支持生产隐私中心、账户权利中心、模型网关控制台、分享工作室 PNG 导出、Memory Camera、媒体保险箱路径、安装中心、Launch Readiness、Native Handoff Ledger、App Store Submission Packet 和 Demo QA Console。",
+    "5. 媒体策略：照片/视频是切片入口，不是事后附件；v33 保留顶部 Dock、底部“＋影像”、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、旧切片补影像主路径。",
     "6. 账户策略：不登录也能记录；登录只为加密备份、多设备和恢复。退订不能扣留已有记忆，导出/查看/删除必须继续可用。",
     "7. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由、媒体导出/删除审计和地区数据边界完成后，才允许处理真实用户记忆。",
     "8. AI 只做忠实编辑，不替用户决定人生意义。"
@@ -1368,7 +1455,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v32 保留照片/视频主路径：顶部 Dock、底部“＋影像”、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v33 保留照片/视频主路径：顶部 Dock、底部“＋影像”、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识、Privacy Manifest / required reason API 审计、导出包签名、删除回执与法律评审。"
   ].join("\n");
@@ -1383,7 +1470,7 @@ async function copyReviewPacket() {
 
 async function copyComplianceReport() {
   const text = [
-    "TimeSlowDown 生产隐私报告（Demo v32）：",
+    "TimeSlowDown 生产隐私报告（Demo v33）：",
     "1. 当前 Demo：静态站点 + localStorage；不登录、不云同步、不调用真实模型、不请求持久相册/定位/通讯录/麦克风/通知。",
     "2. 数据生命周期：用户主动输入/选择 → 设备本地保存 → 可选 AI/同步任务单 → 导出/删除 → 分享包去隐私。",
     "3. 权限升级梯子：先单次选择；只有批量整理、同步、提醒等明确动作出现时才解释并请求更多权限。",
@@ -1406,14 +1493,14 @@ function qaSnapshot() {
   const mediaCount = mediaMoments().length;
   const claimedCount = state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length;
   return {
-    version: "v32",
+    version: "v33",
     publicUrl: PUBLIC_DEMO_URL,
-    resources: "styles.css?v=32 / app.js?v=32",
+    resources: "styles.css?v=33 / app.js?v=33",
     moments: state.moments.length,
     mediaCount,
     claimedCount,
     gatewayStatus: gatewayStatusLabel(),
-    privacyCenter: "v32",
+    privacyCenter: "v33",
     qaReportAt: state.lastQaReportAt || "尚未复制",
     checks: qaChecks(mediaCount, claimedCount)
   };
@@ -1437,7 +1524,7 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "影像锚点",
       status: mediaCount ? "pass" : "warn",
       route: "Memory Camera / 切片 / 章节 / 媒体墙",
-      evidence: `${mediaCount} 个切片已绑定照片/视频/链接；v32 保留顶部 Dock、底部悬浮 Memory Camera、此刻页 CTA、Quick Mark 和旧切片补影像主路径。`
+      evidence: `${mediaCount} 个切片已绑定照片/视频/链接；v33 保留顶部 Dock、底部悬浮 Memory Camera、此刻页 CTA、Quick Mark 和旧切片补影像主路径。`
     },
     {
       area: "影像入口可见性",
@@ -1455,13 +1542,13 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "安装体验",
       status: "poc",
       route: "安装中心",
-      evidence: "v32 保留 inline manifest、Apple web app meta、touch icon、安装中心、standalone 检测和可复制安装说明；仍无 service worker/offline。"
+      evidence: "v33 保留 inline manifest、Apple web app meta、touch icon、安装中心、standalone 检测和可复制安装说明；仍无 service worker/offline。"
     },
     {
       area: "账户权利中心",
       status: "poc",
       route: "账户",
-      evidence: "v27-v32 保留访客通行证、恢复钥匙、设备复核、退订取回窗口和可复制账户权利报告；真实登录/E2EE 仍待接入。"
+      evidence: "v27-v33 保留访客通行证、恢复钥匙、设备复核、退订取回窗口和可复制账户权利报告；真实登录/E2EE 仍待接入。"
     },
     {
       area: "周章节",
@@ -1497,25 +1584,31 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "上架就绪中心",
       status: "poc",
       route: "Launch",
-      evidence: "v32 新增 Launch Readiness：预检账本、导出包 checksum、删除回执、App Store 审核包和可复制上线报告。"
+      evidence: "v33 新增 Launch Readiness：预检账本、导出包 checksum、删除回执、App Store 审核包和可复制上线报告。"
     },
     {
       area: "移动端视觉质感",
       status: "pass",
       route: "此刻 / 切片 / 底部导航",
-      evidence: "v32 校准按钮层级、柔和阴影、卡片表面、触控反馈、底部导航和 Memory Camera FAB 位置，让影像入口显眼但不再遮挡主要内容。"
+      evidence: "v33 校准按钮层级、柔和阴影、卡片表面、触控反馈、底部导航和 Memory Camera FAB 位置，让影像入口显眼但不再遮挡主要内容。"
     },
     {
       area: "顶级 App DNA",
       status: "pass",
       route: "此刻 Bento / 媒体记忆墙",
-      evidence: "v32 吸收 Day One / Diarly 的 Journal 时间轴、照片墙与地图切换，以及 Craft / Apple Journal 的 Bento 卡片结构；不是普通列表堆功能。"
+      evidence: "v33 吸收 Day One / Diarly 的 Journal 时间轴、照片墙与地图切换，以及 Craft / Apple Journal 的 Bento 卡片结构；不是普通列表堆功能。"
     },
     {
       area: "原生移交账本",
       status: "poc",
       route: "Launch → Native Handoff",
-      evidence: "v32 新增 Native Handoff Ledger，把 SwiftUI 壳、PhotosPicker、Keychain/E2EE、DeepSeek 网关、App Privacy Details、Privacy Manifest、required reason API 和 TestFlight 包拆成可复制施工项。"
+      evidence: "v33 新增 Native Handoff Ledger，把 SwiftUI 壳、PhotosPicker、Keychain/E2EE、DeepSeek 网关、App Privacy Details、Privacy Manifest、required reason API 和 TestFlight 包拆成可复制施工项。"
+    },
+    {
+      area: "App Store 提交材料",
+      status: "poc",
+      route: "Launch → Submission Packet",
+      evidence: "v33 新增提交材料包：产品页定位、截图/预览计划、隐私问卷、年龄分级、审核备注、支持/隐私 URL、订阅说明和可复制 submission packet。"
     },
     {
       area: "原生上架",
@@ -1538,7 +1631,7 @@ function qaScore() {
 async function copyQaReport() {
   const snapshot = qaSnapshot();
   const text = [
-    "TimeSlowDown Demo QA Console（v32）：",
+    "TimeSlowDown Demo QA Console（v33）：",
     `公网：${snapshot.publicUrl}`,
     `资源：${snapshot.resources}`,
     `本地样本：${snapshot.moments} 张切片 / ${snapshot.mediaCount} 个影像锚点 / ${snapshot.claimedCount} 个周认领`,
@@ -1718,7 +1811,7 @@ function reviewDevicesDemo() {
 
 async function copyAccountRightsReport() {
   const text = [
-    "TimeSlowDown 账户权利报告（Demo v32）：",
+    "TimeSlowDown 账户权利报告（Demo v33）：",
     `账户模式：${accountModeLabel()}`,
     `同步状态：${syncModeLabel()}`,
     `订阅状态：${subscriptionLabel()}`,
@@ -1926,6 +2019,11 @@ function bindEvents() {
   $$("[data-native-review]").forEach(btn => btn.addEventListener("click", markNativeMigrationReview));
   $$("[data-privacy-manifest-audit]").forEach(btn => btn.addEventListener("click", markPrivacyManifestAudit));
   $$("[data-copy-native-handoff]").forEach(btn => btn.addEventListener("click", copyNativeHandoffReport));
+  $$("[data-product-page-review]").forEach(btn => btn.addEventListener("click", markProductPageReview));
+  $$("[data-screenshot-plan]").forEach(btn => btn.addEventListener("click", markScreenshotPlan));
+  $$("[data-privacy-questionnaire]").forEach(btn => btn.addEventListener("click", markPrivacyQuestionnaire));
+  $$("[data-age-rating-review]").forEach(btn => btn.addEventListener("click", markAgeRatingReview));
+  $$("[data-copy-submission-packet]").forEach(btn => btn.addEventListener("click", copySubmissionPacketReport));
   $$("[data-create-pass]").forEach(btn => btn.addEventListener("click", createGuestPassDemo));
   $$("[data-generate-recovery]").forEach(btn => btn.addEventListener("click", generateRecoveryKeyDemo));
   $$("[data-review-devices]").forEach(btn => btn.addEventListener("click", reviewDevicesDemo));
@@ -2403,7 +2501,7 @@ function mediaView() {
   return `
     <div class="topline"><div><div class="brand">媒体记忆墙</div><div class="micro">照片和视频不是附件，它们是能把回忆带回来的光。</div></div></div>
     <section class="guide-card media-hero">
-      <div class="eyebrow">Media Memory Wall · v32</div>
+      <div class="eyebrow">Media Memory Wall · v33</div>
       <h1 class="hero-title">影像让时间，<br/>重新有了入口。</h1>
       <p class="hero-subtitle">这里不是普通相册。TSD 只展示已经绑定到切片的照片/视频线索：它们有时间、有一句话、有来源，也能回到章节和人生旷野。</p>
       <div class="media-stats">
@@ -2906,9 +3004,9 @@ function installView() {
   return `
     <div class="topline"><div><div class="brand">安装中心</div><div class="micro">让公网 Demo 更像一个能放到主屏幕的 App。</div></div></div>
     <section class="guide-card install-hero">
-      <div class="eyebrow">Install Center · v32</div>
+      <div class="eyebrow">Install Center · v33</div>
       <h1 class="hero-title">把 TSD 放到主屏幕，<br/>像 App 一样试用。</h1>
-      <p class="hero-subtitle">v32 在不新增文件的前提下保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测，并新增上架就绪中心。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
+      <p class="hero-subtitle">v33 在不新增文件的前提下保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测，并新增上架就绪中心。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
       <div class="install-badges">
         ${installBadge("Manifest", install.hasManifest ? "ready" : "missing")}
         ${installBadge("iOS Meta", install.hasAppleMeta ? "ready" : "missing")}
@@ -2931,7 +3029,7 @@ function installView() {
     <section class="guide-card">
       <h2 class="section-title">App-like Shell <span class="micro">边界说明</span></h2>
       <div class="processing-ledger">
-        ${processingBoundary("已做", "v32", "inline manifest、Apple web app meta、touch icon、主屏安装说明、standalone 检测、QA 路线、底部 Memory Camera、Launch Readiness。", "safe")}
+        ${processingBoundary("已做", "v33", "inline manifest、Apple web app meta、touch icon、主屏安装说明、standalone 检测、QA 路线、底部 Memory Camera、Launch Readiness。", "safe")}
         ${processingBoundary("未做", "生产待做", "未新增 service worker；不承诺离线缓存、后台同步、推送或原生权限弹窗。", "warn")}
         ${processingBoundary("App Store", "未来", "真实上架仍需 iOS 原生壳、正式图标资产、权限文案、隐私政策和审核材料。", "warn")}
       </div>
@@ -2951,11 +3049,12 @@ function installStep(title, copy) {
 function launchView() {
   const stats = launchStats();
   const nativeStats = nativeHandoffStats();
+  const submissionStats = submissionPacketStats();
   const checksum = launchChecksum();
   return `
     <div class="topline"><div><div class="brand">上架就绪</div><div class="micro">把商品级 App 上线前的证据、缺口和回执摊开。</div></div></div>
     <section class="guide-card launch-hero">
-      <div class="eyebrow">Launch Readiness · v32</div>
+      <div class="eyebrow">Launch Readiness · v33</div>
       <h1 class="hero-title">不是说“快好了”，<br/>而是逐项给出证据。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆。上架前必须能回答：影像怎么进来、数据怎么带走、删除如何回执、AI 如何降级、账号为何不是牢笼、审核材料还缺什么。</p>
       <div class="launch-score-grid">
@@ -2963,8 +3062,9 @@ function launchView() {
         ${launchMetric("PoC", stats.poc, "产品假面")}
         ${launchMetric("Todo", stats.todo, "生产硬缺口")}
         ${launchMetric("Native", nativeStats.total, "原生移交项")}
+        ${launchMetric("Store", submissionStats.total, "提交材料项")}
       </div>
-      <div class="action-row"><button class="primary" data-launch-preflight>运行上架预检</button><button class="secondary" data-copy-launch>复制上线报告</button><button class="secondary" data-copy-native-handoff>复制原生移交账本</button><button class="secondary" data-view="qa">QA Console</button></div>
+      <div class="action-row"><button class="primary" data-launch-preflight>运行上架预检</button><button class="secondary" data-copy-launch>复制上线报告</button><button class="secondary" data-copy-native-handoff>复制原生移交账本</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button><button class="secondary" data-view="qa">QA Console</button></div>
       <p class="source-line">上次预检：${escapeHtml(state.launchPreflightAt || "尚未运行")}；上次报告：${escapeHtml(state.launchReportCopiedAt || "尚未复制")}。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
@@ -2988,7 +3088,7 @@ function launchView() {
     </section>
     <section class="guide-card native-handoff-card">
       <h2 class="section-title">原生移交账本 <span class="micro">Native Handoff · iOS</span></h2>
-      <p class="hero-subtitle">v32 把 Web Demo 的能力拆成 iOS / backend / App Store Connect / release 四类施工项。它不是“已经原生化”，而是让下一步 SwiftUI、PhotosPicker、E2EE、隐私表单和 TestFlight 准备有可复制的任务单。</p>
+      <p class="hero-subtitle">v33 把 Web Demo 的能力拆成 iOS / backend / App Store Connect / release 四类施工项。它不是“已经原生化”，而是让下一步 SwiftUI、PhotosPicker、E2EE、隐私表单和 TestFlight 准备有可复制的任务单。</p>
       <div class="native-score-grid">
         ${launchMetric("PoC", nativeStats.poc, "已有演示证据")}
         ${launchMetric("Todo", nativeStats.todo, "真实施工")}
@@ -3004,6 +3104,24 @@ function launchView() {
       </div>
       <div class="action-row"><button class="secondary" data-native-review>标记原生迁移复核</button><button class="secondary" data-privacy-manifest-audit>标记 Privacy Manifest 审计</button><button class="secondary" data-copy-native-handoff>复制原生移交账本</button></div>
       <p class="source-line">原生迁移复核：${escapeHtml(state.nativeMigrationReviewAt || "尚未标记")}；Privacy Manifest 审计：${escapeHtml(state.privacyManifestAuditAt || "尚未标记")}；移交报告：${escapeHtml(state.nativeHandoffCopiedAt || "尚未复制")}。</p>
+    </section>
+    <section class="guide-card submission-packet-card">
+      <h2 class="section-title">App Store 提交材料包 <span class="micro">Submission Packet</span></h2>
+      <p class="hero-subtitle">v33 把“上架时要填什么、截图拍什么、隐私怎么答、审核备注怎么写”做成可复制材料。它面向 release / legal / App Store Connect，不代替正式提交，但能减少从产品 demo 到商店页的空白。</p>
+      <div class="submission-score-grid">
+        ${launchMetric("PoC", submissionStats.poc, "已有草案")}
+        ${launchMetric("Todo", submissionStats.todo, "待正式填写")}
+        ${launchMetric("Rows", submissionStats.total, "提交条目")}
+      </div>
+      <div class="submission-ledger">
+        ${submissionPacketRows().map(([name, status, artifact, copy]) => submissionRow(name, status, artifact, copy)).join("")}
+      </div>
+      <div class="store-copy-card">
+        <strong>商店页建议主张</strong>
+        <span>不是日记、不是相册，而是帮用户把照片/视频/一句话绑定成可讲述的时间切片；90 天后能讲出 5–10 个鲜明瞬间。</span>
+      </div>
+      <div class="action-row"><button class="secondary" data-product-page-review>标记产品页复核</button><button class="secondary" data-screenshot-plan>标记截图计划</button><button class="secondary" data-privacy-questionnaire>标记隐私问卷</button><button class="secondary" data-age-rating-review>标记年龄分级</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button></div>
+      <p class="source-line">产品页：${escapeHtml(state.productPageReviewAt || "尚未标记")}；截图：${escapeHtml(state.screenshotPlanAt || "尚未标记")}；隐私问卷：${escapeHtml(state.privacyQuestionnaireAt || "尚未标记")}；年龄分级：${escapeHtml(state.ageRatingReviewAt || "尚未标记")}；提交包：${escapeHtml(state.submissionPacketCopiedAt || "尚未复制")}。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">导出包校验 <span class="micro">portable memory</span></h2>
@@ -3067,6 +3185,15 @@ function nativeSource(title, copy) {
   return `<div class="native-source"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(copy)}</span></div>`;
 }
 
+function submissionRow(name, status, artifact, copy) {
+  return `<div class="submission-row ${status}">
+    <span>${escapeHtml(status)}</span>
+    <strong>${escapeHtml(name)}</strong>
+    <small>${escapeHtml(artifact)}</small>
+    <em>${escapeHtml(copy)}</em>
+  </div>`;
+}
+
 function deleteReceiptItem(title, value) {
   return `<div class="delete-receipt-item"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(value)}</span></div>`;
 }
@@ -3102,7 +3229,8 @@ function guideView() {
         ${trialStep("12", "安装到主屏幕", "复制安装说明，检测是否像 App 一样打开。", "install")}
         ${trialStep("13", "看上架就绪中心", "预检、导出校验、删除回执和审核包。", "launch")}
         ${trialStep("14", "看原生移交账本", "确认 SwiftUI、PhotosPicker、E2EE、隐私表单和 TestFlight 的真实施工项。", "launch")}
-        ${trialStep("15", "打开 QA Console", "看当前公网 Demo 哪些路径已通过、哪些仍是 PoC。", "qa")}
+        ${trialStep("15", "看提交材料包", "确认产品页、截图、隐私问卷、年龄分级和审核备注。", "launch")}
+        ${trialStep("16", "打开 QA Console", "看当前公网 Demo 哪些路径已通过、哪些仍是 PoC。", "qa")}
       </div>
     </section>
     <section class="guide-card">
@@ -3132,7 +3260,8 @@ function guideView() {
           "真实 API 接入、供应商条款和生产密钥管理",
           "App Store 隐私营养标签",
           "Service worker、离线缓存、iOS 原生壳与正式图标资产",
-          "Privacy Manifest、required reason API、TestFlight 审核包"
+          "Privacy Manifest、required reason API、TestFlight 审核包",
+          "App Store Connect 产品页、截图、隐私问卷、年龄分级和审核备注"
         ], "warn")}
       </div>
     </section>
@@ -3146,7 +3275,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="launch">上架就绪中心</button><button class="secondary" data-view="account">账户权利中心</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v32</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v33</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -3154,7 +3283,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v32 仍不调用真实模型和真实账户；它在 v28 Memory Camera 主入口之上新增 Launch Readiness，并吸收 Day One / Diarly / Craft / Apple Journal 的优秀 DNA：Bento 首页、Journal 时间轴、照片墙/地图切换、按钮层级和微动效共同构成上架前证据链。</p>
+      <p class="source-line">v33 仍不调用真实模型和真实账户；它在 v28 Memory Camera 主入口之上新增 Launch Readiness，并吸收 Day One / Diarly / Craft / Apple Journal 的优秀 DNA：Bento 首页、Journal 时间轴、照片墙/地图切换、按钮层级和微动效共同构成上架前证据链。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -3162,8 +3291,8 @@ function guideView() {
         ${readiness("产品灵魂", "完成", "时间切片机、人生旷野、90 天可讲述。")}
         ${readiness("数据权利", "Demo 覆盖", "导出、导入、清空已可点击；生产需账户与恢复。")}
         ${readiness("AI 边界", "PoC 覆盖", "分层架构和黄金样本已可看；生产需真实网关。")}
-        ${readiness("安装体验", "v32 PoC", "inline manifest、iOS meta、touch icon、安装中心、standalone 检测和 Memory Camera 主入口已加入；离线缓存仍待做。")}
-        ${readiness("账户权利", "v27-v32 PoC", "访客通行证、恢复钥匙、设备复核、退订取回窗口和权利报告已加入；真实账户/E2EE 待做。")}
+        ${readiness("安装体验", "v33 PoC", "inline manifest、iOS meta、touch icon、安装中心、standalone 检测和 Memory Camera 主入口已加入；离线缓存仍待做。")}
+        ${readiness("账户权利", "v27-v33 PoC", "访客通行证、恢复钥匙、设备复核、退订取回窗口和权利报告已加入；真实账户/E2EE 待做。")}
         ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
@@ -3173,9 +3302,10 @@ function guideView() {
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
         ${readiness("Memory Camera", "v28", "底部悬浮“＋影像”让用户不用读说明也能从照片/视频开始一张切片。")}
-        ${readiness("Launch Readiness", "v32", "预检账本、导出包 checksum、删除回执、App Store 审核包和可复制上线报告。")}
-        ${readiness("Native Handoff", "v32", "SwiftUI 壳、PhotosPicker、Keychain/E2EE、DeepSeek 网关、App Privacy Details、Privacy Manifest 和 TestFlight 包已拆成移交账本。")}
-        ${readiness("QA Console", "v32", "核心试用路径、账户权利、安装体验、PoC 边界、媒体入口、媒体保险箱、上架就绪、原生移交和生产待做被整理成可复制验收报告。")}
+        ${readiness("Launch Readiness", "v33", "预检账本、导出包 checksum、删除回执、App Store 审核包和可复制上线报告。")}
+        ${readiness("Native Handoff", "v33", "SwiftUI 壳、PhotosPicker、Keychain/E2EE、DeepSeek 网关、App Privacy Details、Privacy Manifest 和 TestFlight 包已拆成移交账本。")}
+        ${readiness("Submission Packet", "v33", "产品页定位、截图/预览计划、隐私问卷、年龄分级、审核备注、支持/隐私 URL 和订阅说明已拆成提交材料包。")}
+        ${readiness("QA Console", "v33", "核心试用路径、账户权利、安装体验、PoC 边界、媒体入口、媒体保险箱、上架就绪、原生移交、提交材料和生产待做被整理成可复制验收报告。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
         ${readiness("媒体保险箱", "v24", "相册权限、E2EE 分层、缩略图清除、导出包、删除审计和家庭/儿童影像复核。")}
@@ -3205,7 +3335,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v32</div>
+      <div class="eyebrow">Review Packet · v33</div>
       <h1 class="hero-title">记忆产品的信任，<br/>必须能被看见。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里把权限、数据生命周期、AI、影像、同步和删除权做成可读的生产隐私中心雏形。</p>
       <div class="action-row"><button class="primary" data-copy-compliance>复制生产隐私报告</button><button class="secondary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="launch">上架就绪中心</button><button class="secondary" data-view="account">账户权利中心</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -3257,7 +3387,7 @@ function reviewView() {
       <div class="processing-ledger">
         ${processingBoundary("原始影像", "不自动上传", "仅用户主动绑定；生产版需 E2EE、导出包和删除原图/缩略图。", "safe")}
         ${processingBoundary("模型任务", "最小字段", "只发送任务单允许字段；缓存、草稿和撤销日志必须可见。", "poc")}
-        ${processingBoundary("同步数据", "可暂停", "同步是增强，不是扣押；退订后已有记忆仍可查看、编辑、导出。v27-v32 已提供账户权利中心假面。", "safe")}
+        ${processingBoundary("同步数据", "可暂停", "同步是增强，不是扣押；退订后已有记忆仍可查看、编辑、导出。v27-v33 已提供账户权利中心假面。", "safe")}
         ${processingBoundary("家庭/未成年影像", "默认谨慎", "公开分享不带原图、人名、地点和原文；未来需更严格提示。", "warn")}
       </div>
     </section>
@@ -3275,11 +3405,11 @@ function reviewView() {
       <h2 class="section-title">生产待做清单 <span class="micro">不能假装完成</span></h2>
       <div class="readiness-list">
         ${readiness("原生壳", "待做", "iOS 项目、权限弹窗、安装资产、App Icon。")}
-        ${readiness("账户同步", "v27-v32 假面", "账户权利中心已演示访客通行证、恢复钥匙、设备复核、退订取回；真实登录、E2EE、密钥恢复、设备管理仍待做。")}
+        ${readiness("账户同步", "v27-v33 假面", "账户权利中心已演示访客通行证、恢复钥匙、设备复核、退订取回；真实登录、E2EE、密钥恢复、设备管理仍待做。")}
         ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
         ${readiness("模型网关", "v21 假面", "Provider 状态、限流预算、任务队列、失败降级和撤销日志已产品化；真实 API/密钥仍待接入。")}
         ${readiness("合规文本", "v22 雏形", "生产隐私中心、生命周期、权限升级和处理边界已产品化；正式法律文本仍待复核。")}
-        ${readiness("审核材料", "v22/v32 雏形", "本页可复制生产隐私报告、账户权利报告、Launch Report 和 Demo 验收报告；不代表已通过法务或上架审核。")}
+        ${readiness("审核材料", "v22/v33 雏形", "本页可复制生产隐私报告、账户权利报告、Launch Report 和 Demo 验收报告；不代表已通过法务或上架审核。")}
       </div>
     </section>
   `;
@@ -3291,7 +3421,7 @@ function qaView() {
   return `
     <div class="topline"><div><div class="brand">QA Console</div><div class="micro">把当前公网 Demo 的可靠性和边界摊开给试用者看。</div></div></div>
     <section class="guide-card qa-hero">
-      <div class="eyebrow">Demo QA Console · v32</div>
+      <div class="eyebrow">Demo QA Console · v33</div>
       <h1 class="hero-title">这不是口头说“能用”，<br/>而是把证据放出来。</h1>
       <p class="hero-subtitle">TSD 的 demo 越接近商品级，越需要让用户、测试者和其他 agent 清楚知道：哪些路径已经可以点击验证，哪些仍只是 PoC，哪些上架前必须补完。</p>
       <div class="qa-scoreboard">
@@ -3332,18 +3462,20 @@ function qaView() {
         ${qaRouteStep("08", "检查安装体验", "打开安装中心，复制安装说明并检测 App-like shell。", "install")}
         ${qaRouteStep("09", "运行上架预检", "进入 Launch Readiness，生成导出 checksum、删除回执和上线报告。", "launch")}
         ${qaRouteStep("10", "检查原生移交账本", "在 Launch Readiness 里标记原生迁移复核和 Privacy Manifest 审计。", "launch")}
-        ${qaRouteStep("11", "复制隐私/QA 报告", "在生产隐私中心与 QA Console 复制报告，确认边界可讲清。", "review")}
+        ${qaRouteStep("11", "检查提交材料包", "标记产品页、截图计划、隐私问卷、年龄分级，并复制 Submission Packet。", "launch")}
+        ${qaRouteStep("12", "复制隐私/QA 报告", "在生产隐私中心与 QA Console 复制报告，确认边界可讲清。", "review")}
       </div>
     </section>
     <section class="guide-card">
       <h2 class="section-title">上线前硬缺口 <span class="micro">不能靠 demo 混过去</span></h2>
       <div class="processing-ledger">
         ${processingBoundary("真实模型", "待接入", "DeepSeek V4 Flash 目前仍是 PoC 假面；生产需密钥管理、限流、供应商审查和任务回放。", "warn")}
-        ${processingBoundary("真实同步", "待接入", "账户权利中心是 v27-v32 假面；真实账户、E2EE、密钥恢复、设备管理、地区数据边界仍未实现。", "warn")}
+        ${processingBoundary("真实同步", "待接入", "账户权利中心是 v27-v33 假面；真实账户、E2EE、密钥恢复、设备管理、地区数据边界仍未实现。", "warn")}
         ${processingBoundary("相册权限", "PoC 边界", "v24 已有媒体保险箱路径；真实系统 Photos Picker、E2EE 文件库和删除回执仍待接入。", "warn")}
-        ${processingBoundary("安装资产", "PoC 边界", "v32 保留 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
-        ${processingBoundary("原生移交", "v32 PoC", "Native Handoff Ledger 已拆出 iOS、backend、App Store Connect、release 四类任务；真实 SwiftUI/TestFlight 仍待做。", "poc")}
-        ${processingBoundary("上线闭环", "v32 PoC", "Launch Readiness 已串起预检、导出校验、删除回执和审核包；真实签名、法务和原生流水线仍待做。", "poc")}
+        ${processingBoundary("安装资产", "PoC 边界", "v33 保留 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
+        ${processingBoundary("原生移交", "v33 PoC", "Native Handoff Ledger 已拆出 iOS、backend、App Store Connect、release 四类任务；真实 SwiftUI/TestFlight 仍待做。", "poc")}
+        ${processingBoundary("提交材料", "v33 PoC", "Submission Packet 已拆出产品页、截图、隐私问卷、年龄分级、审核备注和订阅说明；真实 App Store Connect 填写仍待做。", "poc")}
+        ${processingBoundary("上线闭环", "v33 PoC", "Launch Readiness 已串起预检、导出校验、删除回执和审核包；真实签名、法务和原生流水线仍待做。", "poc")}
       </div>
     </section>
   `;
@@ -3679,7 +3811,7 @@ function accountView() {
   return `
     <div class="topline"><div><div class="brand">账户权利</div><div class="micro">账号是钥匙，不是牢笼。</div></div></div>
     <section class="guide-card account-hero">
-      <div class="eyebrow">Account Rights Center · v32</div>
+      <div class="eyebrow">Account Rights Center · v33</div>
       <h1 class="hero-title">你的记忆，<br/>不该被账号或订阅扣住。</h1>
       <p class="hero-subtitle">TSD 的账户系统只应服务三件事：加密备份、多设备恢复、清楚的用户权利。不登录也能记录；退订后已有记忆仍可查看、编辑、导出和删除。</p>
       <div class="account-status-grid">
@@ -3743,7 +3875,7 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v32 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v33 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -3794,7 +3926,7 @@ function settingsView() {
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-qa>复制 QA 报告</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
-      <h2 class="section-title">同步控制台 <span class="micro">v32 · 多设备保险箱</span></h2>
+      <h2 class="section-title">同步控制台 <span class="micro">v33 · 多设备保险箱</span></h2>
       <div class="sync-console">
         ${syncStateCard("账户", accountModeLabel(), "不登录也能本地记录；登录只用于加密备份和多设备。")}
         ${syncStateCard("同步", syncModeLabel(), state.syncMode === "paused" ? "暂停后本机继续可用，云端不再接收新变化。" : "同步是可选增强，不是核心记录门槛。")}
@@ -3905,7 +4037,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v32 已把媒体优先入口、移动端视觉质感、Bento 首页、Journal 时间轴、照片墙/地图切换、上架就绪路径和原生移交账本串起来：用户可以从顶部 Memory Camera、底部“＋影像”、首次进入、Quick Mark 或媒体墙直接选择影像；也可以进入 Launch Readiness 看到预检、导出校验、删除回执、App Store 审核包和 Native Handoff Ledger。</p>
+      <p>当前 v33 已把媒体优先入口、移动端视觉质感、Bento 首页、Journal 时间轴、照片墙/地图切换、上架就绪路径、原生移交账本和 App Store 提交材料包串起来：用户可以从顶部 Memory Camera、底部“＋影像”、首次进入、Quick Mark 或媒体墙直接选择影像；也可以进入 Launch Readiness 看到预检、导出校验、删除回执、App Store 审核包、Native Handoff Ledger 和 Submission Packet。</p>
     </section>
   </aside>`;
 }

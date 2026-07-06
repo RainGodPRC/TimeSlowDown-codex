@@ -614,7 +614,7 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .install-step span { display:block; color: var(--muted); font-size: 11px; line-height:1.45; }
 .launch-hero { background: linear-gradient(145deg, rgba(32,52,43,.92), rgba(85,116,95,.78), rgba(215,168,95,.22)); color:#fff; }
 .launch-hero .eyebrow, .launch-hero .hero-subtitle, .launch-hero .source-line { color: rgba(255,255,255,.78); border-color: rgba(255,255,255,.22); }
-.launch-score-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 14px; }
+.launch-score-grid { display:grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-top: 14px; }
 .launch-metric {
   min-height: 82px; border-radius: 18px; padding: 10px; border:1px solid rgba(255,255,255,.22);
   background: rgba(255,255,255,.12); display:flex; flex-direction:column; justify-content:space-between;
@@ -675,6 +675,36 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 }
 .native-source strong { display:block; font-size: 11px; color: var(--ink); }
 .native-source span { display:block; margin-top: 5px; color: var(--muted); font-size: 10px; line-height:1.35; }
+.submission-packet-card { background: linear-gradient(145deg, rgba(255,253,247,.78), rgba(215,168,95,.12), rgba(223,234,215,.34)); }
+.submission-score-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin: 12px 0; }
+.submission-score-grid .launch-metric {
+  color: var(--ink); border-color: rgba(85,116,95,.14);
+  background: rgba(255,255,255,.58);
+}
+.submission-score-grid .launch-metric em { color: var(--muted); }
+.submission-ledger { display:grid; gap: 8px; }
+.submission-row {
+  border:1px solid var(--line); border-radius: 18px; padding: 11px;
+  background: rgba(255,255,255,.58);
+  display:grid; grid-template-columns: 54px minmax(0,1fr);
+  grid-template-areas:"status title" "status artifact" "copy copy";
+  gap: 3px 9px; align-items:center;
+}
+.submission-row > span {
+  grid-area:status; justify-self:start; border-radius:999px; padding:6px 7px;
+  background: rgba(32,52,43,.08); color: var(--muted); font-size:9px; font-weight:900; text-transform:uppercase;
+}
+.submission-row strong { grid-area:title; font-size: 12px; }
+.submission-row small { grid-area:artifact; color: var(--moss); font-size:10px; font-weight:900; line-height:1.25; }
+.submission-row em { grid-area:copy; color: var(--muted); font-size:11px; line-height:1.35; font-style:normal; }
+.submission-row.poc > span { background: rgba(112,148,163,.14); color: var(--blue); }
+.submission-row.todo > span { background: rgba(215,168,95,.18); color: #9a6a25; }
+.store-copy-card {
+  margin-top: 10px; border:1px dashed rgba(85,116,95,.24); border-radius: 18px; padding: 12px;
+  background: rgba(255,253,247,.62);
+}
+.store-copy-card strong { display:block; font-size: 12px; }
+.store-copy-card span { display:block; margin-top: 5px; color: var(--muted); font-size: 11px; line-height:1.45; }
 .launch-receipt-card {
   border:1px dashed rgba(85,116,95,.24); border-radius: 20px; padding: 13px; background: rgba(255,253,247,.62);
 }
@@ -1236,6 +1266,7 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
   .native-row { grid-template-columns: 54px minmax(0,1fr); grid-template-areas:"status title" "status owner" "copy copy"; }
   .native-row small { justify-self:start; }
   .native-source-grid { grid-template-columns: 1fr; }
+  .submission-score-grid { grid-template-columns: repeat(3, 1fr); }
   .launch-step { grid-template-columns: 38px minmax(0,1fr); grid-template-areas:"num title" "num status" "copy copy"; }
   .launch-step small { justify-self:start; }
   .delete-receipt-grid, .review-pack-grid { grid-template-columns: 1fr; }
