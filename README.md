@@ -30,5 +30,8 @@ Current demo focus:
 - People/place lens: regroup slices by user-written people and places without contacts, GPS, or face recognition
 - Media vault path: Photos permission strategy, E2EE layers, thumbnails, export package, delete audit, family media review, and Web Share boundaries
 - Install center: inline manifest, iOS web-app meta, app-like shell detection, and copyable install instructions
+- Launch readiness center: production preflight ledger, export checksum, deletion receipt, App Store review packet, and copyable launch report
+- Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
+- Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
 - Demo QA Console: public-trial smoke route, pass/PoC/todo checklist, and copyable QA report
