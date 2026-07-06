@@ -26,5 +26,6 @@ Current demo focus:
 - Retroactive media attach: add or replace a photo/video anchor from a weekly review card so memory is not forced to rely on text alone
 - People/place lens: regroup slices by user-written people and places without contacts, GPS, or face recognition
 - Media vault path: Photos permission strategy, E2EE layers, thumbnails, export package, delete audit, family media review, and Web Share boundaries
+- Install center: inline manifest, iOS web-app meta, app-like shell detection, and copyable install instructions
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
 - Demo QA Console: public-trial smoke route, pass/PoC/todo checklist, and copyable QA report
