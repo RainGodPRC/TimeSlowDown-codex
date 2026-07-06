@@ -53,4 +53,22 @@ check(!boundary.allowsGPSInference, "Default boundary should not infer GPS")
 check(!boundary.allowsFaceRecognition, "Default boundary should not do face recognition")
 check(!boundary.subscriptionCanBlockExport, "Subscription should not block memory export")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, and privacy boundary are aligned.")
+var shell = NativeShellStore.seeded()
+let firstSnapshot = shell.snapshot
+check(firstSnapshot.routeCount == NativeShellRoute.allCases.count, "Native shell should expose all expected routes")
+check(firstSnapshot.sliceCount == 3, "Seeded native shell should include three demo slices")
+check(firstSnapshot.mediaAnchorCount == 1, "Seeded native shell should include one media anchor")
+check(firstSnapshot.nativeTodoCount == NativeHandoffLedger.rows.filter { $0.status == .todo }.count, "Native shell should summarize native todo rows")
+check(firstSnapshot.submissionTodoCount == SubmissionPacket.rows.filter { $0.status == .todo }.count, "Native shell should summarize submission todo rows")
+check(firstSnapshot.privacySafe, "Native shell should start with a safe privacy boundary")
+
+let captured = shell.captureFromMemoryCamera(
+    MediaAnchor(kind: .image, label: "native-memory-camera.jpg", note: "SwiftUI Memory Camera")
+)
+check(shell.selectedRoute == .slices, "Memory Camera capture should route users to slices")
+check(shell.slices.first == captured, "Memory Camera capture should insert the new slice first")
+check(shell.snapshot.sliceCount == 4, "Memory Camera capture should increase slice count")
+check(shell.snapshot.mediaAnchorCount == 2, "Memory Camera capture should increase media anchor count")
+check(shell.weeklyPreviewTitle() == "本周没有消失", "Native shell should expose weekly chapter preview")
+
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, and SwiftUI shell state are aligned.")
