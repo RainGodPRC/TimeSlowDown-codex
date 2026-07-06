@@ -61,6 +61,9 @@ const defaultState = {
   monthChanged: "我开始承认：晴天雨天加在一起，才是完整。",
   quarterRecallDraft: "5 公里、和爸爸吃面、开会后那段沉默的回家路。",
   quarterRevealed: false,
+  mediaDraftUrl: "",
+  mediaDraftNote: "",
+  mediaDraft: null,
   lastAiTaskAt: "",
   aiDraftRevokedAt: "",
   accountMode: "guest",
@@ -191,7 +194,9 @@ function setState(patch) {
 function addMoment() {
   const text = state.draft.trim() || "今天有一个还没说清楚、但想先占位的瞬间。";
   const title = deriveTitle(text);
-  const tags = state.activeTags.length ? state.activeTags : ["普通但值得"];
+  const media = normalizeMediaDraft();
+  const mediaTags = media ? [media.kind === "video" ? "视频" : media.kind === "image" ? "照片" : "影像线索"] : [];
+  const tags = [...new Set([...(state.activeTags.length ? state.activeTags : ["普通但值得"]), ...mediaTags])];
   const gates = analyzeMemory(text, tags);
   const moment = {
     id: `m${Date.now()}`,
@@ -201,9 +206,114 @@ function addMoment() {
     tags,
     strength: tags.includes("第一次") || tags.includes("成就") ? "strong" : "memory",
     gates,
+    media,
     sources: ["用户原话", "L0 规则层", state.aiMode === "deepseek" ? "DeepSeek PoC 草稿" : "本地模板"]
   };
-  setState({ moments: [moment, ...state.moments], view: "slice", draft: "" });
+  if (media) moment.sources.push("影像线索");
+  setState({ moments: [moment, ...state.moments], view: "slice", draft: "", mediaDraftUrl: "", mediaDraftNote: "", mediaDraft: null });
+}
+
+function guessMediaKind(value = "") {
+  const lower = value.toLowerCase();
+  if (/\.(mp4|mov|webm|m4v)(\?|#|$)/.test(lower) || lower.startsWith("video/")) return "video";
+  if (/\.(jpg|jpeg|png|gif|webp|heic|heif|avif)(\?|#|$)/.test(lower) || lower.startsWith("image/")) return "image";
+  return "link";
+}
+
+function mediaKindLabel(kind) {
+  if (kind === "video") return "视频";
+  if (kind === "image") return "照片";
+  return "影像链接";
+}
+
+function formatBytes(bytes = 0) {
+  if (!bytes) return "未知大小";
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function mediaHost(url = "") {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname.replace(/^www\./, "");
+  } catch {
+    return url.replace(/^https?:\/\//, "").slice(0, 28) || "影像链接";
+  }
+}
+
+function normalizeMediaDraft() {
+  if (state.mediaDraft) {
+    return {
+      ...state.mediaDraft,
+      note: state.mediaDraftNote.trim(),
+      attachedAt: new Date().toISOString()
+    };
+  }
+  const url = state.mediaDraftUrl.trim();
+  if (!url) return null;
+  const kind = guessMediaKind(url);
+  return {
+    kind,
+    url,
+    label: mediaHost(url),
+    note: state.mediaDraftNote.trim(),
+    storage: "external-link",
+    source: "用户提供影像链接",
+    attachedAt: new Date().toISOString()
+  };
+}
+
+function clearMediaDraft() {
+  setState({ mediaDraftUrl: "", mediaDraftNote: "", mediaDraft: null, toast: "已移除本次影像线索。" });
+}
+
+function useDemoMedia() {
+  setState({
+    mediaDraftUrl: "https://example.com/family-park-photo.jpg",
+    mediaDraftNote: state.mediaDraftNote || "这张照片能帮我想起当时孩子爬上滑梯前的表情。",
+    mediaDraft: null,
+    activeTags: [...new Set([...state.activeTags, "照片"])],
+    toast: "已放入一条照片链接示例。生产版会接系统相册与加密存储。"
+  });
+}
+
+function handleMediaFile(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  const kind = guessMediaKind(file.type || file.name);
+  const base = {
+    kind,
+    label: file.name,
+    size: file.size,
+    type: file.type || "unknown",
+    storage: "browser-local-demo",
+    source: "用户选择本地文件",
+    previewUrl: "",
+    note: state.mediaDraftNote.trim()
+  };
+  const shouldPreview = kind === "image" && file.size <= 900 * 1024;
+  if (!shouldPreview) {
+    setState({
+      mediaDraft: base,
+      mediaDraftUrl: "",
+      activeTags: [...new Set([...state.activeTags, kind === "video" ? "视频" : "照片"])],
+      toast: kind === "video" ? "已记录视频文件线索。Demo 不把大视频写入 localStorage。" : "已记录文件线索。大图仅保存文件名和大小，生产版需加密存储。"
+    });
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = () => {
+    setState({
+      mediaDraft: { ...base, previewUrl: String(reader.result || "") },
+      mediaDraftUrl: "",
+      activeTags: [...new Set([...state.activeTags, "照片"])],
+      toast: "已读取照片预览并作为本地影像线索，生成切片后会一起保存。"
+    });
+  };
+  reader.onerror = () => {
+    setState({ mediaDraft: base, mediaDraftUrl: "", toast: "照片预览读取失败，但已保留文件名和大小作为线索。" });
+  };
+  reader.readAsDataURL(file);
 }
 
 function vaultPayload() {
@@ -250,6 +360,7 @@ function vaultStats() {
   const bytes = new Blob([JSON.stringify(payload)]).size;
   return {
     moments: state.moments.length,
+    media: state.moments.filter(moment => moment.media).length,
     claimed: state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length,
     chapters: state.chapterTitle || state.chapterStory ? 1 : 0,
     bytes
@@ -371,7 +482,8 @@ function buildChapterStory(moments) {
   if (!moments.length) return "这一周还没有被认领的瞬间。先留下一个很短的 Mark，也算开始。";
   const lines = moments.map((moment, index) => {
     const plain = moment.text.replace(/^这条记忆的时间有些不确定，TSD 先原样保存：/, "").replace(/^“|”$/g, "");
-    return `${index + 1}. ${plain}（source: ${moment.id}）`;
+    const mediaTrace = moment.media ? `；影像锚点：${mediaKindLabel(moment.media.kind)}《${moment.media.label || "未命名"}》` : "";
+    return `${index + 1}. ${plain}${mediaTrace}（source: ${moment.id}）`;
   });
   return [
     `这一周，我认领了 ${moments.length} 个瞬间。`,
@@ -384,7 +496,8 @@ function makeShareText() {
   const title = state.chapterTitle || deriveChapterTitle(getClaimedMoments());
   const story = state.chapterStory || buildChapterStory(getClaimedMoments());
   if (state.shareMode === "public") {
-    return `${title}\n\n我用 TimeSlowDown 留下了这一周的几个瞬间。具体人名、地点和原文已隐藏，只分享这片小小的时间痕迹。`;
+    const mediaCount = getClaimedMoments().filter(moment => moment.media).length;
+    return `${title}\n\n我用 TimeSlowDown 留下了这一周的几个瞬间${mediaCount ? `，其中 ${mediaCount} 个带有影像锚点` : ""}。具体人名、地点、原文和原始影像已隐藏，只分享这片小小的时间痕迹。`;
   }
   return `${title}\n\n${story}\n\n— 来自 TimeSlowDown`;
 }
@@ -406,12 +519,13 @@ function studioAssets() {
   const story = state.chapterStory || buildChapterStory(claimed);
   const publicMode = state.shareMode === "public";
   const tellable = quarterStats().candidates.slice(0, 4);
+  const mediaCount = state.moments.filter(moment => moment.media).length;
   return [
     {
       id: "week",
       eyebrow: "Weekly Poster",
       title,
-      badge: "本周 3 个瞬间",
+      badge: `本周 3 个瞬间${claimed.filter(moment => moment.media).length ? " · 有影像锚点" : ""}`,
       className: "week",
       body: publicMode
         ? "这一周留下了几个被认领的瞬间。具体人名、地点和原文已隐藏，只分享时间长出花的样子。"
@@ -422,7 +536,7 @@ function studioAssets() {
       id: "quarter",
       eyebrow: "90-Day Card",
       title: "过去三个月，有些瞬间还亮着",
-      badge: `${tellable.length} 个可讲述片段`,
+      badge: `${tellable.length} 个可讲述片段 · ${tellable.filter(moment => moment.media).length} 个影像锚点`,
       className: "quarter",
       body: publicMode
         ? tellable.map(moment => `• ${moment.title}`).join("\n")
@@ -433,11 +547,11 @@ function studioAssets() {
       id: "meadow",
       eyebrow: "Life Meadow",
       title: "让走过的时间，长成你的人生",
-      badge: `${state.moments.length} 张切片 · ${state.weeklyClaimed.length} 个认领`,
+      badge: `${state.moments.length} 张切片 · ${mediaCount} 个影像锚点`,
       className: "meadow-card",
       body: publicMode
-        ? "有些日子长出花丛，有些日子只有浅浅青草。TSD 记录的是完整旷野，不只记录高光。"
-        : `${state.moments.slice(0, 3).map(moment => moment.title).join("、")}，正在成为这片旷野里能被指认的地方。`,
+        ? "有些日子长出花丛，有些日子只有浅浅青草。照片、视频、文字一起构成完整旷野，不只记录高光。"
+        : `${state.moments.slice(0, 3).map(moment => moment.media ? `${moment.title}（有影像）` : moment.title).join("、")}，正在成为这片旷野里能被指认的地方。`,
       footer: "人生旷野 · 语义缩放"
     }
   ];
@@ -479,7 +593,7 @@ async function copyPrivacySummary() {
     "TimeSlowDown Codex Demo 隐私摘要：",
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
-    "3. v13 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案。",
+    "3. v14 的 AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
     "4. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "5. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -496,7 +610,7 @@ async function copyReviewPacket() {
   const text = [
     "TimeSlowDown Codex Demo 审核包摘要：",
     "1. 当前公网 Demo 是 Web 原型，不是已提交 App Store 的 iOS App。",
-    "2. 权限策略：Demo 不请求相册、定位、通讯录、日历、麦克风或通知权限；记录来自用户手动输入与本地样例。",
+    "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
     "5. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
@@ -753,6 +867,20 @@ function bindEvents() {
     state.draft = e.target.value;
     saveState();
   });
+  $("[data-media-file]")?.addEventListener("change", handleMediaFile);
+  $("[data-demo-media]")?.addEventListener("click", useDemoMedia);
+  $("[data-clear-media]")?.addEventListener("click", clearMediaDraft);
+  const mediaUrl = $("[data-media-url]");
+  mediaUrl?.addEventListener("input", e => {
+    state.mediaDraftUrl = e.target.value;
+    state.mediaDraft = null;
+    saveState();
+  });
+  const mediaNote = $("[data-media-note]");
+  mediaNote?.addEventListener("input", e => {
+    state.mediaDraftNote = e.target.value;
+    saveState();
+  });
   const quarterRecall = $("[data-quarter-recall]");
   quarterRecall?.addEventListener("input", e => {
     state.quarterRecallDraft = e.target.value;
@@ -874,20 +1002,49 @@ function journeyStep(num, title, copy, view) {
 }
 
 function sliceView() {
-  const tags = ["第一次", "人", "地点", "情绪转弯", "成就", "照片", "普通但值得", "低落也算"];
+  const tags = ["第一次", "人", "地点", "情绪转弯", "成就", "照片", "视频", "普通但值得", "低落也算"];
   return `
     <div class="topline"><div><div class="brand">今日切片</div><div class="micro">5–15 秒先占位，周末再慢慢补全。</div></div></div>
     <section class="quick-panel">
       <h2 class="section-title">Quick Mark <span class="micro">${state.aiMode === "rules" ? "L0 规则层" : "DeepSeek PoC 草稿"}</span></h2>
       <textarea class="text-input" data-draft placeholder="写一句今天想留下的事">${escapeHtml(state.draft)}</textarea>
+      <div class="media-capture">
+        <div class="media-capture-head">
+          <div><strong>影像线索</strong><span>照片/视频不是附件，是这张切片的记忆锚点。</span></div>
+          <button class="secondary small" data-demo-media>试一张照片</button>
+        </div>
+        <label class="media-file">
+          <span>选择照片/视频</span>
+          <input data-media-file type="file" accept="image/*,video/*" />
+        </label>
+        <input class="media-url-input" data-media-url value="${escapeHtml(state.mediaDraftUrl)}" placeholder="或粘贴照片/视频链接，例如 iCloud/相册分享/公开视频链接" />
+        <textarea class="media-note-input" data-media-note rows="2" placeholder="这张影像为什么值得留下？">${escapeHtml(state.mediaDraftNote)}</textarea>
+        ${mediaDraftPreview()}
+      </div>
       <div class="quick-tags">
         ${tags.map(t => `<button class="tag ${state.activeTags.includes(t) ? "active" : ""}" data-tag="${t}">${t}</button>`).join("")}
       </div>
       <div class="action-row"><button class="primary" data-add>生成今日切片</button><button class="secondary" data-ai-mode>${state.aiMode === "rules" ? "切到 DeepSeek PoC" : "切回规则层"}</button></div>
-      <p class="source-line">免费版永远可用：模型不可用时，TSD 会退回朴素模板，不让记录中断。</p>
+      <p class="source-line">免费版永远可用：模型不可用时，TSD 会退回朴素模板；影像默认本地优先，生产版才接相册权限、加密存储和可选同步。</p>
     </section>
     ${latestSliceCard()}
   `;
+}
+
+function mediaDraftPreview() {
+  const media = normalizeMediaDraft();
+  if (!media) {
+    return `<div class="media-empty"><span>还没有影像线索</span><em>可以先写一句话，也可以把照片/视频作为回忆入口。</em></div>`;
+  }
+  return `<div class="media-preview">
+    ${media.previewUrl ? `<img src="${media.previewUrl}" alt="本地照片预览" />` : `<div class="media-thumb">${media.kind === "video" ? "▶" : media.kind === "image" ? "▧" : "↗"}</div>`}
+    <div>
+      <strong>${mediaKindLabel(media.kind)} · ${escapeHtml(media.label || "未命名影像")}</strong>
+      <span>${escapeHtml(media.note || "还没写影像备注。")}</span>
+      <em>${media.storage === "external-link" ? "外部链接" : `本地 Demo · ${formatBytes(media.size)}`}</em>
+    </div>
+    <button class="ghost danger" data-clear-media>移除</button>
+  </div>`;
 }
 
 function latestSliceCard() {
@@ -904,10 +1061,23 @@ function latestSliceCard() {
     <div class="eyebrow">Latest Slice</div>
     <h2 class="slice-title">${escapeHtml(m.title)}</h2>
     <p class="hero-subtitle">${escapeHtml(m.text)}</p>
+    ${mediaBlock(m.media)}
     <div class="slice-meta">${m.tags.map(t => `<span class="meta">${escapeHtml(t)}</span>`).join("")}</div>
     ${gateBadges(m.gates)}
     <div class="source-line">来源：${m.sources.join(" · ")}。无来源的漂亮句子不会进入最终故事。</div>
   </section>`;
+}
+
+function mediaBlock(media) {
+  if (!media) return "";
+  return `<div class="media-memory">
+    ${media.previewUrl ? `<img src="${media.previewUrl}" alt="切片影像预览" />` : `<div class="media-thumb">${media.kind === "video" ? "▶" : media.kind === "image" ? "▧" : "↗"}</div>`}
+    <div>
+      <strong>${mediaKindLabel(media.kind)}锚点：${escapeHtml(media.label || "未命名影像")}</strong>
+      <span>${escapeHtml(media.note || "这条影像已经和切片绑定。")}</span>
+      <em>${media.storage === "external-link" ? "外部链接 · 用户提供" : `本地 Demo 元信息 · ${formatBytes(media.size)}`}</em>
+    </div>
+  </div>`;
 }
 
 function gateBadges(gates) {
@@ -1122,7 +1292,7 @@ function studioView() {
   return `
     <div class="topline"><div><div class="brand">分享工作室</div><div class="micro">把记录变成可转述、可截图、可分享的视觉成品。</div></div></div>
     <section class="guide-card studio-hero">
-      <div class="eyebrow">Visual Share Studio · v13</div>
+      <div class="eyebrow">Visual Share Studio · v14</div>
       <h1 class="hero-title">不是发日记，<br/>是递出一张时间明信片。</h1>
       <p class="hero-subtitle">TSD 的分享不追求炫耀连续打卡，而是把“这一周/这一季/这一片旷野”整理成一个可讲述入口。公开版隐藏具体人名、地点和原文；私密版适合讲给亲友。</p>
       <div class="share-mode studio-mode" aria-label="分享隐私模式">
@@ -1225,7 +1395,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v13</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v14</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1233,7 +1403,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v13 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心和分享工作室说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v14 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心、分享工作室和影像线索说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1245,6 +1415,7 @@ function guideView() {
         ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
+        ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
       </div>
       <div class="action-row"><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button></div>
     </section>
@@ -1271,7 +1442,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v12</div>
+      <div class="eyebrow">Review Packet · v14</div>
       <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
       <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -1280,7 +1451,7 @@ function reviewView() {
     <section class="guide-card">
       <h2 class="section-title">权限说明 <span class="micro">Demo 当前请求</span></h2>
       <div class="permission-grid">
-        ${permissionCard("相册", "未请求", "当前照片 Mark 为产品占位，不读取系统相册。")}
+        ${permissionCard("相册", "用户主动选择", "Web Demo 不请求持久相册权限；只处理用户本次选择的照片/视频或粘贴的链接。")}
         ${permissionCard("定位", "未请求", "地点只来自用户手写，不读取 GPS 或轨迹。")}
         ${permissionCard("通讯录", "未请求", "人物关系由用户输入，不访问联系人。")}
         ${permissionCard("通知", "未请求", "时间唤醒为界面演示，不发系统推送。")}
@@ -1291,9 +1462,9 @@ function reviewView() {
     <section class="guide-card">
       <h2 class="section-title">隐私营养标签雏形 <span class="micro">上线前需复核</span></h2>
       <div class="nutrition-grid">
-        ${nutritionItem("当前收集", "浏览器本地 Demo 数据", "local")}
-        ${nutritionItem("当前不收集", "身份、联系人、定位、照片原文件", "safe")}
-        ${nutritionItem("未来可选", "账户、E2EE 同步、模型任务摘要", "poc")}
+        ${nutritionItem("当前收集", "浏览器本地 Demo 数据、影像链接/元信息、小图预览", "local")}
+        ${nutritionItem("当前不收集", "身份、联系人、定位、自动相册扫描", "safe")}
+        ${nutritionItem("未来可选", "账户、E2EE 同步、加密影像库、模型任务摘要", "poc")}
         ${nutritionItem("用户权利", "导出、清空、撤销草稿、暂停同步", "safe")}
       </div>
       <p class="source-line">生产版必须用正式法务文本和平台表单重做；这里的价值是提前把数据类别和用户权利放进产品界面。</p>
@@ -1404,7 +1575,7 @@ function claimCard(moment) {
   const active = state.weeklyClaimed.includes(moment.id);
   return `<button class="claim-card ${active ? "active" : ""}" data-claim="${escapeHtml(moment.id)}">
     <span class="claim-check">${active ? "✓" : "+"}</span>
-    <span><strong>${escapeHtml(moment.title)}</strong><em>${escapeHtml(moment.text)}</em><small>${escapeHtml(moment.tags.join(" · "))} · source: ${escapeHtml(moment.id)}</small></span>
+    <span><strong>${escapeHtml(moment.title)}</strong><em>${escapeHtml(moment.text)}</em><small>${escapeHtml(moment.tags.join(" · "))} · ${moment.media ? `${mediaKindLabel(moment.media.kind)}锚点 · ` : ""}source: ${escapeHtml(moment.id)}</small></span>
   </button>`;
 }
 
@@ -1553,7 +1724,7 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v13 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v14 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -1562,9 +1733,10 @@ function settingsView() {
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
-      <h2 class="section-title">记忆保险箱 <span class="micro">v12 · 本地优先</span></h2>
+      <h2 class="section-title">记忆保险箱 <span class="micro">v14 · 本地优先</span></h2>
       <div class="vault-grid">
         ${vaultStat("切片", stats.moments, "条")}
+        ${vaultStat("影像", stats.media, "个")}
         ${vaultStat("认领", stats.claimed, "个")}
         ${vaultStat("章节", stats.chapters, "篇")}
         ${vaultStat("大小", Math.max(1, Math.ceil(stats.bytes / 1024)), "KB")}
@@ -1712,7 +1884,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v13 聚焦视觉分享工作室：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台、审核材料雏形和三类分享卡片已经可以在公网试用。下一步继续补安装资产、真实模型网关或真正图片导出。</p>
+      <p>当前 v14 聚焦影像线索：底部安全区、体验路线、语义缩放、周章节成品、记忆保险箱、月度/季度回忆、试用指南、AI 路由、同步/隐私边界、AI 任务单、数据离机账本、同步控制台、审核材料雏形、三类分享卡片和照片/视频记忆锚点已经进入同一个体验。下一步继续恢复公网部署、补安装资产、真实模型网关或真正图片导出。</p>
     </section>
   </aside>`;
 }

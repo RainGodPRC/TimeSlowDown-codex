@@ -19,3 +19,4 @@ Current demo focus:
 - Sync console: encrypted-backup demo, pause/resume sync, cancellation recovery window
 - Review center: permissions, privacy-label draft, tester FAQ, production checklist
 - Visual share studio: weekly poster, 90-day card, life meadow card, public/private copy
+- Media memory anchors: attach photo/video files, external media links, and notes to slices
