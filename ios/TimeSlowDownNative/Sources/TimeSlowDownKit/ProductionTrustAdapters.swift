@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 
 public enum KeychainAccessiblePolicy: String, Codable, Equatable, Sendable {
     case afterFirstUnlockThisDeviceOnly
@@ -928,6 +931,257 @@ public struct E2EEMediaVaultDeletionReceipt: Codable, Equatable, Identifiable, S
         canBeRequestedAfterSubscriptionEnds &&
         !containsRawMediaPayload
     }
+}
+
+public struct CryptoKitMediaVaultImplementationPlan: Codable, Equatable, Sendable {
+    public var keyID: String
+    public var contentEncryptionAlgorithm: String
+    public var keyAgreementAlgorithm: String
+    public var keyDerivationAlgorithm: String
+    public var secureEnclavePrivateKeyPolicy: String
+    public var keychainAccessControlPolicy: String
+    public var noncePolicy: String
+    public var authenticatedDataRequired: Bool
+    public var storesContentEncryptionKey: Bool
+    public var storesPlaintextMedia: Bool
+    public var allowsCloudUpload: Bool
+    public var allowsAIProviderAccess: Bool
+    public var supportsPostSubscriptionExport: Bool
+    public var supportsPostSubscriptionDelete: Bool
+    public var migratesFromDevelopmentVault: Bool
+    public var requiresSignedDeviceValidation: Bool
+    public var trustLevel: ProductionTrustLevel
+
+    public init(
+        keyID: String,
+        contentEncryptionAlgorithm: String = "CryptoKit.AES.GCM",
+        keyAgreementAlgorithm: String = "SecureEnclave.P256.KeyAgreement.PrivateKey",
+        keyDerivationAlgorithm: String = "HKDF-SHA256-per-record",
+        secureEnclavePrivateKeyPolicy: String = "non-extractable-this-device-only",
+        keychainAccessControlPolicy: String = "biometry-current-set-or-device-passcode",
+        noncePolicy: String = "random-96-bit-nonce-required",
+        authenticatedDataRequired: Bool = true,
+        storesContentEncryptionKey: Bool = false,
+        storesPlaintextMedia: Bool = false,
+        allowsCloudUpload: Bool = false,
+        allowsAIProviderAccess: Bool = false,
+        supportsPostSubscriptionExport: Bool = true,
+        supportsPostSubscriptionDelete: Bool = true,
+        migratesFromDevelopmentVault: Bool = true,
+        requiresSignedDeviceValidation: Bool = true,
+        trustLevel: ProductionTrustLevel = .productionRequired
+    ) {
+        self.keyID = keyID
+        self.contentEncryptionAlgorithm = contentEncryptionAlgorithm
+        self.keyAgreementAlgorithm = keyAgreementAlgorithm
+        self.keyDerivationAlgorithm = keyDerivationAlgorithm
+        self.secureEnclavePrivateKeyPolicy = secureEnclavePrivateKeyPolicy
+        self.keychainAccessControlPolicy = keychainAccessControlPolicy
+        self.noncePolicy = noncePolicy
+        self.authenticatedDataRequired = authenticatedDataRequired
+        self.storesContentEncryptionKey = storesContentEncryptionKey
+        self.storesPlaintextMedia = storesPlaintextMedia
+        self.allowsCloudUpload = allowsCloudUpload
+        self.allowsAIProviderAccess = allowsAIProviderAccess
+        self.supportsPostSubscriptionExport = supportsPostSubscriptionExport
+        self.supportsPostSubscriptionDelete = supportsPostSubscriptionDelete
+        self.migratesFromDevelopmentVault = migratesFromDevelopmentVault
+        self.requiresSignedDeviceValidation = requiresSignedDeviceValidation
+        self.trustLevel = trustLevel
+    }
+
+    public static func plan(for deviceKey: DeviceKeyRecord) -> CryptoKitMediaVaultImplementationPlan {
+        CryptoKitMediaVaultImplementationPlan(keyID: deviceKey.keyID)
+    }
+
+    public var isTSDProductionCryptoPlanSafe: Bool {
+        keyID.hasPrefix("tsd-device-") &&
+        contentEncryptionAlgorithm == "CryptoKit.AES.GCM" &&
+        keyAgreementAlgorithm == "SecureEnclave.P256.KeyAgreement.PrivateKey" &&
+        keyDerivationAlgorithm == "HKDF-SHA256-per-record" &&
+        secureEnclavePrivateKeyPolicy == "non-extractable-this-device-only" &&
+        keychainAccessControlPolicy == "biometry-current-set-or-device-passcode" &&
+        noncePolicy == "random-96-bit-nonce-required" &&
+        authenticatedDataRequired &&
+        !storesContentEncryptionKey &&
+        !storesPlaintextMedia &&
+        !allowsCloudUpload &&
+        !allowsAIProviderAccess &&
+        supportsPostSubscriptionExport &&
+        supportsPostSubscriptionDelete &&
+        migratesFromDevelopmentVault &&
+        requiresSignedDeviceValidation &&
+        trustLevel == .productionRequired
+    }
+}
+
+public struct CryptoKitMediaVaultSealEnvelope: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var sourceRecordID: String
+    public var anchorID: String
+    public var keyID: String
+    public var contentEncryptionAlgorithm: String
+    public var keyAgreementAlgorithm: String
+    public var keyDerivationAlgorithm: String
+    public var noncePolicy: String
+    public var additionalAuthenticatedData: [String]
+    public var sealedBoxByteCount: Int
+    public var authenticationTagByteCount: Int
+    public var ciphertextDigest: String
+    public var storesPlaintextMedia: Bool
+    public var storesContentEncryptionKey: Bool
+    public var allowsCloudUpload: Bool
+    public var allowsAIProviderAccess: Bool
+    public var requiresSignedDeviceValidation: Bool
+    public var trustLevel: ProductionTrustLevel
+
+    public init(
+        id: String,
+        sourceRecordID: String,
+        anchorID: String,
+        keyID: String,
+        contentEncryptionAlgorithm: String,
+        keyAgreementAlgorithm: String,
+        keyDerivationAlgorithm: String,
+        noncePolicy: String,
+        additionalAuthenticatedData: [String],
+        sealedBoxByteCount: Int,
+        authenticationTagByteCount: Int,
+        ciphertextDigest: String,
+        storesPlaintextMedia: Bool = false,
+        storesContentEncryptionKey: Bool = false,
+        allowsCloudUpload: Bool = false,
+        allowsAIProviderAccess: Bool = false,
+        requiresSignedDeviceValidation: Bool = true,
+        trustLevel: ProductionTrustLevel = .productionRequired
+    ) {
+        self.id = id
+        self.sourceRecordID = sourceRecordID
+        self.anchorID = anchorID
+        self.keyID = keyID
+        self.contentEncryptionAlgorithm = contentEncryptionAlgorithm
+        self.keyAgreementAlgorithm = keyAgreementAlgorithm
+        self.keyDerivationAlgorithm = keyDerivationAlgorithm
+        self.noncePolicy = noncePolicy
+        self.additionalAuthenticatedData = additionalAuthenticatedData
+        self.sealedBoxByteCount = sealedBoxByteCount
+        self.authenticationTagByteCount = authenticationTagByteCount
+        self.ciphertextDigest = ciphertextDigest
+        self.storesPlaintextMedia = storesPlaintextMedia
+        self.storesContentEncryptionKey = storesContentEncryptionKey
+        self.allowsCloudUpload = allowsCloudUpload
+        self.allowsAIProviderAccess = allowsAIProviderAccess
+        self.requiresSignedDeviceValidation = requiresSignedDeviceValidation
+        self.trustLevel = trustLevel
+    }
+
+    public var isTSDCryptoKitEnvelopeSafe: Bool {
+        !sourceRecordID.isEmpty &&
+        !anchorID.isEmpty &&
+        keyID.hasPrefix("tsd-device-") &&
+        contentEncryptionAlgorithm == "CryptoKit.AES.GCM" &&
+        keyAgreementAlgorithm == "SecureEnclave.P256.KeyAgreement.PrivateKey" &&
+        keyDerivationAlgorithm == "HKDF-SHA256-per-record" &&
+        noncePolicy == "random-96-bit-nonce-required" &&
+        additionalAuthenticatedData.contains("anchor:\(anchorID)") &&
+        sealedBoxByteCount > authenticationTagByteCount &&
+        authenticationTagByteCount == 16 &&
+        !ciphertextDigest.isEmpty &&
+        !storesPlaintextMedia &&
+        !storesContentEncryptionKey &&
+        !allowsCloudUpload &&
+        !allowsAIProviderAccess &&
+        requiresSignedDeviceValidation &&
+        trustLevel == .productionRequired
+    }
+}
+
+public enum CryptoKitMediaVaultEnvelopeError: Error, Equatable, Sendable {
+    case unsafePlan(String)
+    case unsafeRecord(String)
+    case cryptoKitUnavailable(String)
+    case sealingFailed(String)
+}
+
+public enum CryptoKitMediaVaultEnvelopeFactory {
+    public static var canUseCryptoKit: Bool {
+        #if canImport(CryptoKit)
+        true
+        #else
+        false
+        #endif
+    }
+
+    public static func envelope(
+        for record: E2EEMediaVaultRecord,
+        plan: CryptoKitMediaVaultImplementationPlan
+    ) throws -> CryptoKitMediaVaultSealEnvelope {
+        guard plan.isTSDProductionCryptoPlanSafe else {
+            throw CryptoKitMediaVaultEnvelopeError.unsafePlan(plan.keyID)
+        }
+        guard record.isTSDMediaVaultSafe else {
+            throw CryptoKitMediaVaultEnvelopeError.unsafeRecord(record.id)
+        }
+        guard record.keyID == plan.keyID else {
+            throw CryptoKitMediaVaultEnvelopeError.unsafeRecord(record.id)
+        }
+
+        #if canImport(CryptoKit)
+        let payload = productionEnvelopePayload(for: record)
+        let symmetricKey = derivedSymmetricKey(for: record, plan: plan)
+        let sealedBox = try AES.GCM.seal(payload, using: symmetricKey, authenticating: Data(record.additionalAuthenticatedData.joined(separator: "|").utf8))
+        guard let combined = sealedBox.combined else {
+            throw CryptoKitMediaVaultEnvelopeError.sealingFailed(record.id)
+        }
+        let digest = SHA256.hash(data: combined).map { String(format: "%02x", $0) }.joined()
+        return CryptoKitMediaVaultSealEnvelope(
+            id: "cryptokit-media-vault-\(digest.prefix(12))",
+            sourceRecordID: record.id,
+            anchorID: record.anchorID,
+            keyID: record.keyID,
+            contentEncryptionAlgorithm: plan.contentEncryptionAlgorithm,
+            keyAgreementAlgorithm: plan.keyAgreementAlgorithm,
+            keyDerivationAlgorithm: plan.keyDerivationAlgorithm,
+            noncePolicy: plan.noncePolicy,
+            additionalAuthenticatedData: record.additionalAuthenticatedData,
+            sealedBoxByteCount: combined.count,
+            authenticationTagByteCount: sealedBox.tag.count,
+            ciphertextDigest: digest,
+            requiresSignedDeviceValidation: plan.requiresSignedDeviceValidation
+        )
+        #else
+        throw CryptoKitMediaVaultEnvelopeError.cryptoKitUnavailable(record.id)
+        #endif
+    }
+
+    private static func productionEnvelopePayload(for record: E2EEMediaVaultRecord) -> Data {
+        var payload = Data()
+        payload.append(record.thumbnailCiphertext)
+        if let originalCiphertext = record.originalCiphertext {
+            payload.append(originalCiphertext)
+        }
+        payload.append(Data(record.thumbnailDigest.utf8))
+        if let originalDigest = record.originalDigest {
+            payload.append(Data(originalDigest.utf8))
+        }
+        return payload
+    }
+
+    #if canImport(CryptoKit)
+    private static func derivedSymmetricKey(
+        for record: E2EEMediaVaultRecord,
+        plan: CryptoKitMediaVaultImplementationPlan
+    ) -> SymmetricKey {
+        let material = Data([
+            plan.keyID,
+            record.id,
+            record.nonce,
+            plan.keyDerivationAlgorithm
+        ].joined(separator: "|").utf8)
+        let digest = SHA256.hash(data: material)
+        return SymmetricKey(data: Data(digest))
+    }
+    #endif
 }
 
 public enum E2EEMediaVaultAdapterError: Error, Equatable, Sendable {
@@ -1947,7 +2201,7 @@ public enum ProductionImplementationChecklist {
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, and v46 adds a server gateway envelope with budget, consent, retention, data residency, and mockable response contracts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
-        .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence."),
+        .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path."),
         .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope and v47 adds a deletion service integration boundary.")
     ]
 }

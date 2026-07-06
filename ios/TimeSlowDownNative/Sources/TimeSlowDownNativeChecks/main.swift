@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>51</string>"), "Info.plist should carry v51 build number")
+check(infoPlistText.contains("<string>52</string>"), "Info.plist should carry v52 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -244,8 +244,22 @@ check(secureEnclavePlan.preservesTSDKeyBoundary, "Secure Enclave plan should pre
 check(!secureEnclavePlan.storesPrivateKeyBytesInAppData, "Secure Enclave plan should forbid app data private key bytes")
 check(secureEnclavePlan.requiresRealDeviceForValidation, "Secure Enclave plan should require signed-device validation")
 
-check(KeychainProductionChecklist.rows.count == 3, "Keychain production checklist should track three v41 rows")
+let cryptoKitMediaVaultPlan = CryptoKitMediaVaultImplementationPlan.plan(for: deviceKey)
+check(cryptoKitMediaVaultPlan.isTSDProductionCryptoPlanSafe, "CryptoKit media vault plan should preserve TSD production crypto boundaries")
+check(cryptoKitMediaVaultPlan.contentEncryptionAlgorithm == "CryptoKit.AES.GCM", "CryptoKit media vault should use AES.GCM content encryption")
+check(cryptoKitMediaVaultPlan.keyAgreementAlgorithm == "SecureEnclave.P256.KeyAgreement.PrivateKey", "CryptoKit media vault should plan Secure Enclave P256 key agreement")
+check(cryptoKitMediaVaultPlan.keyDerivationAlgorithm == "HKDF-SHA256-per-record", "CryptoKit media vault should derive per-record keys with HKDF-SHA256")
+check(cryptoKitMediaVaultPlan.secureEnclavePrivateKeyPolicy == "non-extractable-this-device-only", "CryptoKit media vault should require non-extractable this-device-only private keys")
+check(cryptoKitMediaVaultPlan.noncePolicy == "random-96-bit-nonce-required", "CryptoKit media vault should require random nonces")
+check(!cryptoKitMediaVaultPlan.storesContentEncryptionKey, "CryptoKit media vault should not persist content encryption keys")
+check(!cryptoKitMediaVaultPlan.storesPlaintextMedia, "CryptoKit media vault should not persist plaintext media")
+check(!cryptoKitMediaVaultPlan.allowsCloudUpload, "CryptoKit media vault should not require cloud upload")
+check(!cryptoKitMediaVaultPlan.allowsAIProviderAccess, "CryptoKit media vault should not allow AI/provider access")
+check(cryptoKitMediaVaultPlan.requiresSignedDeviceValidation, "CryptoKit media vault should still require signed-device validation")
+
+check(KeychainProductionChecklist.rows.count == 4, "Keychain production checklist should track four rows after v52")
 check(KeychainProductionChecklist.rows.first { $0.id == "keychain-record-store" }?.status == .poc, "Keychain record store adapter should be PoC after v41")
+check(KeychainProductionChecklist.rows.first { $0.id == "cryptokit-media-vault-plan" }?.status == .poc, "CryptoKit media vault plan should be PoC after v52")
 check(KeychainProductionChecklist.rows.filter { $0.status == .todo }.count == 2, "Secure Enclave and signed-device tests should remain todo")
 
 let gatewayRequest = DeepSeekGatewayClientPlan.request(for: aiEnvelope, accountID: deviceKey.accountID)
@@ -475,6 +489,27 @@ check(selectedOriginalVaultRecord.isTSDMediaVaultSafe, "Selected-original media 
 check(selectedOriginalVaultRecord.containsOriginalCiphertext, "Selected-original vault record should contain original ciphertext")
 check(selectedOriginalVaultRecord.originalCiphertext != photoOriginalBytes, "Media vault should not store original plaintext as ciphertext")
 check(selectedOriginalVaultRecord.consentReceiptID == "consent-raw-media-export-demo", "Media vault record should preserve raw media consent receipt")
+check(CryptoKitMediaVaultEnvelopeFactory.canUseCryptoKit, "CryptoKit media vault envelope factory should compile with CryptoKit on supported Apple platforms")
+let cryptoKitMediaVaultEnvelope = try CryptoKitMediaVaultEnvelopeFactory.envelope(
+    for: selectedOriginalVaultRecord,
+    plan: cryptoKitMediaVaultPlan
+)
+check(cryptoKitMediaVaultEnvelope.isTSDCryptoKitEnvelopeSafe, "CryptoKit media vault envelope should preserve TSD production crypto boundaries")
+check(cryptoKitMediaVaultEnvelope.sourceRecordID == selectedOriginalVaultRecord.id, "CryptoKit media vault envelope should preserve source vault record ID")
+check(cryptoKitMediaVaultEnvelope.anchorID == photo.id.uuidString, "CryptoKit media vault envelope should preserve anchor ID")
+check(cryptoKitMediaVaultEnvelope.keyID == deviceKey.keyID, "CryptoKit media vault envelope should bind to device key ID")
+check(cryptoKitMediaVaultEnvelope.contentEncryptionAlgorithm == "CryptoKit.AES.GCM", "CryptoKit media vault envelope should use AES.GCM")
+check(cryptoKitMediaVaultEnvelope.keyAgreementAlgorithm == "SecureEnclave.P256.KeyAgreement.PrivateKey", "CryptoKit media vault envelope should keep Secure Enclave key agreement plan")
+check(cryptoKitMediaVaultEnvelope.keyDerivationAlgorithm == "HKDF-SHA256-per-record", "CryptoKit media vault envelope should keep HKDF plan")
+check(cryptoKitMediaVaultEnvelope.noncePolicy == "random-96-bit-nonce-required", "CryptoKit media vault envelope should require random nonces")
+check(cryptoKitMediaVaultEnvelope.additionalAuthenticatedData.contains("anchor:\(photo.id.uuidString)"), "CryptoKit media vault envelope should bind AAD to anchor")
+check(cryptoKitMediaVaultEnvelope.sealedBoxByteCount > 0, "CryptoKit media vault envelope should produce a sealed box")
+check(cryptoKitMediaVaultEnvelope.authenticationTagByteCount == 16, "CryptoKit media vault envelope should include a 128-bit authentication tag")
+check(!cryptoKitMediaVaultEnvelope.storesPlaintextMedia, "CryptoKit media vault envelope should not store plaintext media")
+check(!cryptoKitMediaVaultEnvelope.storesContentEncryptionKey, "CryptoKit media vault envelope should not store content encryption key")
+check(!cryptoKitMediaVaultEnvelope.allowsCloudUpload, "CryptoKit media vault envelope should not upload to cloud")
+check(!cryptoKitMediaVaultEnvelope.allowsAIProviderAccess, "CryptoKit media vault envelope should not allow AI/provider access")
+check(cryptoKitMediaVaultEnvelope.requiresSignedDeviceValidation, "CryptoKit media vault envelope should still require signed-device validation")
 let unsealedSelectedOriginalPayload = try E2EEMediaVaultAdapter.unseal(selectedOriginalVaultRecord, with: deviceKey)
 check(unsealedSelectedOriginalPayload == selectedOriginalImport.payload, "Media vault should unseal selected-original payload for staged export")
 let wrongDeviceKey = KeychainVaultStub.bootstrapDeviceKey(
@@ -620,10 +655,11 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "51", "TestFlight build notes should match v51")
+check(buildNotes.buildNumber == "52", "TestFlight build notes should match v52")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
+check(buildNotes.summary.localizedCaseInsensitiveContains("CryptoKit"), "TestFlight build notes should mention CryptoKit media vault envelope")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -652,4 +688,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, and v51 E2EE media vault adapter are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, and v52 CryptoKit media vault envelope contract are aligned.")

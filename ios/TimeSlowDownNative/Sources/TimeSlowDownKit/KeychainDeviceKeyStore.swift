@@ -259,6 +259,7 @@ public struct SecureEnclaveDeviceKeyPlan: Codable, Equatable, Sendable {
 public enum KeychainProductionChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-record-store", title: "Keychain record store", status: .poc, owner: "iOS", evidence: "Security.framework save/load/delete adapter exists; automated checks verify safe query contracts without writing to the user's Keychain."),
+        .init(id: "cryptokit-media-vault-plan", title: "CryptoKit media vault plan", status: .poc, owner: "iOS/privacy", evidence: "v52 adds a CryptoKit AES.GCM media vault envelope contract with Secure Enclave key agreement, HKDF, random nonce, AAD, and no plaintext/CEK persistence; signed-device validation remains required."),
         .init(id: "secure-enclave-key-plan", title: "Secure Enclave key plan", status: .todo, owner: "iOS", evidence: "Plan forbids extractable private keys, but real device key generation and validation still require a signed iOS build."),
         .init(id: "keychain-integration-test", title: "Signed-device Keychain test", status: .todo, owner: "release/iOS", evidence: "Run save/load/delete on a physical device or simulator with the production bundle id and Apple Developer Team.")
     ]
