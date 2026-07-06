@@ -100,6 +100,10 @@ const defaultState = {
   recoveryUntil: "",
   subscriptionState: "free",
   connectedDevices: 1,
+  passCreatedAt: "",
+  recoveryKeyCreatedAt: "",
+  deviceReviewAt: "",
+  accountReportCopiedAt: "",
   lastStudioExportAt: "",
   lastStudioExportAsset: "",
   lastStudioShareAt: "",
@@ -500,6 +504,10 @@ function vaultPayload() {
       recoveryUntil: state.recoveryUntil,
       subscriptionState: state.subscriptionState,
       connectedDevices: state.connectedDevices,
+      passCreatedAt: state.passCreatedAt,
+      recoveryKeyCreatedAt: state.recoveryKeyCreatedAt,
+      deviceReviewAt: state.deviceReviewAt,
+      accountReportCopiedAt: state.accountReportCopiedAt,
       lastStudioExportAt: state.lastStudioExportAt,
       lastStudioExportAsset: state.lastStudioExportAsset,
       lastStudioShareAt: state.lastStudioShareAt,
@@ -625,9 +633,9 @@ function mediaLibraryManifest() {
   const stats = mediaLibraryStats();
   return {
     product: "TimeSlowDown Media Vault Path",
-    version: "v26-demo",
+    version: "v27-demo",
     generatedAt: new Date().toISOString(),
-    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v26 makes photo/video entry first-class while keeping the media vault path and app-like install boundaries.",
+    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v27 adds an account rights center while keeping media entry, vault path, and app-like install boundaries.",
     vaultState: {
       permission: state.mediaPermissionReviewAt ? "limited-picker-reviewed" : "single-picker-only",
       sealedAt: state.mediaVaultSealedAt || "",
@@ -1131,7 +1139,7 @@ async function requestInstallDemo() {
 async function copyInstallGuide() {
   const manifest = installManifestState();
   const text = [
-    "TimeSlowDown Codex 安装说明（Demo v26）：",
+    "TimeSlowDown Codex 安装说明（Demo v27）：",
     `公网地址：${PUBLIC_DEMO_URL}`,
     "",
     "iPhone / iPad：用 Safari 打开 → 点分享按钮 → 添加到主屏幕。",
@@ -1139,7 +1147,7 @@ async function copyInstallGuide() {
     "桌面 Chrome / Edge：打开地址栏右侧安装图标，或菜单 → 安装 TimeSlowDown。",
     "",
     `当前检测：manifest=${manifest.hasManifest ? "yes" : "no"}；apple-meta=${manifest.hasAppleMeta ? "yes" : "no"}；standalone=${manifest.standalone ? "yes" : "no"}；prompt=${manifest.promptReady ? "ready" : "manual"}.`,
-    "边界：v26 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
+    "边界：v27 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
   ].join("\n");
   const stamp = new Date().toLocaleString("zh-CN");
   try {
@@ -1166,10 +1174,11 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v26 已支持生产隐私中心、模型网关控制台、分享工作室 PNG 导出、媒体入口、媒体保险箱路径、安装中心和 Demo QA Console。",
-    "5. 媒体策略：照片/视频是切片入口，不是事后附件；v26 已把全局影像入口、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、旧切片补影像串成主路径。",
-    "6. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由、媒体导出/删除审计和地区数据边界完成后，才允许处理真实用户记忆。",
-    "7. AI 只做忠实编辑，不替用户决定人生意义。"
+    "4. v27 已支持生产隐私中心、账户权利中心、模型网关控制台、分享工作室 PNG 导出、媒体入口、媒体保险箱路径、安装中心和 Demo QA Console。",
+    "5. 媒体策略：照片/视频是切片入口，不是事后附件；v27 保留全局影像入口、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、旧切片补影像主路径。",
+    "6. 账户策略：不登录也能记录；登录只为加密备份、多设备和恢复。退订不能扣留已有记忆，导出/查看/删除必须继续可用。",
+    "7. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口、权限升级理由、媒体导出/删除审计和地区数据边界完成后，才允许处理真实用户记忆。",
+    "8. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
   try {
     if (!navigator.clipboard) throw new Error("clipboard unavailable");
@@ -1187,7 +1196,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v26 把照片/视频入口提升为主路径：全局影像入口、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v27 保留照片/视频主路径：全局影像入口、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、已有切片事后补影像；并演示有限相册选择、E2EE 影像库、缩略图、媒体导出包、删除审计、家庭/儿童影像复核、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -1202,7 +1211,7 @@ async function copyReviewPacket() {
 
 async function copyComplianceReport() {
   const text = [
-    "TimeSlowDown 生产隐私报告（Demo v26）：",
+    "TimeSlowDown 生产隐私报告（Demo v27）：",
     "1. 当前 Demo：静态站点 + localStorage；不登录、不云同步、不调用真实模型、不请求持久相册/定位/通讯录/麦克风/通知。",
     "2. 数据生命周期：用户主动输入/选择 → 设备本地保存 → 可选 AI/同步任务单 → 导出/删除 → 分享包去隐私。",
     "3. 权限升级梯子：先单次选择；只有批量整理、同步、提醒等明确动作出现时才解释并请求更多权限。",
@@ -1225,14 +1234,14 @@ function qaSnapshot() {
   const mediaCount = mediaMoments().length;
   const claimedCount = state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length;
   return {
-    version: "v26",
+    version: "v27",
     publicUrl: PUBLIC_DEMO_URL,
-    resources: "styles.css?v=26 / app.js?v=26",
+    resources: "styles.css?v=27 / app.js?v=27",
     moments: state.moments.length,
     mediaCount,
     claimedCount,
     gatewayStatus: gatewayStatusLabel(),
-    privacyCenter: "v26",
+    privacyCenter: "v27",
     qaReportAt: state.lastQaReportAt || "尚未复制",
     checks: qaChecks(mediaCount, claimedCount)
   };
@@ -1256,7 +1265,7 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "影像锚点",
       status: mediaCount ? "pass" : "warn",
       route: "全局影像入口 / 切片 / 章节 / 媒体墙",
-      evidence: `${mediaCount} 个切片已绑定照片/视频/链接；v26 把照片/视频入口放到全局 Dock、此刻页、Quick Mark、媒体墙和旧切片补影像。`
+      evidence: `${mediaCount} 个切片已绑定照片/视频/链接；v27 保留照片/视频全局 Dock、此刻页、Quick Mark、媒体墙和旧切片补影像主路径。`
     },
     {
       area: "影像入口可见性",
@@ -1274,7 +1283,13 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "安装体验",
       status: "poc",
       route: "安装中心",
-      evidence: "v26 保留 inline manifest、Apple web app meta、touch icon、安装中心、standalone 检测和可复制安装说明；仍无 service worker/offline。"
+      evidence: "v27 保留 inline manifest、Apple web app meta、touch icon、安装中心、standalone 检测和可复制安装说明；仍无 service worker/offline。"
+    },
+    {
+      area: "账户权利中心",
+      status: "poc",
+      route: "账户",
+      evidence: "v27 新增访客通行证、恢复钥匙、设备复核、退订取回窗口和可复制账户权利报告；真实登录/E2EE 仍待接入。"
     },
     {
       area: "周章节",
@@ -1327,7 +1342,7 @@ function qaScore() {
 async function copyQaReport() {
   const snapshot = qaSnapshot();
   const text = [
-    "TimeSlowDown Demo QA Console（v26）：",
+    "TimeSlowDown Demo QA Console（v27）：",
     `公网：${snapshot.publicUrl}`,
     `资源：${snapshot.resources}`,
     `本地样本：${snapshot.moments} 张切片 / ${snapshot.mediaCount} 个影像锚点 / ${snapshot.claimedCount} 个周认领`,
@@ -1478,6 +1493,60 @@ function simulateEncryptedBackup() {
     recoveryUntil: futureDate(30),
     toast: "已模拟加密备份：2 台设备可见，服务端只保存加密盒，Demo 不上传真实数据。"
   });
+}
+
+function createGuestPassDemo() {
+  setState({
+    accountMode: "pass-demo",
+    passCreatedAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟创建 TSD 通行证：本机记录不需要登录，通行证只用于未来加密备份和恢复。"
+  });
+}
+
+function generateRecoveryKeyDemo() {
+  setState({
+    accountMode: state.accountMode === "guest" ? "pass-demo" : state.accountMode,
+    recoveryKeyCreatedAt: new Date().toLocaleString("zh-CN"),
+    recoveryUntil: futureDate(30),
+    toast: "已模拟生成恢复钥匙：生产版应让用户离线保存，服务端不应持有明文密钥。"
+  });
+}
+
+function reviewDevicesDemo() {
+  setState({
+    connectedDevices: Math.max(2, state.connectedDevices),
+    deviceReviewAt: new Date().toLocaleString("zh-CN"),
+    toast: "已模拟设备复核：生产版应展示设备名、最后活动时间、移除入口和同步状态。"
+  });
+}
+
+async function copyAccountRightsReport() {
+  const text = [
+    "TimeSlowDown 账户权利报告（Demo v27）：",
+    `账户模式：${accountModeLabel()}`,
+    `同步状态：${syncModeLabel()}`,
+    `订阅状态：${subscriptionLabel()}`,
+    `设备数：${state.connectedDevices}`,
+    `通行证创建：${state.passCreatedAt || "尚未创建"}`,
+    `恢复钥匙：${state.recoveryKeyCreatedAt || "尚未生成"}`,
+    `最近设备复核：${state.deviceReviewAt || "尚未复核"}`,
+    `取回窗口：${state.recoveryUntil || "未开启"}`,
+    "",
+    "产品承诺：",
+    "1. 不登录也能记录，访客模式不是残缺试用。",
+    "2. 登录只用于加密备份、多设备和恢复，不作为记录门槛。",
+    "3. 退订后已有记忆仍可查看、编辑、导出和删除。",
+    "4. 恢复钥匙应由用户掌握，服务端不持有明文密钥。",
+    "5. 设备列表、暂停同步、删除和导出必须是一级入口。"
+  ].join("\n");
+  const stamp = new Date().toLocaleString("zh-CN");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ accountReportCopiedAt: stamp, toast: "账户权利报告已复制，可发给测试者或未来后端/法务。" });
+  } catch {
+    setState({ accountReportCopiedAt: stamp, toast: "浏览器不允许自动复制；已在账户权利中心生成报告内容。" });
+  }
 }
 
 function pauseSync() {
@@ -1653,6 +1722,10 @@ function bindEvents() {
   $$("[data-gateway-fallback]").forEach(btn => btn.addEventListener("click", simulateGatewayFallback));
   $$("[data-gateway-revoke]").forEach(btn => btn.addEventListener("click", revokeGatewayConsent));
   $$("[data-copy-gateway]").forEach(btn => btn.addEventListener("click", copyGatewayReport));
+  $$("[data-create-pass]").forEach(btn => btn.addEventListener("click", createGuestPassDemo));
+  $$("[data-generate-recovery]").forEach(btn => btn.addEventListener("click", generateRecoveryKeyDemo));
+  $$("[data-review-devices]").forEach(btn => btn.addEventListener("click", reviewDevicesDemo));
+  $$("[data-copy-account-rights]").forEach(btn => btn.addEventListener("click", copyAccountRightsReport));
   $$("[data-simulate-backup]").forEach(btn => btn.addEventListener("click", simulateEncryptedBackup));
   $$("[data-pause-sync]").forEach(btn => btn.addEventListener("click", pauseSync));
   $$("[data-resume-sync]").forEach(btn => btn.addEventListener("click", resumeSync));
@@ -1765,7 +1838,7 @@ function mediaDock() {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, lens: lensView, library: mediaLibraryView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, qa: qaView, install: installView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, lens: lensView, library: mediaLibraryView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, qa: qaView, install: installView, account: accountView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -2092,7 +2165,7 @@ function mediaView() {
   return `
     <div class="topline"><div><div class="brand">媒体记忆墙</div><div class="micro">照片和视频不是附件，它们是能把回忆带回来的光。</div></div></div>
     <section class="guide-card media-hero">
-      <div class="eyebrow">Media Memory Wall · v26</div>
+      <div class="eyebrow">Media Memory Wall · v27</div>
       <h1 class="hero-title">影像让时间，<br/>重新有了入口。</h1>
       <p class="hero-subtitle">这里不是普通相册。TSD 只展示已经绑定到切片的照片/视频线索：它们有时间、有一句话、有来源，也能回到章节和人生旷野。</p>
       <div class="media-stats">
@@ -2526,9 +2599,9 @@ function installView() {
   return `
     <div class="topline"><div><div class="brand">安装中心</div><div class="micro">让公网 Demo 更像一个能放到主屏幕的 App。</div></div></div>
     <section class="guide-card install-hero">
-      <div class="eyebrow">Install Center · v26</div>
+      <div class="eyebrow">Install Center · v27</div>
       <h1 class="hero-title">把 TSD 放到主屏幕，<br/>像 App 一样试用。</h1>
-      <p class="hero-subtitle">v26 在不新增文件的前提下保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
+      <p class="hero-subtitle">v27 在不新增文件的前提下保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
       <div class="install-badges">
         ${installBadge("Manifest", install.hasManifest ? "ready" : "missing")}
         ${installBadge("iOS Meta", install.hasAppleMeta ? "ready" : "missing")}
@@ -2551,7 +2624,7 @@ function installView() {
     <section class="guide-card">
       <h2 class="section-title">App-like Shell <span class="micro">边界说明</span></h2>
       <div class="processing-ledger">
-        ${processingBoundary("已做", "v26", "inline manifest、Apple web app meta、touch icon、主屏安装说明、standalone 检测、QA 路线。", "safe")}
+        ${processingBoundary("已做", "v27", "inline manifest、Apple web app meta、touch icon、主屏安装说明、standalone 检测、QA 路线。", "safe")}
         ${processingBoundary("未做", "生产待做", "未新增 service worker；不承诺离线缓存、后台同步、推送或原生权限弹窗。", "warn")}
         ${processingBoundary("App Store", "未来", "真实上架仍需 iOS 原生壳、正式图标资产、权限文案、隐私政策和审核材料。", "warn")}
       </div>
@@ -2590,9 +2663,10 @@ function guideView() {
         ${trialStep("07", "做 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
         ${trialStep("08", "生成视觉成品", "看周章节海报、季度卡和人生旷野卡。", "studio")}
         ${trialStep("09", "检查记忆保险箱", "导出、导入、清空，确认记忆能带走。", "settings")}
-        ${trialStep("10", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
-        ${trialStep("11", "安装到主屏幕", "复制安装说明，检测是否像 App 一样打开。", "install")}
-        ${trialStep("12", "打开 QA Console", "看当前公网 Demo 哪些路径已通过、哪些仍是 PoC。", "qa")}
+        ${trialStep("10", "看账户权利", "访客、恢复钥匙、设备、退订取回和权利报告。", "account")}
+        ${trialStep("11", "看审核中心", "权限、隐私、AI、同步和生产待做。", "review")}
+        ${trialStep("12", "安装到主屏幕", "复制安装说明，检测是否像 App 一样打开。", "install")}
+        ${trialStep("13", "打开 QA Console", "看当前公网 Demo 哪些路径已通过、哪些仍是 PoC。", "qa")}
       </div>
     </section>
     <section class="guide-card">
@@ -2605,7 +2679,7 @@ function guideView() {
           "人生旷野五档语义缩放",
           "分享工作室三类视觉成品",
           "记忆保险箱导出/导入/清空",
-          "同步控制台与数据离机账本",
+          "同步控制台、账户权利中心与数据离机账本",
           "Demo QA Console 验收面板",
           "媒体库生产假面",
           "90 天回忆仪式"
@@ -2631,10 +2705,10 @@ function guideView() {
         <div class="chapter-line"><strong>AI 是忠实编辑，不是人生意义作者</strong><span>漂亮但没有来源的句子不得进入最终故事；低落、压力和普通日子也允许被记录。</span></div>
         <div class="chapter-line"><strong>生产版会先解决数据边界</strong><span>真实用户记忆进入云端前，需要 E2EE、地区数据边界、删除/导出权和清晰的模型处理条款。</span></div>
       </div>
-      <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
+      <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="account">账户权利中心</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v26</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v27</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -2642,7 +2716,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v26 仍不调用真实模型和真实账户；它把“照片/视频优先”从隐藏能力提升为可见入口：全局影像 Dock、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、事后补影像锚点、媒体保险箱路径、安装中心、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v27 仍不调用真实模型和真实账户；它把“照片/视频优先”从隐藏能力提升为可见入口，并补上账户权利中心：全局影像 Dock、首次进入影像入口、Quick Mark 影像区、媒体墙直接添加、事后补影像锚点、媒体保险箱路径、安装中心、账户权利、PNG 分享成品、生产隐私中心、模型网关控制台和 Demo QA Console 放进同一条产品路径，同时说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -2650,7 +2724,8 @@ function guideView() {
         ${readiness("产品灵魂", "完成", "时间切片机、人生旷野、90 天可讲述。")}
         ${readiness("数据权利", "Demo 覆盖", "导出、导入、清空已可点击；生产需账户与恢复。")}
         ${readiness("AI 边界", "PoC 覆盖", "分层架构和黄金样本已可看；生产需真实网关。")}
-        ${readiness("安装体验", "v26 PoC", "inline manifest、iOS meta、touch icon、安装中心和 standalone 检测已加入；离线缓存仍待做。")}
+        ${readiness("安装体验", "v27 PoC", "inline manifest、iOS meta、touch icon、安装中心和 standalone 检测已加入；离线缓存仍待做。")}
+        ${readiness("账户权利", "v27 PoC", "访客通行证、恢复钥匙、设备复核、退订取回窗口和权利报告已加入；真实账户/E2EE 待做。")}
         ${readiness("合规文本", "雏形", "隐私/AI/同步边界已写入 App 内。")}
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
@@ -2659,12 +2734,12 @@ function guideView() {
         ${readiness("切片补影像", "v22", "已有切片可事后补照片/视频或影像链接，周末回顾时也能把真实影像贴回记忆。")}
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
-        ${readiness("QA Console", "v26", "核心试用路径、安装体验、PoC 边界、媒体入口、媒体保险箱和生产待做被整理成可复制验收报告。")}
+        ${readiness("QA Console", "v27", "核心试用路径、账户权利、安装体验、PoC 边界、媒体入口、媒体保险箱和生产待做被整理成可复制验收报告。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
         ${readiness("媒体保险箱", "v24", "相册权限、E2EE 分层、缩略图清除、导出包、删除审计和家庭/儿童影像复核。")}
       </div>
-      <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="install">安装中心</button><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button><button class="secondary" data-view="qa">打开 QA Console</button></div>
+      <div class="action-row"><button class="secondary" data-view="media">打开媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="account">账户权利</button><button class="secondary" data-view="install">安装中心</button><button class="secondary" data-view="studio">打开分享工作室</button><button class="secondary" data-view="review">打开审核中心</button><button class="secondary" data-view="qa">打开 QA Console</button></div>
     </section>
   `;
 }
@@ -2689,10 +2764,10 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v26</div>
+      <div class="eyebrow">Review Packet · v27</div>
       <h1 class="hero-title">记忆产品的信任，<br/>必须能被看见。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里把权限、数据生命周期、AI、影像、同步和删除权做成可读的生产隐私中心雏形。</p>
-      <div class="action-row"><button class="primary" data-copy-compliance>复制生产隐私报告</button><button class="secondary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="guide">回到试用指南</button></div>
+      <div class="action-row"><button class="primary" data-copy-compliance>复制生产隐私报告</button><button class="secondary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="account">账户权利中心</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="guide">回到试用指南</button></div>
       <p class="source-line">上次生产隐私报告：${escapeHtml(state.lastComplianceReportAt || "尚未复制")}。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
@@ -2732,7 +2807,7 @@ function reviewView() {
         ${nutritionItem("当前收集", "浏览器本地 Demo 数据、影像链接/元信息、小图预览", "local")}
         ${nutritionItem("当前不收集", "身份、联系人、定位、自动相册扫描", "safe")}
         ${nutritionItem("未来可选", "账户、E2EE 同步、加密影像库、缩略图、模型任务摘要", "poc")}
-        ${nutritionItem("用户权利", "导出、清空、撤销草稿、暂停同步", "safe")}
+        ${nutritionItem("用户权利", "导出、清空、撤销草稿、暂停同步、退订取回、恢复钥匙", "safe")}
       </div>
       <p class="source-line">生产版必须用正式法务文本和平台表单重做；这里的价值是提前把数据类别和用户权利放进产品界面。</p>
     </section>
@@ -2741,7 +2816,7 @@ function reviewView() {
       <div class="processing-ledger">
         ${processingBoundary("原始影像", "不自动上传", "仅用户主动绑定；生产版需 E2EE、导出包和删除原图/缩略图。", "safe")}
         ${processingBoundary("模型任务", "最小字段", "只发送任务单允许字段；缓存、草稿和撤销日志必须可见。", "poc")}
-        ${processingBoundary("同步数据", "可暂停", "同步是增强，不是扣押；退订后已有记忆仍可查看、编辑、导出。", "safe")}
+        ${processingBoundary("同步数据", "可暂停", "同步是增强，不是扣押；退订后已有记忆仍可查看、编辑、导出。v27 已提供账户权利中心假面。", "safe")}
         ${processingBoundary("家庭/未成年影像", "默认谨慎", "公开分享不带原图、人名、地点和原文；未来需更严格提示。", "warn")}
       </div>
     </section>
@@ -2759,11 +2834,11 @@ function reviewView() {
       <h2 class="section-title">生产待做清单 <span class="micro">不能假装完成</span></h2>
       <div class="readiness-list">
         ${readiness("原生壳", "待做", "iOS 项目、权限弹窗、安装资产、App Icon。")}
-        ${readiness("账户同步", "待做", "真实登录、E2EE、密钥恢复、设备管理。")}
+        ${readiness("账户同步", "v27 假面", "账户权利中心已演示访客通行证、恢复钥匙、设备复核、退订取回；真实登录、E2EE、密钥恢复、设备管理仍待做。")}
         ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
         ${readiness("模型网关", "v21 假面", "Provider 状态、限流预算、任务队列、失败降级和撤销日志已产品化；真实 API/密钥仍待接入。")}
         ${readiness("合规文本", "v22 雏形", "生产隐私中心、生命周期、权限升级和处理边界已产品化；正式法律文本仍待复核。")}
-        ${readiness("审核材料", "v22/v26 雏形", "本页可复制生产隐私报告，QA Console 可复制 Demo 验收报告；不代表已通过法务或上架审核。")}
+        ${readiness("审核材料", "v22/v27 雏形", "本页可复制生产隐私报告、账户权利报告和 Demo 验收报告；不代表已通过法务或上架审核。")}
       </div>
     </section>
   `;
@@ -2775,7 +2850,7 @@ function qaView() {
   return `
     <div class="topline"><div><div class="brand">QA Console</div><div class="micro">把当前公网 Demo 的可靠性和边界摊开给试用者看。</div></div></div>
     <section class="guide-card qa-hero">
-      <div class="eyebrow">Demo QA Console · v26</div>
+      <div class="eyebrow">Demo QA Console · v27</div>
       <h1 class="hero-title">这不是口头说“能用”，<br/>而是把证据放出来。</h1>
       <p class="hero-subtitle">TSD 的 demo 越接近商品级，越需要让用户、测试者和其他 agent 清楚知道：哪些路径已经可以点击验证，哪些仍只是 PoC，哪些上架前必须补完。</p>
       <div class="qa-scoreboard">
@@ -2812,17 +2887,18 @@ function qaView() {
         ${qaRouteStep("04", "看媒体墙", "确认媒体数增加，照片/视频进入回忆时间线。", "media")}
         ${qaRouteStep("05", "编译章节", "认领 3 个瞬间，确认章节正文保留 source。", "chapter")}
         ${qaRouteStep("06", "导出视觉成品", "到分享工作室生成 PNG，公开版隐藏原文和原始影像。", "studio")}
-        ${qaRouteStep("07", "检查安装体验", "打开安装中心，复制安装说明并检测 App-like shell。", "install")}
-        ${qaRouteStep("08", "复制隐私/QA 报告", "在生产隐私中心与 QA Console 复制报告，确认边界可讲清。", "review")}
+        ${qaRouteStep("07", "检查账户权利", "打开账户权利中心，创建通行证、生成恢复钥匙、复核设备、复制权利报告。", "account")}
+        ${qaRouteStep("08", "检查安装体验", "打开安装中心，复制安装说明并检测 App-like shell。", "install")}
+        ${qaRouteStep("09", "复制隐私/QA 报告", "在生产隐私中心与 QA Console 复制报告，确认边界可讲清。", "review")}
       </div>
     </section>
     <section class="guide-card">
       <h2 class="section-title">上线前硬缺口 <span class="micro">不能靠 demo 混过去</span></h2>
       <div class="processing-ledger">
         ${processingBoundary("真实模型", "待接入", "DeepSeek V4 Flash 目前仍是 PoC 假面；生产需密钥管理、限流、供应商审查和任务回放。", "warn")}
-        ${processingBoundary("真实同步", "待接入", "账户、E2EE、密钥恢复、设备管理、地区数据边界仍未实现。", "warn")}
+        ${processingBoundary("真实同步", "待接入", "账户权利中心是 v27 假面；真实账户、E2EE、密钥恢复、设备管理、地区数据边界仍未实现。", "warn")}
         ${processingBoundary("相册权限", "PoC 边界", "v24 已有媒体保险箱路径；真实系统 Photos Picker、E2EE 文件库和删除回执仍待接入。", "warn")}
-        ${processingBoundary("安装资产", "PoC 边界", "v26 已加入 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
+        ${processingBoundary("安装资产", "PoC 边界", "v27 保留 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
       </div>
     </section>
   `;
@@ -3142,10 +3218,78 @@ function syncModeLabel() {
   return "仅本机";
 }
 
+function accountModeLabel() {
+  if (state.accountMode === "signed-in-demo") return "已登录演示";
+  if (state.accountMode === "pass-demo") return "TSD 通行证演示";
+  return "访客模式";
+}
+
 function subscriptionLabel() {
   if (state.subscriptionState === "plus-demo") return "Plus 演示";
   if (state.subscriptionState === "cancelled-demo") return "已退订演示";
   return "Free / 访客";
+}
+
+function accountView() {
+  return `
+    <div class="topline"><div><div class="brand">账户权利</div><div class="micro">账号是钥匙，不是牢笼。</div></div></div>
+    <section class="guide-card account-hero">
+      <div class="eyebrow">Account Rights Center · v27</div>
+      <h1 class="hero-title">你的记忆，<br/>不该被账号或订阅扣住。</h1>
+      <p class="hero-subtitle">TSD 的账户系统只应服务三件事：加密备份、多设备恢复、清楚的用户权利。不登录也能记录；退订后已有记忆仍可查看、编辑、导出和删除。</p>
+      <div class="account-status-grid">
+        ${syncStateCard("账户", accountModeLabel(), "访客也能完整记录；通行证只用于备份与恢复。")}
+        ${syncStateCard("同步", syncModeLabel(), state.syncMode === "paused" ? "暂停后本机继续可用。" : "同步是增强，不是门槛。")}
+        ${syncStateCard("设备", `${state.connectedDevices} 台`, "未来应可移除旧设备并查看最后活动。")}
+        ${syncStateCard("订阅", subscriptionLabel(), "付费不能成为扣留人生资料的理由。")}
+      </div>
+      <div class="action-row"><button class="primary" data-create-pass>创建 TSD 通行证</button><button class="secondary" data-generate-recovery>生成恢复钥匙</button><button class="secondary" data-copy-account-rights>复制权利报告</button></div>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">账户路径 <span class="micro">guest → pass → vault</span></h2>
+      <div class="account-flow">
+        ${accountStep("01", "访客也能记录", "不注册、不登录，也能使用 Quick Mark、切片、媒体墙、导出和删除。", state.accountMode === "guest" ? "active" : "ready")}
+        ${accountStep("02", "TSD 通行证", "当用户想换手机或多设备时，再解释账号、备份和恢复钥匙。", state.passCreatedAt || state.accountMode !== "guest" ? "ready" : "todo")}
+        ${accountStep("03", "加密记忆盒", "服务端只保存密文盒；模型任务和同步任务必须有最小字段账本。", state.syncMode === "encrypted-backup" ? "ready" : "todo")}
+        ${accountStep("04", "取回与退出", "退订、暂停同步、删除账户时，已有记忆仍可导出、查看和删除。", state.subscriptionState === "cancelled-demo" ? "active" : "todo")}
+      </div>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">恢复与设备 <span class="micro">recovery / devices</span></h2>
+      <div class="account-ledger">
+        ${ledgerLine("通行证创建", state.passCreatedAt || "尚未创建", state.accountMode === "guest" ? "访客" : "已创建")}
+        ${ledgerLine("恢复钥匙", state.recoveryKeyCreatedAt || "尚未生成", state.recoveryKeyCreatedAt ? "用户持有" : "待生成")}
+        ${ledgerLine("设备复核", state.deviceReviewAt || "尚未复核", `${state.connectedDevices} 台`)}
+        ${ledgerLine("最近同步", state.lastSyncAt || "尚未同步", state.syncMode === "encrypted-backup" ? "加密" : "本地")}
+        ${ledgerLine("暂停时间", state.syncPausedAt || "未暂停", state.syncMode === "paused" ? "已暂停" : "无")}
+        ${ledgerLine("取回窗口", state.recoveryUntil || "未开启", state.subscriptionState === "cancelled-demo" ? "30 天" : "可开启")}
+      </div>
+      <div class="action-row"><button class="secondary" data-simulate-backup>模拟加密备份</button><button class="secondary" data-review-devices>复核设备</button><button class="secondary" data-pause-sync>暂停同步</button><button class="secondary" data-resume-sync>恢复同步</button><button class="ghost danger" data-cancel-subscription>模拟退订</button></div>
+      <p class="source-line">Demo 只写入当前浏览器状态；生产版需要真实账户、E2EE 密钥恢复、设备撤销、地区数据边界和删除回执。</p>
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">不可妥协的用户权利 <span class="micro">non-hostage design</span></h2>
+      <div class="account-rights-grid">
+        ${accountRight("不登录可用", "核心记录不能被账号墙截断。")}
+        ${accountRight("可导出", "JSON、媒体包、章节和可读说明都应能带走。")}
+        ${accountRight("可暂停", "同步暂停后本机记录继续可用。")}
+        ${accountRight("可退订", "Plus 结束后已有记忆不消失、不锁死。")}
+        ${accountRight("可删除", "原文、原图、缩略图、云副本和模型缓存都要能删。")}
+        ${accountRight("可恢复", "换手机时靠用户持有的恢复钥匙找回密文盒。")}
+      </div>
+      <div class="action-row"><button class="secondary" data-export-vault>导出 JSON</button><button class="secondary" data-view="library">媒体保险箱</button><button class="secondary" data-view="review">生产隐私中心</button><button class="secondary" data-view="qa">QA Console</button></div>
+      <p class="source-line">上次账户报告：${escapeHtml(state.accountReportCopiedAt || "尚未复制")}。</p>
+    </section>
+  `;
+}
+
+function accountStep(num, title, copy, status) {
+  return `<div class="account-step ${status}"><span>${num}</span><strong>${escapeHtml(title)}</strong><em>${escapeHtml(copy)}</em><small>${status}</small></div>`;
+}
+
+function accountRight(title, copy) {
+  return `<div class="account-right"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(copy)}</span></div>`;
 }
 
 function settingsView() {
@@ -3154,12 +3298,12 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v26 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">v27 · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
       </div>
-      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="qa">QA Console</button><button class="secondary" data-view="install">安装中心</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="qa">QA Console</button><button class="secondary" data-view="account">账户权利</button><button class="secondary" data-view="install">安装中心</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
@@ -3205,9 +3349,9 @@ function settingsView() {
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-qa>复制 QA 报告</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
-      <h2 class="section-title">同步控制台 <span class="micro">v12 · 多设备保险箱</span></h2>
+      <h2 class="section-title">同步控制台 <span class="micro">v27 · 多设备保险箱</span></h2>
       <div class="sync-console">
-        ${syncStateCard("账户", state.accountMode === "guest" ? "访客模式" : "已登录演示", "不登录也能本地记录；登录只用于加密备份和多设备。")}
+        ${syncStateCard("账户", accountModeLabel(), "不登录也能本地记录；登录只用于加密备份和多设备。")}
         ${syncStateCard("同步", syncModeLabel(), state.syncMode === "paused" ? "暂停后本机继续可用，云端不再接收新变化。" : "同步是可选增强，不是核心记录门槛。")}
         ${syncStateCard("设备", `${state.connectedDevices} 台`, "生产版应展示设备名、最后活动时间和移除入口。")}
         ${syncStateCard("订阅", subscriptionLabel(), "退订不能扣留已有记忆；导出、查看和本地记录继续可用。")}
@@ -3218,7 +3362,8 @@ function settingsView() {
         ${ledgerLine("取回窗口", state.recoveryUntil || "未开启", state.subscriptionState === "cancelled-demo" ? "30 天" : "待触发")}
       </div>
       <div class="action-row">
-        <button class="primary" data-simulate-backup>模拟加密备份</button>
+        <button class="primary" data-view="account">账户权利中心</button>
+        <button class="secondary" data-simulate-backup>模拟加密备份</button>
         <button class="secondary" data-pause-sync>暂停同步</button>
         <button class="secondary" data-resume-sync>恢复同步</button>
         <button class="ghost danger" data-cancel-subscription>模拟退订</button>
@@ -3286,7 +3431,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : ["media", "lens"].includes(state.view) ? "meadow" : ["guide", "studio", "review", "library", "qa", "install"].includes(state.view) ? "settings" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : ["media", "lens"].includes(state.view) ? "meadow" : ["guide", "studio", "review", "library", "qa", "install", "account"].includes(state.view) ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -3314,7 +3459,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v26 已把媒体优先入口做成显性主路径：用户可以从全局“照片/视频”入口、首次进入、Quick Mark 或媒体墙直接选择影像；也可以周末把照片/视频补到已有切片，再进入媒体墙、章节和人生旷野；试用者还能看到权限、导出、删除、家庭影像、安装说明和 PoC 边界。</p>
+      <p>当前 v27 已把媒体优先入口和账户权利路径串起来：用户可以从全局“照片/视频”入口、首次进入、Quick Mark 或媒体墙直接选择影像；也可以进入账户权利中心看到访客通行证、恢复钥匙、设备复核、退订取回和权利报告；试用者还能看到权限、导出、删除、家庭影像、安装说明和 PoC 边界。</p>
     </section>
   </aside>`;
 }
