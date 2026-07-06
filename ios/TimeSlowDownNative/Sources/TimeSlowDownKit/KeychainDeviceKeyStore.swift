@@ -514,12 +514,334 @@ public enum SecureEnclaveDeviceKeyFactory {
     }
 }
 
+public enum SignedDeviceValidationStatus: String, Codable, Equatable, Sendable {
+    case pendingSignedDevice
+    case readyToRun
+    case passed
+    case failed
+}
+
+public struct SignedDeviceKeychainValidationEnvironment: Codable, Equatable, Sendable {
+    public var bundleIdentifier: String
+    public var teamID: String?
+    public var deviceName: String
+    public var deviceUDID: String?
+    public var osVersion: String
+    public var hasFullXcode: Bool
+    public var hasAppleDeveloperTeam: Bool
+    public var usesProductionBundleIdentifier: Bool
+    public var signedBundleInstalled: Bool
+    public var runningOnPhysicalDevice: Bool
+    public var passcodeOrBiometryAvailable: Bool
+    public var networkRequired: Bool
+
+    public init(
+        bundleIdentifier: String = "com.raingodprc.timeslowdown",
+        teamID: String? = nil,
+        deviceName: String,
+        deviceUDID: String? = nil,
+        osVersion: String,
+        hasFullXcode: Bool,
+        hasAppleDeveloperTeam: Bool,
+        usesProductionBundleIdentifier: Bool = true,
+        signedBundleInstalled: Bool,
+        runningOnPhysicalDevice: Bool,
+        passcodeOrBiometryAvailable: Bool,
+        networkRequired: Bool = false
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.teamID = teamID
+        self.deviceName = deviceName
+        self.deviceUDID = deviceUDID
+        self.osVersion = osVersion
+        self.hasFullXcode = hasFullXcode
+        self.hasAppleDeveloperTeam = hasAppleDeveloperTeam
+        self.usesProductionBundleIdentifier = usesProductionBundleIdentifier
+        self.signedBundleInstalled = signedBundleInstalled
+        self.runningOnPhysicalDevice = runningOnPhysicalDevice
+        self.passcodeOrBiometryAvailable = passcodeOrBiometryAvailable
+        self.networkRequired = networkRequired
+    }
+
+    public static func unsignedSwiftPMHost(deviceName: String = "local-swiftpm-host") -> SignedDeviceKeychainValidationEnvironment {
+        SignedDeviceKeychainValidationEnvironment(
+            deviceName: deviceName,
+            osVersion: "host-swiftpm",
+            hasFullXcode: false,
+            hasAppleDeveloperTeam: false,
+            signedBundleInstalled: false,
+            runningOnPhysicalDevice: false,
+            passcodeOrBiometryAvailable: false
+        )
+    }
+
+    public var canRunSignedDeviceKeychainValidation: Bool {
+        bundleIdentifier == "com.raingodprc.timeslowdown" &&
+        teamID != nil &&
+        hasFullXcode &&
+        hasAppleDeveloperTeam &&
+        usesProductionBundleIdentifier &&
+        signedBundleInstalled &&
+        runningOnPhysicalDevice &&
+        passcodeOrBiometryAvailable &&
+        !networkRequired
+    }
+}
+
+public enum SignedDeviceKeychainValidationStepKind: String, Codable, Equatable, Sendable {
+    case signingPreflight
+    case secureEnclaveKeyGeneration
+    case publicKeyDigestCapture
+    case metadataReferenceSave
+    case metadataReferenceLoad
+    case accessControlChallenge
+    case wrongDeviceRejection
+    case deletion
+}
+
+public struct SignedDeviceKeychainValidationStep: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var kind: SignedDeviceKeychainValidationStepKind
+    public var title: String
+    public var requiresPhysicalDevice: Bool
+    public var requiresUserPresence: Bool
+    public var forbidsPrivateKeyBytes: Bool
+    public var expectedEvidence: String
+
+    public init(
+        id: String,
+        kind: SignedDeviceKeychainValidationStepKind,
+        title: String,
+        requiresPhysicalDevice: Bool = true,
+        requiresUserPresence: Bool = false,
+        forbidsPrivateKeyBytes: Bool = true,
+        expectedEvidence: String
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.requiresPhysicalDevice = requiresPhysicalDevice
+        self.requiresUserPresence = requiresUserPresence
+        self.forbidsPrivateKeyBytes = forbidsPrivateKeyBytes
+        self.expectedEvidence = expectedEvidence
+    }
+
+    public var preservesTSDValidationBoundary: Bool {
+        id.hasPrefix("signed-device-") &&
+        requiresPhysicalDevice &&
+        forbidsPrivateKeyBytes &&
+        !expectedEvidence.isEmpty &&
+        (kind != .accessControlChallenge || requiresUserPresence)
+    }
+}
+
+public struct SignedDeviceKeychainValidationPlan: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var environment: SignedDeviceKeychainValidationEnvironment
+    public var request: SecureEnclaveDeviceKeyGenerationRequest
+    public var referenceReceipt: SecureEnclaveDeviceKeyReferenceReceipt
+    public var steps: [SignedDeviceKeychainValidationStep]
+    public var status: SignedDeviceValidationStatus
+    public var productionValidationClaimed: Bool
+    public var generatedAt: Date
+
+    public init(
+        id: String,
+        environment: SignedDeviceKeychainValidationEnvironment,
+        request: SecureEnclaveDeviceKeyGenerationRequest,
+        referenceReceipt: SecureEnclaveDeviceKeyReferenceReceipt,
+        steps: [SignedDeviceKeychainValidationStep],
+        status: SignedDeviceValidationStatus,
+        productionValidationClaimed: Bool = false,
+        generatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.environment = environment
+        self.request = request
+        self.referenceReceipt = referenceReceipt
+        self.steps = steps
+        self.status = status
+        self.productionValidationClaimed = productionValidationClaimed
+        self.generatedAt = generatedAt
+    }
+
+    public var isTSDValidationPlanSafe: Bool {
+        id.hasPrefix("signed-device-keychain-plan-") &&
+        request.isTSDProductionKeyGenerationSafe &&
+        referenceReceipt.isTSDProductionKeyReferenceSafe &&
+        referenceReceipt.requestID == request.id &&
+        steps.count == 8 &&
+        Set(steps.map(\.kind)).count == steps.count &&
+        steps.allSatisfy(\.preservesTSDValidationBoundary) &&
+        !productionValidationClaimed &&
+        (status == .pendingSignedDevice || status == .readyToRun) &&
+        (status == .readyToRun) == environment.canRunSignedDeviceKeychainValidation
+    }
+
+    public var requiresExternalSignedDeviceWork: Bool {
+        status == .pendingSignedDevice &&
+        !environment.canRunSignedDeviceKeychainValidation &&
+        !productionValidationClaimed
+    }
+}
+
+public struct SignedDeviceKeychainValidationStepReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var stepID: String
+    public var status: SignedDeviceValidationStatus
+    public var evidenceDigest: String?
+    public var errorMessage: String?
+    public var containsPrivateKeyBytes: Bool
+
+    public init(
+        id: String,
+        stepID: String,
+        status: SignedDeviceValidationStatus,
+        evidenceDigest: String? = nil,
+        errorMessage: String? = nil,
+        containsPrivateKeyBytes: Bool = false
+    ) {
+        self.id = id
+        self.stepID = stepID
+        self.status = status
+        self.evidenceDigest = evidenceDigest
+        self.errorMessage = errorMessage
+        self.containsPrivateKeyBytes = containsPrivateKeyBytes
+    }
+
+    public var isHonestTSDStepReceipt: Bool {
+        id.hasPrefix("signed-device-step-receipt-") &&
+        !stepID.isEmpty &&
+        !containsPrivateKeyBytes &&
+        (status != .passed || evidenceDigest != nil) &&
+        (status != .failed || errorMessage != nil)
+    }
+}
+
+public struct SignedDeviceKeychainValidationReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var planID: String
+    public var status: SignedDeviceValidationStatus
+    public var stepReceipts: [SignedDeviceKeychainValidationStepReceipt]
+    public var productionValidationClaimed: Bool
+    public var canBeUsedForTestFlightGate: Bool
+    public var canBeUsedForAppStoreGate: Bool
+    public var containsPrivateKeyBytes: Bool
+    public var createdAt: Date
+
+    public init(
+        id: String,
+        planID: String,
+        status: SignedDeviceValidationStatus,
+        stepReceipts: [SignedDeviceKeychainValidationStepReceipt],
+        productionValidationClaimed: Bool,
+        canBeUsedForTestFlightGate: Bool,
+        canBeUsedForAppStoreGate: Bool,
+        containsPrivateKeyBytes: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.planID = planID
+        self.status = status
+        self.stepReceipts = stepReceipts
+        self.productionValidationClaimed = productionValidationClaimed
+        self.canBeUsedForTestFlightGate = canBeUsedForTestFlightGate
+        self.canBeUsedForAppStoreGate = canBeUsedForAppStoreGate
+        self.containsPrivateKeyBytes = containsPrivateKeyBytes
+        self.createdAt = createdAt
+    }
+
+    public var isHonestPendingReceipt: Bool {
+        id.hasPrefix("signed-device-keychain-receipt-") &&
+        status == .pendingSignedDevice &&
+        stepReceipts.allSatisfy { $0.status == .pendingSignedDevice && $0.isHonestTSDStepReceipt } &&
+        !productionValidationClaimed &&
+        !canBeUsedForTestFlightGate &&
+        !canBeUsedForAppStoreGate &&
+        !containsPrivateKeyBytes
+    }
+
+    public var isProductionPassReceipt: Bool {
+        id.hasPrefix("signed-device-keychain-receipt-") &&
+        status == .passed &&
+        stepReceipts.count == 8 &&
+        stepReceipts.allSatisfy { $0.status == .passed && $0.isHonestTSDStepReceipt } &&
+        productionValidationClaimed &&
+        canBeUsedForTestFlightGate &&
+        canBeUsedForAppStoreGate &&
+        !containsPrivateKeyBytes
+    }
+}
+
+public enum SignedDeviceKeychainValidationScaffold {
+    public static func plan(
+        environment: SignedDeviceKeychainValidationEnvironment,
+        request: SecureEnclaveDeviceKeyGenerationRequest,
+        referenceReceipt: SecureEnclaveDeviceKeyReferenceReceipt,
+        generatedAt: Date = Date()
+    ) -> SignedDeviceKeychainValidationPlan {
+        let digest = TrustDigest.checksum([
+            environment.bundleIdentifier,
+            environment.teamID ?? "no-team",
+            request.id,
+            referenceReceipt.id
+        ])
+        return SignedDeviceKeychainValidationPlan(
+            id: "signed-device-keychain-plan-\(digest.prefix(12))",
+            environment: environment,
+            request: request,
+            referenceReceipt: referenceReceipt,
+            steps: defaultSteps,
+            status: environment.canRunSignedDeviceKeychainValidation ? .readyToRun : .pendingSignedDevice,
+            generatedAt: generatedAt
+        )
+    }
+
+    public static func pendingReceipt(
+        for plan: SignedDeviceKeychainValidationPlan,
+        createdAt: Date = Date()
+    ) -> SignedDeviceKeychainValidationReceipt {
+        let digest = TrustDigest.checksum([plan.id, plan.status.rawValue, "pending"])
+        let receipts = plan.steps.map { step in
+            SignedDeviceKeychainValidationStepReceipt(
+                id: "signed-device-step-receipt-\(TrustDigest.checksum([plan.id, step.id]).prefix(12))",
+                stepID: step.id,
+                status: .pendingSignedDevice
+            )
+        }
+        return SignedDeviceKeychainValidationReceipt(
+            id: "signed-device-keychain-receipt-\(digest.prefix(12))",
+            planID: plan.id,
+            status: .pendingSignedDevice,
+            stepReceipts: receipts,
+            productionValidationClaimed: false,
+            canBeUsedForTestFlightGate: false,
+            canBeUsedForAppStoreGate: false,
+            createdAt: createdAt
+        )
+    }
+
+    public static var defaultSteps: [SignedDeviceKeychainValidationStep] {
+        [
+            .init(id: "signed-device-signing-preflight", kind: .signingPreflight, title: "Verify signed production bundle on physical device", expectedEvidence: "bundle-id, Team ID, device UDID, installed build number"),
+            .init(id: "signed-device-secure-enclave-key-generation", kind: .secureEnclaveKeyGeneration, title: "Generate non-extractable Secure Enclave P256 key", requiresUserPresence: true, expectedEvidence: "key reference digest and Secure Enclave token evidence"),
+            .init(id: "signed-device-public-key-digest-capture", kind: .publicKeyDigestCapture, title: "Export public key digest only", expectedEvidence: "public key digest without private key bytes"),
+            .init(id: "signed-device-metadata-reference-save", kind: .metadataReferenceSave, title: "Save metadata-only Keychain reference", expectedEvidence: "Keychain add/update success for metadata payload"),
+            .init(id: "signed-device-metadata-reference-load", kind: .metadataReferenceLoad, title: "Load metadata-only Keychain reference", expectedEvidence: "round-trip metadata digest matches saved reference"),
+            .init(id: "signed-device-access-control-challenge", kind: .accessControlChallenge, title: "Require user presence for private key use", requiresUserPresence: true, expectedEvidence: "LocalAuthentication/access-control challenge result"),
+            .init(id: "signed-device-wrong-device-rejection", kind: .wrongDeviceRejection, title: "Reject wrong-device media vault unseal", expectedEvidence: "wrong-key rejection without plaintext leakage"),
+            .init(id: "signed-device-delete-test-record", kind: .deletion, title: "Delete test Keychain/Secure Enclave reference", expectedEvidence: "delete status and post-delete not-found check")
+        ]
+    }
+}
+
 public enum KeychainProductionChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-record-store", title: "Keychain record store", status: .poc, owner: "iOS", evidence: "Security.framework save/load/delete adapter exists; automated checks verify safe query contracts without writing to the user's Keychain."),
         .init(id: "cryptokit-media-vault-plan", title: "CryptoKit media vault plan", status: .poc, owner: "iOS/privacy", evidence: "v52 adds a CryptoKit AES.GCM media vault envelope contract with Secure Enclave key agreement, HKDF, random nonce, AAD, and no plaintext/CEK persistence; signed-device validation remains required."),
         .init(id: "secure-enclave-key-plan", title: "Secure Enclave key plan", status: .poc, owner: "iOS", evidence: "v53 adds a Secure Enclave device-key generation request and reference receipt contract: P256 key agreement, this-device-only Keychain metadata, user presence, no private-key bytes, no software fallback; real signed-device validation still required."),
-        .init(id: "keychain-integration-test", title: "Signed-device Keychain test", status: .todo, owner: "release/iOS", evidence: "Run save/load/delete on a physical device or simulator with the production bundle id and Apple Developer Team.")
+        .init(id: "signed-device-validation-scaffold", title: "Signed-device validation scaffold", status: .poc, owner: "release/iOS", evidence: "v54 adds a signed-device Keychain/Secure Enclave validation plan and pending receipt scaffold; it records required physical-device steps without claiming production validation on this SwiftPM host."),
+        .init(id: "keychain-integration-test", title: "Signed-device Keychain test", status: .todo, owner: "release/iOS", evidence: "Run Secure Enclave generation, metadata save/load, access-control challenge, wrong-device rejection, and deletion on a signed physical device with the production bundle id and Apple Developer Team.")
     ]
 }
 

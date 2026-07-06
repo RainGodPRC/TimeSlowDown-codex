@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>53</string>"), "Info.plist should carry v53 build number")
+check(infoPlistText.contains("<string>54</string>"), "Info.plist should carry v54 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -286,6 +286,43 @@ check(secureEnclaveKeyReceipt.storesOnlyReferenceMetadata, "Secure Enclave recei
 check(!secureEnclaveKeyReceipt.allowsSoftwareFallback, "Secure Enclave receipt should forbid software fallback")
 check(secureEnclaveKeyReceipt.requiresSignedDeviceValidation, "Secure Enclave receipt should still require signed-device validation")
 
+let unsignedHostEnvironment = SignedDeviceKeychainValidationEnvironment.unsignedSwiftPMHost()
+check(!unsignedHostEnvironment.canRunSignedDeviceKeychainValidation, "Unsigned SwiftPM host should not claim signed-device validation capability")
+check(unsignedHostEnvironment.bundleIdentifier == "com.raingodprc.timeslowdown", "Signed-device environment should preserve production bundle identifier")
+check(unsignedHostEnvironment.teamID == nil, "Unsigned host environment should not fake an Apple Developer Team ID")
+check(!unsignedHostEnvironment.hasFullXcode, "Unsigned host environment should not pretend full Xcode exists")
+check(!unsignedHostEnvironment.hasAppleDeveloperTeam, "Unsigned host environment should not pretend Apple Developer access exists")
+check(!unsignedHostEnvironment.signedBundleInstalled, "Unsigned host environment should not claim a signed bundle is installed")
+check(!unsignedHostEnvironment.runningOnPhysicalDevice, "Unsigned host environment should not claim physical device execution")
+check(!unsignedHostEnvironment.passcodeOrBiometryAvailable, "Unsigned host environment should not claim passcode/biometry access")
+check(!unsignedHostEnvironment.networkRequired, "Signed-device validation scaffold should not require network access")
+let signedDeviceValidationPlan = SignedDeviceKeychainValidationScaffold.plan(
+    environment: unsignedHostEnvironment,
+    request: secureEnclaveKeyRequest,
+    referenceReceipt: secureEnclaveKeyReceipt,
+    generatedAt: fixedDate
+)
+check(signedDeviceValidationPlan.isTSDValidationPlanSafe, "Signed-device validation plan should preserve TSD boundaries")
+check(signedDeviceValidationPlan.requiresExternalSignedDeviceWork, "Signed-device validation plan should honestly require external signed-device work here")
+check(signedDeviceValidationPlan.status == .pendingSignedDevice, "Unsigned host plan should stay pending signed device")
+check(!signedDeviceValidationPlan.productionValidationClaimed, "Unsigned host plan should not claim production validation")
+check(signedDeviceValidationPlan.steps.count == 8, "Signed-device validation plan should define eight required steps")
+check(signedDeviceValidationPlan.steps.map(\.kind).contains(.secureEnclaveKeyGeneration), "Signed-device validation should require Secure Enclave key generation")
+check(signedDeviceValidationPlan.steps.map(\.kind).contains(.accessControlChallenge), "Signed-device validation should require access-control challenge")
+check(signedDeviceValidationPlan.steps.map(\.kind).contains(.wrongDeviceRejection), "Signed-device validation should require wrong-device rejection")
+check(signedDeviceValidationPlan.steps.allSatisfy(\.requiresPhysicalDevice), "Signed-device validation steps should require a physical device")
+check(signedDeviceValidationPlan.steps.allSatisfy(\.forbidsPrivateKeyBytes), "Signed-device validation steps should forbid private key bytes")
+let signedDevicePendingReceipt = SignedDeviceKeychainValidationScaffold.pendingReceipt(
+    for: signedDeviceValidationPlan,
+    createdAt: fixedDate
+)
+check(signedDevicePendingReceipt.isHonestPendingReceipt, "Signed-device pending receipt should be honest and non-production")
+check(!signedDevicePendingReceipt.isProductionPassReceipt, "Pending signed-device receipt should not pass production gate")
+check(signedDevicePendingReceipt.stepReceipts.count == signedDeviceValidationPlan.steps.count, "Signed-device pending receipt should mirror all plan steps")
+check(signedDevicePendingReceipt.stepReceipts.allSatisfy { !$0.containsPrivateKeyBytes }, "Signed-device receipts should not contain private key bytes")
+check(!signedDevicePendingReceipt.canBeUsedForTestFlightGate, "Pending signed-device receipt should not be usable for TestFlight gate")
+check(!signedDevicePendingReceipt.canBeUsedForAppStoreGate, "Pending signed-device receipt should not be usable for App Store gate")
+
 let cryptoKitMediaVaultPlan = CryptoKitMediaVaultImplementationPlan.plan(for: secureEnclaveKeyReceipt.record)
 check(cryptoKitMediaVaultPlan.isTSDProductionCryptoPlanSafe, "CryptoKit media vault plan should preserve TSD production crypto boundaries")
 check(cryptoKitMediaVaultPlan.contentEncryptionAlgorithm == "CryptoKit.AES.GCM", "CryptoKit media vault should use AES.GCM content encryption")
@@ -299,10 +336,11 @@ check(!cryptoKitMediaVaultPlan.allowsCloudUpload, "CryptoKit media vault should 
 check(!cryptoKitMediaVaultPlan.allowsAIProviderAccess, "CryptoKit media vault should not allow AI/provider access")
 check(cryptoKitMediaVaultPlan.requiresSignedDeviceValidation, "CryptoKit media vault should still require signed-device validation")
 
-check(KeychainProductionChecklist.rows.count == 4, "Keychain production checklist should track four rows after v53")
+check(KeychainProductionChecklist.rows.count == 5, "Keychain production checklist should track five rows after v54")
 check(KeychainProductionChecklist.rows.first { $0.id == "keychain-record-store" }?.status == .poc, "Keychain record store adapter should be PoC after v41")
 check(KeychainProductionChecklist.rows.first { $0.id == "cryptokit-media-vault-plan" }?.status == .poc, "CryptoKit media vault plan should be PoC after v52")
 check(KeychainProductionChecklist.rows.first { $0.id == "secure-enclave-key-plan" }?.status == .poc, "Secure Enclave key plan should be PoC after v53")
+check(KeychainProductionChecklist.rows.first { $0.id == "signed-device-validation-scaffold" }?.status == .poc, "Signed-device validation scaffold should be PoC after v54")
 check(KeychainProductionChecklist.rows.filter { $0.status == .todo }.count == 1, "Signed-device Keychain test should remain todo")
 
 let gatewayRequest = DeepSeekGatewayClientPlan.request(for: aiEnvelope, accountID: deviceKey.accountID)
@@ -698,12 +736,13 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "53", "TestFlight build notes should match v53")
+check(buildNotes.buildNumber == "54", "TestFlight build notes should match v54")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("CryptoKit"), "TestFlight build notes should mention CryptoKit media vault envelope")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Secure Enclave device-key"), "TestFlight build notes should mention Secure Enclave device-key contract")
+check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device validation scaffold"), "TestFlight build notes should mention signed-device validation scaffold")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -732,4 +771,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, and v53 Secure Enclave device-key contract are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, and v54 signed-device Keychain validation scaffold are aligned.")
