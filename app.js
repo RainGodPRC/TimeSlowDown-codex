@@ -85,6 +85,11 @@ const defaultState = {
   mediaDraft: null,
   lastAiTaskAt: "",
   aiDraftRevokedAt: "",
+  gatewayStatus: "idle",
+  gatewayBudgetCents: 0,
+  gatewayConsentAt: "",
+  gatewayFallbackAt: "",
+  gatewayRevokedAt: "",
   accountMode: "guest",
   syncMode: "local",
   lastSyncAt: "",
@@ -383,6 +388,11 @@ function vaultPayload() {
       quarterRevealed: state.quarterRevealed,
       lastAiTaskAt: state.lastAiTaskAt,
       aiDraftRevokedAt: state.aiDraftRevokedAt,
+      gatewayStatus: state.gatewayStatus,
+      gatewayBudgetCents: state.gatewayBudgetCents,
+      gatewayConsentAt: state.gatewayConsentAt,
+      gatewayFallbackAt: state.gatewayFallbackAt,
+      gatewayRevokedAt: state.gatewayRevokedAt,
       accountMode: state.accountMode,
       syncMode: state.syncMode,
       lastSyncAt: state.lastSyncAt,
@@ -510,7 +520,7 @@ function mediaLibraryStats() {
 function mediaLibraryManifest() {
   return {
     product: "TimeSlowDown Media Library Production Facade",
-    version: "v20-demo",
+    version: "v21-demo",
     generatedAt: new Date().toISOString(),
     boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service.",
     media: mediaMoments().map(moment => ({
@@ -932,7 +942,7 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v20 已支持分享工作室 PNG 导出和分享成品边界，并保留媒体入口与媒体库生产边界。",
+    "4. v21 已支持模型网关控制台、分享工作室 PNG 导出和媒体入口/媒体库生产边界。",
     "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "6. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -952,7 +962,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v20 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除、PNG 分享成品和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v21 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除、PNG 分享成品、模型任务缓存删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -980,6 +990,63 @@ function revokeAiDraft() {
   });
 }
 
+function gatewaySnapshot() {
+  const sheet = aiTaskSheet();
+  const queue = [
+    { id: "compile-week", label: "周章节编译", route: sheet.route, risk: "低", status: state.gatewayStatus === "sent" ? "已模拟发送" : "待授权" },
+    { id: "quarter-recall", label: "90 天回忆候选", route: "L0→L2 可选", risk: "中", status: state.quarterRevealed ? "可排队" : "等待用户揭开季度风景" },
+    { id: "media-caption", label: "影像备注整理", route: "L0 默认", risk: "高", status: "需单独授权看图" }
+  ];
+  return {
+    provider: "DeepSeek V4 Flash",
+    region: "PoC · 真实生产需供应商审查",
+    status: state.gatewayStatus,
+    budgetCap: 30,
+    budgetUsed: state.gatewayBudgetCents || 0,
+    queue,
+    ledger: [
+      ["最近授权", state.gatewayConsentAt || "尚未授权"],
+      ["最近模拟发送", state.lastAiTaskAt || "尚未发送"],
+      ["最近降级", state.gatewayFallbackAt || "尚未触发"],
+      ["最近撤销", state.gatewayRevokedAt || state.aiDraftRevokedAt || "尚未撤销"]
+    ]
+  };
+}
+
+function simulateGatewayTask() {
+  const now = new Date().toLocaleString("zh-CN");
+  setState({
+    aiMode: "deepseek",
+    gatewayStatus: "sent",
+    gatewayConsentAt: state.gatewayConsentAt || now,
+    lastAiTaskAt: now,
+    gatewayBudgetCents: Math.min(30, (state.gatewayBudgetCents || 0) + 4),
+    aiDraftRevokedAt: "",
+    toast: "已模拟 DeepSeek V4 Flash 网关任务：只发送任务单允许字段，并记录预算。"
+  });
+}
+
+function simulateGatewayFallback() {
+  const now = new Date().toLocaleString("zh-CN");
+  setState({
+    aiMode: "rules",
+    gatewayStatus: "fallback",
+    gatewayFallbackAt: now,
+    toast: "已模拟模型不可用：任务退回 L0 本地规则层，记录不中断。"
+  });
+}
+
+function revokeGatewayConsent() {
+  const now = new Date().toLocaleString("zh-CN");
+  setState({
+    aiMode: "rules",
+    gatewayStatus: "revoked",
+    gatewayRevokedAt: now,
+    aiDraftRevokedAt: now,
+    toast: "已撤销本次模型授权。后续编译回到本地规则层，原始切片仍可导出/删除。"
+  });
+}
+
 async function copyAiTaskSheet() {
   const sheet = aiTaskSheet();
   const text = [
@@ -998,6 +1065,28 @@ async function copyAiTaskSheet() {
     setState({ toast: "AI 任务单已复制：它说明了本次任务会发什么、不发什么。" });
   } catch {
     setState({ toast: "浏览器不允许自动复制；请直接查看 AI 任务单。" });
+  }
+}
+
+async function copyGatewayReport() {
+  const gateway = gatewaySnapshot();
+  const text = [
+    "TimeSlowDown 模型网关报告（Demo 模拟）：",
+    `Provider：${gateway.provider}`,
+    `状态：${gateway.status}`,
+    `预算：${gateway.budgetUsed}/${gateway.budgetCap} cents`,
+    "队列：",
+    ...gateway.queue.map(item => `- ${item.label}｜${item.route}｜风险:${item.risk}｜${item.status}`),
+    "审计：",
+    ...gateway.ledger.map(([key, value]) => `- ${key}: ${value}`),
+    "边界：当前公网 Demo 不调用真实模型；生产版需供应商审查、最小字段、撤销、导出删除和地区数据边界。"
+  ].join("\n");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ toast: "模型网关报告已复制，可发给 agent、审核者或未来后端实现者。" });
+  } catch {
+    setState({ toast: "浏览器不允许自动复制；请直接查看模型网关控制台。" });
   }
 }
 
@@ -1179,6 +1268,10 @@ function bindEvents() {
   $$("[data-simulate-ai-task]").forEach(btn => btn.addEventListener("click", simulateAiTask));
   $$("[data-revoke-ai-draft]").forEach(btn => btn.addEventListener("click", revokeAiDraft));
   $$("[data-copy-ai-task]").forEach(btn => btn.addEventListener("click", copyAiTaskSheet));
+  $$("[data-gateway-run]").forEach(btn => btn.addEventListener("click", simulateGatewayTask));
+  $$("[data-gateway-fallback]").forEach(btn => btn.addEventListener("click", simulateGatewayFallback));
+  $$("[data-gateway-revoke]").forEach(btn => btn.addEventListener("click", revokeGatewayConsent));
+  $$("[data-copy-gateway]").forEach(btn => btn.addEventListener("click", copyGatewayReport));
   $$("[data-simulate-backup]").forEach(btn => btn.addEventListener("click", simulateEncryptedBackup));
   $$("[data-pause-sync]").forEach(btn => btn.addEventListener("click", pauseSync));
   $$("[data-resume-sync]").forEach(btn => btn.addEventListener("click", resumeSync));
@@ -2023,7 +2116,7 @@ function guideView() {
         ], "soft")}
         ${boundaryColumn("生产待做", [
           "真实账户、E2EE 密钥恢复与服务端同步",
-          "真实模型网关与成本/额度策略",
+          "真实 API 接入、供应商条款和生产密钥管理",
           "App Store 隐私营养标签",
           "PWA manifest / iOS 原生壳与图标资产"
         ], "warn")}
@@ -2039,7 +2132,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v20</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v21</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -2047,7 +2140,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v20 仍不调用真实模型和真实账户；它把“照片/视频优先”的入口、媒体库边界和 PNG 分享成品放进同一条产品路径，同时用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v21 仍不调用真实模型和真实账户；它把“照片/视频优先”的入口、媒体库边界、PNG 分享成品和模型网关控制台放进同一条产品路径，同时用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -2062,6 +2155,7 @@ function guideView() {
         ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
         ${readiness("媒体优先入口", "v19", "首次进入即可从照片/视频开始，文字可后补；影像被视为切片锚点而非附件。")}
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
+        ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
         ${readiness("媒体库生产", "v18", "相册权限、E2EE 影像库、缩略图、导出删除与 Web Share 边界。")}
@@ -2091,7 +2185,7 @@ function reviewView() {
   return `
     <div class="topline"><div><div class="brand">审核中心</div><div class="micro">给试用者、agent、未来审核和法务看的边界页。</div></div></div>
     <section class="guide-card review-hero">
-      <div class="eyebrow">Review Packet · v20</div>
+      <div class="eyebrow">Review Packet · v21</div>
       <h1 class="hero-title">这份 Demo，<br/>哪些能试，哪些还不能承诺。</h1>
       <p class="hero-subtitle">TSD 处理的是人生记忆，所以“说清楚”本身就是产品能力。这里不是法律意见，而是商品级 App 上线前必须补齐的审核材料雏形。</p>
       <div class="action-row"><button class="primary" data-copy-review>复制审核包摘要</button><button class="secondary" data-view="guide">回到试用指南</button></div>
@@ -2134,7 +2228,7 @@ function reviewView() {
         ${readiness("原生壳", "待做", "iOS 项目、权限弹窗、安装资产、App Icon。")}
         ${readiness("账户同步", "待做", "真实登录、E2EE、密钥恢复、设备管理。")}
         ${readiness("媒体库", "v18/v20 雏形", "相册权限、加密影像库、缩略图、导出删除、PNG 成品和分享边界已产品化。")}
-        ${readiness("模型网关", "待做", "DeepSeek 适配、限流、成本预算、供应商条款。")}
+        ${readiness("模型网关", "v21 假面", "Provider 状态、限流预算、任务队列、失败降级和撤销日志已产品化；真实 API/密钥仍待接入。")}
         ${readiness("合规文本", "待做", "正式隐私政策、用户协议、数据处理活动台账。")}
         ${readiness("审核材料", "雏形", "本页可作为未来审核/法务任务清单，不代表已通过。")}
       </div>
@@ -2257,6 +2351,7 @@ function aiTaskSheet() {
 function aiView() {
   const selected = goldenSamples.find(sample => sample.id === state.selectedGolden) || goldenSamples[0];
   const sheet = aiTaskSheet();
+  const gateway = gatewaySnapshot();
   return `
     <div class="topline"><div><div class="brand">AI 忠实编辑器</div><div class="micro">不是代写日记，是把线索整理成可认领草稿。</div></div></div>
     <section class="ai-card">
@@ -2324,6 +2419,34 @@ function aiView() {
       <p class="source-line">这不是弹一个吓人的合规窗，而是把“数据离机前发生了什么”做成用户能读懂、能撤销、能带走的任务单。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
+    <section class="ai-card gateway-card">
+      <h2 class="section-title">模型网关控制台 <span class="micro">v21 · DeepSeek PoC</span></h2>
+      <div class="gateway-console">
+        <div class="gateway-head">
+          <div><span>Provider</span><strong>${gateway.provider}</strong><em>${gateway.region}</em></div>
+          <div><span>状态</span><strong>${gatewayStatusLabel(gateway.status)}</strong><em>${state.aiMode === "deepseek" ? "云 PoC 路径" : "本地优先路径"}</em></div>
+        </div>
+        <div class="gateway-stats">
+          ${gatewayStat("预算", `${gateway.budgetUsed}/${gateway.budgetCap}¢`, "单次 PoC 上限")}
+          ${gatewayStat("队列", gateway.queue.length, "可审计任务")}
+          ${gatewayStat("授权", state.gatewayConsentAt ? "已记" : "未授权", "每次任务单独确认")}
+        </div>
+        <div class="gateway-budget"><i style="width:${Math.min(100, Math.round((gateway.budgetUsed / gateway.budgetCap) * 100))}%"></i></div>
+        <div class="gateway-queue">
+          ${gateway.queue.map(gatewayQueueRow).join("")}
+        </div>
+        <div class="gateway-ledger">
+          ${gateway.ledger.map(([label, value]) => gatewayLedgerRow(label, value)).join("")}
+        </div>
+        <div class="action-row">
+          <button class="primary" data-gateway-run>授权并模拟发送</button>
+          <button class="secondary" data-gateway-fallback>模拟失败降级</button>
+          <button class="secondary" data-copy-gateway>复制网关报告</button>
+          <button class="ghost danger" data-gateway-revoke>撤销模型授权</button>
+        </div>
+      </div>
+      <p class="source-line">v21 不伪装真实 API 调用；它把未来真实 DeepSeek 网关的 provider、预算、队列、授权、降级和撤销做成可审计界面。</p>
+    </section>
     <section class="ai-card">
       <h2 class="section-title">模型路由与降级 <span class="micro">v12 生产边界</span></h2>
       <div class="route-stack">
@@ -2342,6 +2465,30 @@ function aiView() {
       <p class="source-line">v12 不伪装真实 API 调用。DeepSeek V4 Flash 仍是首发 PoC 目标，但当前公网 Demo 只展示路由、任务单、门禁和降级策略。</p>
     </section>
   `;
+}
+
+function gatewayStatusLabel(status) {
+  if (status === "sent") return "已模拟发送";
+  if (status === "fallback") return "已降级";
+  if (status === "revoked") return "已撤销";
+  return "待授权";
+}
+
+function gatewayStat(label, value, copy) {
+  return `<div class="gateway-stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span><em>${escapeHtml(copy)}</em></div>`;
+}
+
+function gatewayQueueRow(item) {
+  return `<div class="gateway-queue-row">
+    <span>${escapeHtml(item.id)}</span>
+    <strong>${escapeHtml(item.label)}</strong>
+    <em>${escapeHtml(item.route)} · 风险 ${escapeHtml(item.risk)}</em>
+    <small>${escapeHtml(item.status)}</small>
+  </div>`;
+}
+
+function gatewayLedgerRow(label, value) {
+  return `<div class="gateway-ledger-row"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
 }
 
 function evalRow(title, copy, value) {
@@ -2534,7 +2681,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v20 已把媒体优先入口、媒体库生产假面和 PNG 分享成品串起来：用户可以从照片/视频开始，生成切片、进入媒体墙，再把周章节/季度回忆/人生旷野导出成可分享图片。下一步继续补安装资产或真实模型网关。</p>
+      <p>当前 v21 已把媒体优先入口、媒体库生产假面、PNG 分享成品和模型网关控制台串起来：用户可以从照片/视频开始，生成切片、进入媒体墙，把周章节/季度回忆/人生旷野导出成图，也能看到 AI 任务如何授权、预算、降级和撤销。下一步继续补安装资产或更完整的生产隐私文本。</p>
     </section>
   </aside>`;
 }
