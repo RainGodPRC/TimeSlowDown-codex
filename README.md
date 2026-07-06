@@ -24,6 +24,7 @@ Current demo focus:
 - Media memory anchors: attach photo/video files, external media links, and notes when creating a slice or later when reviewing existing slices
 - Media memory wall: filter bound media by image/video/link and browse a recall timeline
 - Media-first Quick Mark: start a slice directly from a photo/video, then optionally add text later
+- Memory Camera entry: a top dock, bottom floating `+ image` action, and visible photo/video CTAs make image-first capture a primary mobile path
 - Global media dock: a visible photo/video entry is available before text so users can anchor a moment first and write later
 - Retroactive media attach: add or replace a photo/video anchor from a weekly review card so memory is not forced to rely on text alone
 - People/place lens: regroup slices by user-written people and places without contacts, GPS, or face recognition

@@ -100,15 +100,29 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 }
 .media-dock-copy strong { display:block; font-size: 12px; }
 .media-dock-copy span { display:block; color: var(--muted); font-size: 10px; line-height:1.3; margin-top:2px; text-wrap: pretty; }
-.media-dock-button, .media-inline-file { position:relative; overflow:hidden; cursor:pointer; }
+.media-dock-button, .media-inline-file, .memory-camera-fab { position:relative; overflow:hidden; cursor:pointer; }
 .media-dock-button {
   min-height: 36px; border-radius: 14px; padding: 0 12px; display:grid; place-items:center; color:#fff; background: var(--ink); font-size: 11px; font-weight:900; white-space:nowrap;
 }
-.media-dock-button input, .media-inline-file input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+.media-dock-button input, .media-inline-file input, .memory-camera-fab input { position:absolute; inset:0; opacity:0; cursor:pointer; }
 .media-dock-note {
   margin: 12px 0 0; color: rgba(85,116,95,.92); background: rgba(85,116,95,.09); border:1px solid rgba(85,116,95,.12);
   border-radius: 15px; padding: 10px 11px; font-size: 11px; line-height:1.45; font-weight:800;
 }
+.memory-camera-fab {
+  position:absolute; left:50%; bottom: 88px; transform: translateX(-50%); z-index: 22;
+  min-width: 118px; min-height: 54px; border-radius: 999px; padding: 7px 13px 7px 8px;
+  display:flex; align-items:center; gap: 8px; border: 1px solid rgba(255,255,255,.68);
+  color:#fff; background: linear-gradient(145deg, var(--ink), #426552);
+  box-shadow: 0 18px 44px rgba(32,52,43,.28), inset 0 1px 0 rgba(255,255,255,.18);
+}
+.memory-camera-fab .camera-mark {
+  width: 38px; height: 38px; border-radius: 50%; display:grid; place-items:center;
+  color: var(--ink); background: #fffdf7; font-size: 24px; line-height: 1; font-weight: 900;
+}
+.camera-copy { display:grid; line-height:1.05; }
+.camera-copy strong { font-size: 13px; }
+.camera-copy em { font-style: normal; color: rgba(255,255,255,.72); font-size: 10px; margin-top: 3px; }
 
 .radar { margin-top: 18px; display: grid; gap: 10px; }
 .media-first-strip {
@@ -424,7 +438,7 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
 .bottom-nav {
   position: absolute; left: 14px; right: 14px; bottom: 14px; min-height: 64px; border-radius: 24px;
   background: rgba(255,253,247,.86); border: 1px solid rgba(32,52,43,.1); box-shadow: 0 18px 45px rgba(47,60,50,.16), inset 0 1px 0 rgba(255,255,255,.74);
-  display:grid; grid-template-columns: repeat(6, 1fr); padding: 6px;
+  display:grid; grid-template-columns: repeat(7, 1fr); padding: 6px;
   backdrop-filter: blur(22px) saturate(1.15);
 }
 .nav-btn { min-width: 44px; min-height: 52px; border-radius: 18px; background: transparent; color: var(--muted); font-size: 10px; font-weight: 800; display:flex; flex-direction:column; align-items:center; justify-content:center; gap: 4px; transition-property: transform, background-color, color; transition-duration:.18s; transition-timing-function:cubic-bezier(.2,0,0,1); }
@@ -877,6 +891,7 @@ button, .claim-card, .atlas-page, .week-chip, .journey-step { -webkit-tap-highli
   .screen { min-height: 100vh; border-radius: 0; }
   .screen-body { padding-bottom: calc(156px + env(safe-area-inset-bottom)); }
   .bottom-nav { position: fixed; left: 14px; right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); z-index: 20; }
+  .memory-camera-fab { position: fixed; bottom: calc(88px + env(safe-area-inset-bottom)); }
   .side-panel { display: none; }
   .kpi-grid { grid-template-columns: repeat(2, 1fr); }
   .vault-grid { grid-template-columns: repeat(2, 1fr); }
