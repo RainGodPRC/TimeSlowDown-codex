@@ -307,7 +307,9 @@ function handleMediaFile(event) {
   if (!file) return;
   const nextView = event.currentTarget?.dataset.afterView;
   const clearDraft = event.currentTarget?.dataset.clearDraft === "true";
+  const onboardFromMedia = event.currentTarget?.dataset.onboardMedia === "true";
   const contextPatch = {
+    ...(onboardFromMedia ? { onboarded: true } : {}),
     ...(nextView ? { view: nextView } : {}),
     ...(clearDraft ? { draft: "" } : {})
   };
@@ -502,7 +504,7 @@ function mediaLibraryStats() {
 function mediaLibraryManifest() {
   return {
     product: "TimeSlowDown Media Library Production Facade",
-    version: "v18-demo",
+    version: "v19-demo",
     generatedAt: new Date().toISOString(),
     boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service.",
     media: mediaMoments().map(moment => ({
@@ -781,7 +783,7 @@ async function copyPrivacySummary() {
     "1. 当前公网 Demo 不接入真实登录、云同步或真实 DeepSeek API。",
     "2. Demo 数据保存在当前浏览器 localStorage，可导出 JSON，也可清空。",
     "3. AI 任务单只模拟最小必要字段：被认领切片、来源、用户授权目的；不会发送完整人生档案或原始影像。",
-    "4. v18 已把媒体库生产边界做成可点击演示：有限相册选择、E2EE 影像库、缩略图、导出删除和去隐私分享。",
+    "4. v19 已把照片/视频入口抬到首次进入路径，并保留媒体库生产边界：有限相册选择、E2EE 影像库、缩略图、导出删除和去隐私分享。",
     "5. 生产版必须在账户同步、E2EE、模型处理、删除恢复窗口和地区数据边界完成后，才允许处理真实用户记忆。",
     "6. AI 只做忠实编辑，不替用户决定人生意义。"
   ].join("\n");
@@ -801,7 +803,7 @@ async function copyReviewPacket() {
     "2. 权限策略：Demo 不请求持久相册、定位、通讯录、日历、麦克风或通知权限；影像只来自用户主动选择的文件或粘贴的链接。",
     "3. 数据策略：Demo 数据保存在浏览器 localStorage，可导出 JSON、复制备份、清空本地数据。",
     "4. AI 策略：当前不调用真实 DeepSeek API；AI 任务单只展示未来最小字段、禁止字段、失败降级和撤销权。",
-    "5. 媒体策略：v18 演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
+    "5. 媒体策略：v19 允许从首次进入就选择照片/视频作为切片锚点，并演示有限相册选择、E2EE 影像库、缩略图、原始文件导出/删除和 Web Share 边界；不做人脸识别或 GPS 推断。",
     "6. 同步策略：同步控制台是状态机演示；真实账户、E2EE、密钥恢复、地区数据边界仍属生产待做。",
     "7. 上线前必须完成正式隐私政策、权限说明、供应商审查、生成式 AI 标识与法律评审。"
   ].join("\n");
@@ -1133,7 +1135,7 @@ function onboardingTemplate() {
       <div>
         <div class="eyebrow">Time Slow Down</div>
         <h1 class="onboard-title">不是活一辈子，<br/>而是活几个瞬间。</h1>
-        <p class="onboard-copy">TSD 帮你把日复一日里真正不同的地方留下。今天先不用写日记，只要标记一个瞬间。</p>
+        <p class="onboard-copy">TSD 帮你把日复一日里真正不同的地方留下。可以从一张照片、一段视频或一句话开始；影像不是附件，而是回忆的锚点。</p>
       </div>
       <div class="onboard-art">
         <div class="meadow" style="position:absolute;left:16px;right:16px;bottom:16px"></div>
@@ -1143,6 +1145,17 @@ function onboardingTemplate() {
           <p class="micro">不是靠连续打卡，而是靠被你认领过的切片。</p>
         </div>
       </div>
+      <section class="media-first-strip">
+        <div>
+          <div class="eyebrow">Photo / Video First</div>
+          <strong>先选一张照片，文字可以以后再补。</strong>
+          <span>选择后会直接进入今日切片：照片/视频会和这一天绑定，成为以后唤回现场的影像线索。</span>
+        </div>
+        <label class="media-first-button">
+          <span>从照片/视频开始</span>
+          <input data-media-file data-onboard-media="true" data-after-view="slice" data-clear-draft="true" type="file" accept="image/*,video/*" />
+        </label>
+      </section>
       <div>
         <button class="primary" data-onboard>留下今天的第一个瞬间</button>
         <button class="ghost" data-reset>重置 Demo</button>
@@ -1853,7 +1866,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v18</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">v19</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -1861,7 +1874,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v18 仍不调用真实模型和真实账户；它把未来生产路径写清楚，并用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头和媒体库生产假面说明数据、权限、合规材料与公开分享边界。</p>
+      <p class="source-line">v19 仍不调用真实模型和真实账户；它把“照片/视频优先”的入口前置到 onboarding，同时用 AI 任务单、同步控制台、审核中心、分享工作室、影像线索、媒体记忆墙、人物地点镜头和媒体库生产假面说明数据、权限、合规材料与公开分享边界。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -1874,6 +1887,7 @@ function guideView() {
         ${readiness("审核中心", "v12", "权限说明、FAQ、隐私标签雏形可查看。")}
         ${readiness("视觉成品", "v13", "分享工作室可生成周章节、季度回忆和人生旷野卡。")}
         ${readiness("影像线索", "v14", "Quick Mark 支持照片/视频文件、影像链接和影像备注。")}
+        ${readiness("媒体优先入口", "v19", "首次进入即可从照片/视频开始，文字可后补；影像被视为切片锚点而非附件。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
         ${readiness("媒体库生产", "v18", "相册权限、E2EE 影像库、缩略图、导出删除与 Web Share 边界。")}
@@ -2346,7 +2360,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v18 已补媒体库生产假面：用户可以看到相册权限、加密影像库、缩略图、导出删除和 Web Share 的商品级边界；媒体记忆墙、人物地点镜头、分享卡片和隐私边界已经进入同一个体验。下一步继续补安装资产、真实模型网关或真实图片导出。</p>
+      <p>当前 v19 已把媒体优先入口前置到 onboarding：用户可以从照片/视频开始，而不是被迫先写文字；媒体库生产假面、媒体记忆墙、人物地点镜头、分享卡片和隐私边界已经进入同一个体验。下一步继续补安装资产、真实模型网关或真实图片导出。</p>
     </section>
   </aside>`;
 }
