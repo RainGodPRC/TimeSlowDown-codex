@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "65",
-        summary: String = "TimeSlowDown v65 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "66",
+        summary: String = "TimeSlowDown v66 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -75,7 +75,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v63 adds a backend release manifest gate that remains blocked until a real HTTPS TSD backend, server-side DeepSeek secret manager, weekly chapter endpoint, deletion jobs endpoint, audit/deletion worker, live provider receipt, completed deletion receipt, and deployment review exist.",
             "v64 adds an App Privacy questionnaire packet that maps user content, photo/video anchors, account identifiers, purchases, diagnostics, minimal AI task payloads, and optional encrypted sync to App Store privacy answers, but keeps final App Store Connect/legal completion blocked.",
             "v65 adds an Age Rating review packet that maps private user memory/media content, no public social feed, no Kids Category claim, AI editing boundaries, external links, purchases, and support contact requirements while keeping final legal/release age-rating review blocked.",
-            "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
+            "v66 adds a signed-device media validation packet for PhotosPicker import and Files/share export evidence, while keeping actual Photos and Files release gates blocked until a real physical-device pass receipt exists.",
+            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
     ) {
@@ -717,7 +718,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "65", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "66", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -760,6 +761,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
+        signedDeviceMediaReceipt: SignedDeviceMediaValidationReceipt? = nil,
         deepSeekReceipt: DeepSeekGatewayIntegrationReceipt? = nil,
         deletionReceipt: DeletionServiceLiveProbeReceipt? = nil,
         nativeRows: [ReadinessRow] = NativeHandoffLedger.rows,
@@ -774,6 +776,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let finalLegalURLsReady = publicURLPacket.canSatisfyFinalLegalURLGate
         let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
         let ageRatingShapeReady = ageRatingReviewPacket.canSatisfyAgeRatingShapeGate
+        let mediaValidationPacketShapeReady = signedDeviceMediaReceipt?.isHonestPendingReceipt == true || signedDeviceMediaReceipt?.isProductionPassReceipt == true
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
         nativeRows.map(\.id).contains("keychain-e2ee") &&
         nativeRows.map(\.id).contains("deepseek-gateway")
@@ -785,6 +788,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
         let productionContractsCovered = productionRows.count >= 7 && productionRows.allSatisfy { $0.status == .poc }
         let signedDevicePassed = signedDeviceReceipt?.isProductionPassReceipt == true
+        let photosImportPassed = photosImportSignedDevicePassed || signedDeviceMediaReceipt?.isProductionPhotosImportPassReceipt == true
+        let filesExportPassed = filesExportSignedDevicePassed || signedDeviceMediaReceipt?.isProductionFilesExportPassReceipt == true
         let aiProviderPassed = deepSeekReceipt?.canBeUsedForAppStoreGate == true
         let deletionCompleted = deletionReceipt?.canSatisfyAppStoreDeletionGate == true
         let backendDeploymentPassed = backendReleaseEvidence.canSatisfyBackendDeploymentGate
@@ -901,17 +906,25 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 unblockAction: "Run the signed production app on a physical device and capture all Secure Enclave/Keychain step receipts."
             ),
             .init(
+                id: "signed-device-media-validation-packet",
+                title: "Signed-device media validation packet",
+                status: mediaValidationPacketShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: mediaValidationPacketShapeReady ? "v66 defines honest pending/pass receipt shape for limited-library Photos import and system Files/share export without storing raw media evidence." : "Signed-device media validation packet is missing or malformed.",
+                unblockAction: "Create an honest pending packet here, then replace it only with a real physical-device pass receipt after signed PhotosPicker and Files export validation."
+            ),
+            .init(
                 id: "signed-device-photos-import",
                 title: "Signed-device Photos import pass",
-                status: photosImportSignedDevicePassed ? .passed : .blocked,
-                evidence: photosImportSignedDevicePassed ? "Limited-library import passed on signed device." : "Photos import is contract-tested only; signed-device PhotosPicker validation is missing.",
+                status: photosImportPassed ? .passed : .blocked,
+                evidence: photosImportPassed ? "Limited-library photo/video import passed on signed device." : "Photos import is contract-tested only; signed-device PhotosPicker validation is missing.",
                 unblockAction: "Validate limited-library photo/video import on a signed physical device."
             ),
             .init(
                 id: "signed-device-files-export",
                 title: "Signed-device Files export pass",
-                status: filesExportSignedDevicePassed ? .passed : .blocked,
-                evidence: filesExportSignedDevicePassed ? "Files/share export passed on signed device." : "ZIP/fileExporter path is contract-tested only; signed-device Files export validation is missing.",
+                status: filesExportPassed ? .passed : .blocked,
+                evidence: filesExportPassed ? "Files/share export and ZIP re-open passed on signed device." : "ZIP/fileExporter path is contract-tested only; signed-device Files export validation is missing.",
                 unblockAction: "Validate Files/share-sheet export and re-open the ZIP package on a signed physical device."
             ),
             .init(

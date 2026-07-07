@@ -274,7 +274,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>65</string>"), "Info.plist should carry v65 build number")
+check(infoPlistText.contains("<string>66</string>"), "Info.plist should carry v66 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -464,6 +464,118 @@ check(signedDevicePendingReceipt.stepReceipts.count == signedDeviceValidationPla
 check(signedDevicePendingReceipt.stepReceipts.allSatisfy { !$0.containsPrivateKeyBytes }, "Signed-device receipts should not contain private key bytes")
 check(!signedDevicePendingReceipt.canBeUsedForTestFlightGate, "Pending signed-device receipt should not be usable for TestFlight gate")
 check(!signedDevicePendingReceipt.canBeUsedForAppStoreGate, "Pending signed-device receipt should not be usable for App Store gate")
+
+let signedDeviceMediaEnvironment = SignedDeviceMediaValidationEnvironment.unsignedSwiftPMHost()
+check(!signedDeviceMediaEnvironment.canRunSignedDeviceMediaValidation, "Unsigned SwiftPM host should not claim signed-device media validation capability")
+check(signedDeviceMediaEnvironment.bundleIdentifier == "com.raingodprc.timeslowdown", "Signed-device media environment should preserve production bundle identifier")
+check(signedDeviceMediaEnvironment.teamID == nil, "Unsigned media environment should not fake an Apple Developer Team ID")
+check(!signedDeviceMediaEnvironment.hasFullXcode, "Unsigned media environment should not pretend full Xcode exists")
+check(!signedDeviceMediaEnvironment.hasAppleDeveloperTeam, "Unsigned media environment should not pretend Apple Developer access exists")
+check(!signedDeviceMediaEnvironment.signedBundleInstalled, "Unsigned media environment should not claim a signed bundle is installed")
+check(!signedDeviceMediaEnvironment.runningOnPhysicalDevice, "Unsigned media environment should not claim physical device execution")
+check(signedDeviceMediaEnvironment.photosPermissionMode == .notDetermined, "Unsigned media environment should not claim limited-library Photos permission")
+check(!signedDeviceMediaEnvironment.filesExporterAvailable, "Unsigned media environment should not claim Files exporter availability")
+check(!signedDeviceMediaEnvironment.networkRequired, "Signed-device media validation scaffold should not require network access")
+
+let mediaPhotoImportRequest = PhotosLibraryByteImportAdapter.request(
+    for: photo,
+    representation: .thumbnailOnly
+)
+let mediaVideoImportRequest = PhotosLibraryByteImportAdapter.request(
+    for: video,
+    representation: .selectedOriginal,
+    consentReceiptID: "consent-media-original-demo"
+)
+check(mediaPhotoImportRequest.isTSDPhotosImportSafe, "Media validation photo import request should be Photos-safe")
+check(mediaVideoImportRequest.isTSDPhotosImportSafe, "Media validation video import request should be Photos-safe")
+check(mediaVideoImportRequest.allowsOriginalBytes, "Media validation original video request should require explicit consent")
+let signedDeviceMediaExportProbe = SignedDeviceMediaExportProbe(
+    fileName: shellExport.fileName,
+    byteCount: shellExport.data.count,
+    entryCount: shellExport.entries.count,
+    memoryRightsSafe: shellExport.isMemorySafeDefault,
+    canExportAfterSubscriptionEnds: shellExport.canBeGeneratedAfterSubscriptionEnds
+)
+check(signedDeviceMediaExportProbe.isTSDExportProbeSafe, "Signed-device media export probe should preserve ZIP/export rights boundaries")
+let signedDeviceMediaPlan = SignedDeviceMediaValidationScaffold.plan(
+    environment: signedDeviceMediaEnvironment,
+    importRequests: [mediaPhotoImportRequest, mediaVideoImportRequest],
+    exportProbe: signedDeviceMediaExportProbe,
+    generatedAt: fixedDate
+)
+check(signedDeviceMediaPlan.isTSDMediaValidationPlanSafe, "Signed-device media validation plan should preserve TSD media boundaries")
+check(signedDeviceMediaPlan.requiresExternalSignedDeviceWork, "Signed-device media plan should honestly require external signed-device work here")
+check(signedDeviceMediaPlan.status == .pendingSignedDevice, "Unsigned host media plan should stay pending signed device")
+check(!signedDeviceMediaPlan.productionValidationClaimed, "Unsigned host media plan should not claim production validation")
+check(signedDeviceMediaPlan.steps.count == 10, "Signed-device media validation plan should define ten required steps")
+check(signedDeviceMediaPlan.steps.map(\.kind).contains(.limitedLibraryPickerOpen), "Signed-device media validation should require limited-library picker evidence")
+check(signedDeviceMediaPlan.steps.map(\.kind).contains(.userSelectedPhotoImport), "Signed-device media validation should require photo import evidence")
+check(signedDeviceMediaPlan.steps.map(\.kind).contains(.userSelectedVideoImport), "Signed-device media validation should require video import evidence")
+check(signedDeviceMediaPlan.steps.map(\.kind).contains(.fileExporterPresentation), "Signed-device media validation should require Files exporter evidence")
+check(signedDeviceMediaPlan.steps.map(\.kind).contains(.exportedZIPReopen), "Signed-device media validation should require exported ZIP re-open evidence")
+check(signedDeviceMediaPlan.steps.allSatisfy(\.requiresPhysicalDevice), "Signed-device media validation steps should require a physical device")
+check(signedDeviceMediaPlan.steps.allSatisfy(\.forbidsRawMediaEvidence), "Signed-device media validation steps should forbid raw media evidence")
+let signedDeviceMediaPendingReceipt = SignedDeviceMediaValidationScaffold.pendingReceipt(
+    for: signedDeviceMediaPlan,
+    createdAt: fixedDate
+)
+check(signedDeviceMediaPendingReceipt.isHonestPendingReceipt, "Signed-device media pending receipt should be honest and non-production")
+check(!signedDeviceMediaPendingReceipt.isProductionPassReceipt, "Pending signed-device media receipt should not pass production gate")
+check(!signedDeviceMediaPendingReceipt.isProductionPhotosImportPassReceipt, "Pending media receipt should not satisfy Photos import gate")
+check(!signedDeviceMediaPendingReceipt.isProductionFilesExportPassReceipt, "Pending media receipt should not satisfy Files export gate")
+check(signedDeviceMediaPendingReceipt.stepReceipts.count == signedDeviceMediaPlan.steps.count, "Signed-device media pending receipt should mirror all plan steps")
+check(signedDeviceMediaPendingReceipt.stepReceipts.allSatisfy { !$0.containsRawMediaEvidence }, "Signed-device media receipts should not contain raw media evidence")
+
+let signedDeviceMediaPassStepReceipts = signedDeviceMediaPlan.steps.map { step in
+    SignedDeviceMediaValidationStepReceipt(
+        id: "signed-device-media-step-receipt-\(TrustDigest.checksum([signedDeviceMediaPlan.id, step.id, "pass"]).prefix(12))",
+        stepID: step.id,
+        status: .passed,
+        evidenceDigest: TrustDigest.checksum([step.id, "signed-device-media-pass"])
+    )
+}
+let signedDeviceMediaPassReceipt = SignedDeviceMediaValidationReceipt(
+    id: "signed-device-media-receipt-\(TrustDigest.checksum([signedDeviceMediaPlan.id, "pass"]).prefix(12))",
+    planID: signedDeviceMediaPlan.id,
+    status: .passed,
+    stepReceipts: signedDeviceMediaPassStepReceipts,
+    productionValidationClaimed: true,
+    canSatisfyPhotosImportGate: true,
+    canSatisfyFilesExportGate: true,
+    createdAt: fixedDate
+)
+check(signedDeviceMediaPassReceipt.isProductionPassReceipt, "Complete signed-device media pass receipt should satisfy production media gate")
+check(signedDeviceMediaPassReceipt.isProductionPhotosImportPassReceipt, "Complete signed-device media pass receipt should satisfy Photos import gate")
+check(signedDeviceMediaPassReceipt.isProductionFilesExportPassReceipt, "Complete signed-device media pass receipt should satisfy Files export gate")
+
+let rawEvidenceMediaReceipt = SignedDeviceMediaValidationReceipt(
+    id: "signed-device-media-receipt-\(TrustDigest.checksum([signedDeviceMediaPlan.id, "raw-evidence"]).prefix(12))",
+    planID: signedDeviceMediaPlan.id,
+    status: .passed,
+    stepReceipts: signedDeviceMediaPassStepReceipts,
+    productionValidationClaimed: true,
+    canSatisfyPhotosImportGate: true,
+    canSatisfyFilesExportGate: true,
+    containsRawMediaInEvidence: true,
+    createdAt: fixedDate
+)
+check(!rawEvidenceMediaReceipt.isProductionPassReceipt, "Signed-device media receipt should fail if evidence stores raw media")
+check(!rawEvidenceMediaReceipt.isProductionPhotosImportPassReceipt, "Raw-media evidence should not satisfy Photos import gate")
+check(!rawEvidenceMediaReceipt.isProductionFilesExportPassReceipt, "Raw-media evidence should not satisfy Files export gate")
+
+let missingFilesStepMediaReceipt = SignedDeviceMediaValidationReceipt(
+    id: "signed-device-media-receipt-\(TrustDigest.checksum([signedDeviceMediaPlan.id, "missing-files"]).prefix(12))",
+    planID: signedDeviceMediaPlan.id,
+    status: .passed,
+    stepReceipts: signedDeviceMediaPassStepReceipts.filter { $0.stepID != "signed-device-media-exported-zip-reopen" },
+    productionValidationClaimed: true,
+    canSatisfyPhotosImportGate: true,
+    canSatisfyFilesExportGate: true,
+    createdAt: fixedDate
+)
+check(!missingFilesStepMediaReceipt.isProductionPassReceipt, "Signed-device media receipt should fail when required ZIP re-open evidence is missing")
+check(missingFilesStepMediaReceipt.isProductionPhotosImportPassReceipt, "Missing Files-only evidence should not erase a complete Photos pass")
+check(!missingFilesStepMediaReceipt.isProductionFilesExportPassReceipt, "Missing ZIP re-open evidence should fail Files export gate")
 
 let cryptoKitMediaVaultPlan = CryptoKitMediaVaultImplementationPlan.plan(for: secureEnclaveKeyReceipt.record)
 check(cryptoKitMediaVaultPlan.isTSDProductionCryptoPlanSafe, "CryptoKit media vault plan should preserve TSD production crypto boundaries")
@@ -1385,13 +1497,14 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "65", "TestFlight build notes should match v65")
+check(buildNotes.buildNumber == "66", "TestFlight build notes should match v66")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("CryptoKit"), "TestFlight build notes should mention CryptoKit media vault envelope")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Secure Enclave device-key"), "TestFlight build notes should mention Secure Enclave device-key contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device validation scaffold"), "TestFlight build notes should mention signed-device validation scaffold")
+check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device media validation packet"), "TestFlight build notes should mention signed-device media validation packet")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -1424,6 +1537,7 @@ check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiv
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("backend release manifest"), "TestFlight build notes should disclose backend release manifest boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("App Privacy questionnaire packet"), "TestFlight build notes should disclose App Privacy questionnaire packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("Age Rating review packet"), "TestFlight build notes should disclose Age Rating review packet boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("signed-device media validation packet"), "TestFlight build notes should disclose signed-device media validation packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -1541,11 +1655,12 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     ageRatingReviewPacket: ageRatingPacket,
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
+    signedDeviceMediaReceipt: signedDeviceMediaPendingReceipt,
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "65", "App Store submission gate should track v65")
-check(appStoreSubmissionGate.rows.count == 20, "App Store submission gate should track twenty release gates after v65 Age Rating review packet")
+check(appStoreSubmissionGate.buildNumber == "66", "App Store submission gate should track v66")
+check(appStoreSubmissionGate.rows.count == 21, "App Store submission gate should track twenty-one release gates after v66 signed-device media validation packet")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -1559,6 +1674,7 @@ check(!appStoreSubmissionGate.blockerIDs.contains("app-privacy-questionnaire-pac
 check(appStoreSubmissionGate.blockerIDs.contains("age-rating-12-plus"), "Submission gate should block without age-rating review")
 check(!appStoreSubmissionGate.blockerIDs.contains("age-rating-review-packet"), "Age Rating review packet shape should not block once mapped")
 check(appStoreSubmissionGate.blockerIDs.contains("signed-device-keychain"), "Submission gate should block without signed-device Keychain/Secure Enclave pass")
+check(!appStoreSubmissionGate.blockerIDs.contains("signed-device-media-validation-packet"), "Signed-device media validation packet shape should not block once honestly mapped")
 check(appStoreSubmissionGate.blockerIDs.contains("signed-device-photos-import"), "Submission gate should block without signed-device Photos import pass")
 check(appStoreSubmissionGate.blockerIDs.contains("signed-device-files-export"), "Submission gate should block without signed-device Files export pass")
 check(appStoreSubmissionGate.blockerIDs.contains("backend-release-manifest"), "Submission gate should block without reviewed backend deployment evidence")
@@ -1568,6 +1684,33 @@ check(appStoreSubmissionGate.rows.first { $0.id == "bundle-id" }?.status == .pas
 check(appStoreSubmissionGate.rows.first { $0.id == "guest-review-route" }?.status == .passed, "Submission gate should pass the guest App Review route gate")
 check(appStoreSubmissionGate.rows.first { $0.id == "privacy-safe-defaults" }?.status == .passed, "Submission gate should pass privacy-safe defaults")
 check(appStoreSubmissionGate.rows.first { $0.id == "launch-contracts" }?.status == .passed, "Submission gate should pass local launch-contract coverage")
+
+let mediaPassedSubmissionGate = AppStoreSubmissionGate.current(
+    hasFullXcode: false,
+    archiveCreated: false,
+    testFlightUploadReceiptPresent: false,
+    supportPrivacyURLsPublished: false,
+    appPrivacyQuestionnaireCompleted: false,
+    ageRatingReviewedFor12Plus: false,
+    photosImportSignedDevicePassed: false,
+    filesExportSignedDevicePassed: false,
+    signingPlan: signingPlan,
+    buildNotes: buildNotes,
+    reviewRoute: reviewRoute,
+    privacyBoundary: boundary,
+    publicURLPacket: publicURLPacket,
+    appPrivacyQuestionnairePacket: appPrivacyPacket,
+    ageRatingReviewPacket: ageRatingPacket,
+    backendReleaseEvidence: TSDBackendReleaseEvidence(),
+    signedDeviceReceipt: signedDevicePendingReceipt,
+    signedDeviceMediaReceipt: signedDeviceMediaPassReceipt,
+    deepSeekReceipt: providerPassReceipt,
+    deletionReceipt: deletionLiveProbeReceipt
+)
+check(!mediaPassedSubmissionGate.blockerIDs.contains("signed-device-media-validation-packet"), "Production media pass receipt should satisfy media packet shape gate")
+check(!mediaPassedSubmissionGate.blockerIDs.contains("signed-device-photos-import"), "Production media pass receipt should satisfy Photos import gate")
+check(!mediaPassedSubmissionGate.blockerIDs.contains("signed-device-files-export"), "Production media pass receipt should satisfy Files export gate")
+check(mediaPassedSubmissionGate.blockerIDs.contains("full-xcode"), "Production media receipt should not mask unrelated Xcode blockers")
 
 let backendProvenSubmissionGate = AppStoreSubmissionGate.current(
     hasFullXcode: false,
@@ -1587,6 +1730,7 @@ let backendProvenSubmissionGate = AppStoreSubmissionGate.current(
     ageRatingReviewPacket: ageRatingPacket,
     backendReleaseEvidence: reviewedBackendEvidence,
     signedDeviceReceipt: signedDevicePendingReceipt,
+    signedDeviceMediaReceipt: signedDeviceMediaPendingReceipt,
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
@@ -1611,6 +1755,7 @@ let unprovenBackendSubmissionGate = AppStoreSubmissionGate.current(
     ageRatingReviewPacket: AppAgeRatingReviewPacket(noPublicSocialFeed: false),
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
+    signedDeviceMediaReceipt: rawEvidenceMediaReceipt,
     deepSeekReceipt: nil,
     deletionReceipt: nil
 )
@@ -1619,9 +1764,10 @@ check(unprovenBackendSubmissionGate.blockerIDs.contains("deepseek-provider-pass"
 check(unprovenBackendSubmissionGate.blockerIDs.contains("deletion-completion-pass"), "Submission gate should block deletion without completion evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("app-privacy-questionnaire-packet"), "Submission gate should block malformed privacy questionnaire packet evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("age-rating-review-packet"), "Submission gate should block malformed Age Rating review packet evidence")
+check(unprovenBackendSubmissionGate.blockerIDs.contains("signed-device-media-validation-packet"), "Submission gate should block malformed signed-device media packet evidence")
 
 check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist should track four v40 asset contracts")
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, and v65 Age Rating review packet are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, and v66 signed-device media validation packet are aligned.")
