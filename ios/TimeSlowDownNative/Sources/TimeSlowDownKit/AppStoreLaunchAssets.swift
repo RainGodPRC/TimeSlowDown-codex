@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "70",
-        summary: String = "TimeSlowDown v70 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "71",
+        summary: String = "TimeSlowDown v71 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, screenshot/App Preview creative packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -80,6 +80,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v68 adds an App Store metadata/legal review packet for product page copy, screenshot/app preview plan, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist while keeping final App Store Connect entry and legal review blocked.",
             "v69 adds a Privacy Manifest required reason API audit packet that keeps the current no-tracking/no-collected-data/no-accessed-API manifest shape honest for the local shipping path while keeping dependency manifest review, Xcode privacy report generation, and release review blocked.",
             "v70 adds an encryption export compliance review packet and a conservative Info.plist encryption declaration, while keeping final App Store Connect export-compliance answers, legal review, and release review blocked.",
+            "v71 adds a screenshot/App Preview creative packet that maps six App Store scenes, Apple asset-count constraints, real-UI capture requirements, privacy masking, and anti-fear-marketing rules while keeping final rendered asset upload, poster frame, localization, legal review, and release review blocked.",
             "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, full Xcode privacy report, dependency privacy manifest review, encryption export compliance, and legal review require full Xcode, Apple Developer access, and release/legal approval."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -307,7 +308,7 @@ public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, 
         signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
         signingPlan.requiresAppleDeveloperTeam &&
         signingPlan.fakeTeamIDForbidden &&
-        buildNotes.buildNumber == "70" &&
+        buildNotes.buildNumber == "71" &&
         steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
         Set(steps.map(\.kind)).count == steps.count &&
         steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
@@ -497,7 +498,7 @@ public enum ArchiveSigningValidationScaffold {
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v70 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, encryption export compliance packet, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v71 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, screenshot/App Preview packet, Privacy Manifest required reason API audit packet, encryption export compliance packet, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -1240,6 +1241,208 @@ public struct AppStoreMetadataLegalReviewPacket: Codable, Equatable, Sendable {
     }
 }
 
+public enum AppStoreScreenshotSceneKind: String, Codable, Equatable, CaseIterable, Sendable {
+    case memoryCamera = "memory-camera"
+    case todaySlice = "today-slice"
+    case weeklyChapter = "weekly-chapter"
+    case lifeMeadow = "life-meadow"
+    case mediaWall = "media-wall"
+    case accountRights = "account-rights"
+}
+
+public struct AppStoreScreenshotCreativeItem: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var kind: AppStoreScreenshotSceneKind
+    public var title: String
+    public var captureRoute: String
+    public var heroCopy: String
+    public var functionalEvidence: String
+    public var deviceFamilies: [String]
+    public var privacyTreatment: String
+    public var renderedFromRealAppUI: Bool
+    public var usesOnlyConsentedOrSyntheticMedia: Bool
+    public var avoidsFearDeathOrShameMarketing: Bool
+    public var avoidsMedicalOrDiagnosticClaims: Bool
+    public var avoidsUnsupportedFeatureClaims: Bool
+
+    public init(
+        id: String,
+        kind: AppStoreScreenshotSceneKind,
+        title: String,
+        captureRoute: String,
+        heroCopy: String,
+        functionalEvidence: String,
+        deviceFamilies: [String] = ["iPhone 6.7-inch", "iPhone 6.5-inch"],
+        privacyTreatment: String = "Use synthetic or explicitly consented memory content; mask faces, names, addresses, provider responses, and raw private media unless the user supplied review-safe demo assets.",
+        renderedFromRealAppUI: Bool = true,
+        usesOnlyConsentedOrSyntheticMedia: Bool = true,
+        avoidsFearDeathOrShameMarketing: Bool = true,
+        avoidsMedicalOrDiagnosticClaims: Bool = true,
+        avoidsUnsupportedFeatureClaims: Bool = true
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.captureRoute = captureRoute
+        self.heroCopy = heroCopy
+        self.functionalEvidence = functionalEvidence
+        self.deviceFamilies = deviceFamilies
+        self.privacyTreatment = privacyTreatment
+        self.renderedFromRealAppUI = renderedFromRealAppUI
+        self.usesOnlyConsentedOrSyntheticMedia = usesOnlyConsentedOrSyntheticMedia
+        self.avoidsFearDeathOrShameMarketing = avoidsFearDeathOrShameMarketing
+        self.avoidsMedicalOrDiagnosticClaims = avoidsMedicalOrDiagnosticClaims
+        self.avoidsUnsupportedFeatureClaims = avoidsUnsupportedFeatureClaims
+    }
+
+    public var isHonestScreenshotCreativeItem: Bool {
+        id.hasPrefix("screenshot-creative-") &&
+        !title.isEmpty &&
+        !captureRoute.isEmpty &&
+        !heroCopy.isEmpty &&
+        !functionalEvidence.isEmpty &&
+        deviceFamilies.count >= 2 &&
+        privacyTreatment.localizedCaseInsensitiveContains("synthetic") &&
+        privacyTreatment.localizedCaseInsensitiveContains("mask") &&
+        renderedFromRealAppUI &&
+        usesOnlyConsentedOrSyntheticMedia &&
+        avoidsFearDeathOrShameMarketing &&
+        avoidsMedicalOrDiagnosticClaims &&
+        avoidsUnsupportedFeatureClaims
+    }
+}
+
+public struct AppStoreScreenshotAppPreviewCreativePacket: Codable, Equatable, Sendable {
+    public var sourceReferences: [String]
+    public var screenshotMinimumPerLocalization: Int
+    public var screenshotMaximumPerDeviceLocalization: Int
+    public var appPreviewMaximumPerDeviceLocalization: Int
+    public var targetDeviceFamilies: [String]
+    public var screenshotFormats: [String]
+    public var appPreviewFormats: [String]
+    public var items: [AppStoreScreenshotCreativeItem]
+    public var usesHighestResolutionScreenshots: Bool
+    public var includesPosterFramePlan: Bool
+    public var renderedAssetsGenerated: Bool
+    public var localizedAssetsReviewed: Bool
+    public var uploadedInAppStoreConnect: Bool
+    public var legalReviewCompleted: Bool
+    public var releaseReviewCompleted: Bool
+
+    public init(
+        sourceReferences: [String] = [
+            "App Store Connect Help: Upload app previews and screenshots",
+            "App Store Connect Help: Screenshot specifications",
+            "App Store Connect Help: App preview specifications",
+            "App Review Guidelines 2.3 Accurate Metadata"
+        ],
+        screenshotMinimumPerLocalization: Int = 1,
+        screenshotMaximumPerDeviceLocalization: Int = 10,
+        appPreviewMaximumPerDeviceLocalization: Int = 3,
+        targetDeviceFamilies: [String] = ["iPhone 6.7-inch", "iPhone 6.5-inch"],
+        screenshotFormats: [String] = ["PNG", "JPEG"],
+        appPreviewFormats: [String] = ["M4V", "MOV", "MP4"],
+        items: [AppStoreScreenshotCreativeItem] = AppStoreScreenshotAppPreviewCreativePacket.defaultItems,
+        usesHighestResolutionScreenshots: Bool = true,
+        includesPosterFramePlan: Bool = true,
+        renderedAssetsGenerated: Bool = false,
+        localizedAssetsReviewed: Bool = false,
+        uploadedInAppStoreConnect: Bool = false,
+        legalReviewCompleted: Bool = false,
+        releaseReviewCompleted: Bool = false
+    ) {
+        self.sourceReferences = sourceReferences
+        self.screenshotMinimumPerLocalization = screenshotMinimumPerLocalization
+        self.screenshotMaximumPerDeviceLocalization = screenshotMaximumPerDeviceLocalization
+        self.appPreviewMaximumPerDeviceLocalization = appPreviewMaximumPerDeviceLocalization
+        self.targetDeviceFamilies = targetDeviceFamilies
+        self.screenshotFormats = screenshotFormats
+        self.appPreviewFormats = appPreviewFormats
+        self.items = items
+        self.usesHighestResolutionScreenshots = usesHighestResolutionScreenshots
+        self.includesPosterFramePlan = includesPosterFramePlan
+        self.renderedAssetsGenerated = renderedAssetsGenerated
+        self.localizedAssetsReviewed = localizedAssetsReviewed
+        self.uploadedInAppStoreConnect = uploadedInAppStoreConnect
+        self.legalReviewCompleted = legalReviewCompleted
+        self.releaseReviewCompleted = releaseReviewCompleted
+    }
+
+    public static let defaultItems: [AppStoreScreenshotCreativeItem] = [
+        .init(id: "screenshot-creative-memory-camera", kind: .memoryCamera, title: "Memory Camera", captureRoute: "Home → Memory Camera → choose photo/video", heroCopy: "先留住一个影像锚点，再补一句话", functionalEvidence: "Shows media-first capture as the primary mobile path, with text optional and no full-library scan."),
+        .init(id: "screenshot-creative-today-slice", kind: .todaySlice, title: "Today Slice", captureRoute: "Slice → latest memory card", heroCopy: "把今天变成以后能讲的一刻", functionalEvidence: "Shows one natural sentence, difference evidence, media/source trace, and editable tags."),
+        .init(id: "screenshot-creative-weekly-chapter", kind: .weeklyChapter, title: "Weekly Chapter", captureRoute: "Weekly Chapter → claim three moments", heroCopy: "每周认领三个瞬间，编成能讲的故事", functionalEvidence: "Shows user-claimed moments before AI faithful editing and source trace."),
+        .init(id: "screenshot-creative-life-meadow", kind: .lifeMeadow, title: "Life Meadow", captureRoute: "Meadow → week/month/year/life zoom", heroCopy: "从今天，到十年后的人生旷野", functionalEvidence: "Shows semantic zoom where dense moments become flowers and quiet periods remain grass, without shaming empty weeks."),
+        .init(id: "screenshot-creative-media-wall", kind: .mediaWall, title: "Media Wall", captureRoute: "Media Wall → photo/video/link filters", heroCopy: "照片和视频，是回忆的路标", functionalEvidence: "Shows image/video/link anchors organized into a recall timeline without contacts, GPS, or face recognition."),
+        .init(id: "screenshot-creative-account-rights", kind: .accountRights, title: "Account Rights", captureRoute: "Account Rights → export/delete/subscription/AI boundaries", heroCopy: "记忆属于你，导出和删除不被订阅扣留", functionalEvidence: "Shows export, deletion, subscription, AI, and privacy boundaries for App Review and user trust.")
+    ]
+
+    public var requiredSceneKindsCovered: Bool {
+        Set(AppStoreScreenshotSceneKind.allCases).isSubset(of: Set(items.map(\.kind)))
+    }
+
+    public var satisfiesAppleAssetCountBoundaries: Bool {
+        screenshotMinimumPerLocalization >= 1 &&
+        screenshotMaximumPerDeviceLocalization == 10 &&
+        appPreviewMaximumPerDeviceLocalization == 3 &&
+        items.count >= screenshotMinimumPerLocalization &&
+        items.count <= screenshotMaximumPerDeviceLocalization
+    }
+
+    public var satisfiesFormatAndDeviceCoverage: Bool {
+        targetDeviceFamilies.count >= 2 &&
+        targetDeviceFamilies.allSatisfy { $0.localizedCaseInsensitiveContains("iphone") } &&
+        screenshotFormats.contains("PNG") &&
+        screenshotFormats.contains("JPEG") &&
+        appPreviewFormats.contains("MP4") &&
+        usesHighestResolutionScreenshots &&
+        includesPosterFramePlan
+    }
+
+    public var preservesTSDProductSoul: Bool {
+        let combined = items.map { "\($0.title) \($0.heroCopy) \($0.functionalEvidence)" }.joined(separator: " ")
+        return combined.localizedCaseInsensitiveContains("media-first") &&
+        combined.localizedCaseInsensitiveContains("weekly") &&
+        combined.localizedCaseInsensitiveContains("Life Meadow") &&
+        combined.localizedCaseInsensitiveContains("export") &&
+        combined.localizedCaseInsensitiveContains("without") &&
+        combined.localizedCaseInsensitiveContains("full-library scan")
+    }
+
+    public var avoidsFearDeathOrShameMarketing: Bool {
+        let combined = items.map { "\($0.title) \($0.heroCopy) \($0.functionalEvidence)" }.joined(separator: " ").lowercased()
+        let forbidden = ["death", "die before", "running out of life", "shame", "guilt", "死亡", "时日无多", "羞耻", "内疚"]
+        return forbidden.allSatisfy { !combined.contains($0) } &&
+        items.allSatisfy(\.avoidsFearDeathOrShameMarketing)
+    }
+
+    public var protectsPrivateMemoryContent: Bool {
+        items.allSatisfy(\.usesOnlyConsentedOrSyntheticMedia) &&
+        items.allSatisfy { $0.privacyTreatment.localizedCaseInsensitiveContains("mask") } &&
+        items.allSatisfy { !$0.functionalEvidence.localizedCaseInsensitiveContains("contacts") || $0.functionalEvidence.localizedCaseInsensitiveContains("without contacts") }
+    }
+
+    public var canSatisfyCreativePacketShapeGate: Bool {
+        sourceReferences.count >= 4 &&
+        requiredSceneKindsCovered &&
+        satisfiesAppleAssetCountBoundaries &&
+        satisfiesFormatAndDeviceCoverage &&
+        items.allSatisfy(\.isHonestScreenshotCreativeItem) &&
+        preservesTSDProductSoul &&
+        avoidsFearDeathOrShameMarketing &&
+        protectsPrivateMemoryContent
+    }
+
+    public var canSatisfyFinalScreenshotAppPreviewGate: Bool {
+        canSatisfyCreativePacketShapeGate &&
+        renderedAssetsGenerated &&
+        localizedAssetsReviewed &&
+        uploadedInAppStoreConnect &&
+        legalReviewCompleted &&
+        releaseReviewCompleted
+    }
+}
+
 public enum PrivacyManifestRequiredReasonAPIKind: String, Codable, Equatable, CaseIterable, Sendable {
     case fileTimestamp = "NSPrivacyAccessedAPICategoryFileTimestamp"
     case systemBootTime = "NSPrivacyAccessedAPICategorySystemBootTime"
@@ -1656,7 +1859,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "70", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "71", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -1698,6 +1901,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket = AppPrivacyQuestionnairePacket(),
         ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
         metadataLegalReviewPacket: AppStoreMetadataLegalReviewPacket = AppStoreMetadataLegalReviewPacket(),
+        screenshotAppPreviewCreativePacket: AppStoreScreenshotAppPreviewCreativePacket = AppStoreScreenshotAppPreviewCreativePacket(),
         privacyManifestRequiredReasonAuditPacket: PrivacyManifestRequiredReasonAPIAuditPacket = PrivacyManifestRequiredReasonAPIAuditPacket(),
         encryptionExportComplianceReviewPacket: EncryptionExportComplianceReviewPacket = EncryptionExportComplianceReviewPacket(),
         archiveSigningReceipt: ArchiveSigningValidationReceipt? = nil,
@@ -1719,6 +1923,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
         let ageRatingShapeReady = ageRatingReviewPacket.canSatisfyAgeRatingShapeGate
         let metadataLegalShapeReady = metadataLegalReviewPacket.canSatisfyMetadataLegalShapeGate
+        let screenshotAppPreviewCreativeShapeReady = screenshotAppPreviewCreativePacket.canSatisfyCreativePacketShapeGate
+        let screenshotAppPreviewFinalReady = screenshotAppPreviewCreativePacket.canSatisfyFinalScreenshotAppPreviewGate
         let privacyManifestRequiredReasonShapeReady = privacyManifestRequiredReasonAuditPacket.canSatisfyRequiredReasonShapeGate
         let privacyManifestRequiredReasonFinalReady = privacyManifestRequiredReasonAuditPacket.canSatisfyFinalPrivacyManifestGate
         let encryptionExportShapeReady = encryptionExportComplianceReviewPacket.canSatisfyEncryptionExportShapeGate
@@ -1734,6 +1940,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         submissionRows.map(\.id).contains("age-rating-review-packet") &&
         submissionRows.map(\.id).contains("support-privacy-urls") &&
         submissionRows.map(\.id).contains("metadata-legal-review-packet") &&
+        submissionRows.map(\.id).contains("screenshot-app-preview-creative-packet") &&
         submissionRows.map(\.id).contains("encryption-export-compliance-packet")
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
         let productionContractsCovered = productionRows.count >= 7 && productionRows.allSatisfy { $0.status == .poc }
@@ -1822,6 +2029,22 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 requiredForTestFlight: false,
                 evidence: metadataLegalShapeReady ? "v68 maps product page positioning, screenshots/app preview, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist without death/fear/shame marketing or subscription-hostage claims." : "Metadata/legal review packet is missing or malformed.",
                 unblockAction: "Repair the machine-checkable metadata/legal review packet before App Store Connect and legal handoff."
+            ),
+            .init(
+                id: "screenshots-app-preview-assets",
+                title: "Rendered screenshots and App Preview assets",
+                status: screenshotAppPreviewFinalReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: screenshotAppPreviewFinalReady ? "Rendered screenshot/App Preview assets, poster frame, localization review, App Store Connect upload, legal review, and release review are complete." : "Screenshot/App Preview creative packet exists only as a release plan until final rendered assets are generated, reviewed, localized, uploaded, and approved.",
+                unblockAction: "Render final screenshots/App Preview from real app UI, mask private memory content, review localizations, upload in App Store Connect, and capture legal/release approval."
+            ),
+            .init(
+                id: "screenshot-app-preview-creative-packet",
+                title: "Screenshot/App Preview creative packet",
+                status: screenshotAppPreviewCreativeShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: screenshotAppPreviewCreativeShapeReady ? "v71 maps Memory Camera, today slice, weekly chapter, life meadow, media wall, and Account Rights to Apple screenshot/App Preview constraints with real-UI, synthetic/consented media, privacy masking, and no death/fear/shame marketing." : "Screenshot/App Preview creative packet is missing, misleading, under-specified, or privacy-unsafe.",
+                unblockAction: "Repair the screenshot/App Preview packet before rendering final App Store assets."
             ),
             .init(
                 id: "encryption-export-compliance",

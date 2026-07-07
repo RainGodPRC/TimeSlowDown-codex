@@ -4,7 +4,10 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const STORAGE_KEY = "tsd-codex-demo-state-v1";
 const VAULT_SCHEMA_VERSION = "tsd-codex-vault-v1";
 const PUBLIC_DEMO_URL = "https://raingodprc.github.io/TimeSlowDown-codex/";
-const PUBLIC_RESOURCE_LABEL = "styles.css?v=33 / app.js?v=62";
+const WEB_DEMO_VERSION = "v33";
+const RELEASE_CONTRACT_VERSION = "v71";
+const RELEASE_CONTRACT_LABEL = "Release Contract v71 · Screenshot/App Preview Creative Packet";
+const PUBLIC_RESOURCE_LABEL = "styles.css?v=33 / app.js?v=71";
 const PUBLIC_URL_PACKET_VERSION = "v62";
 const PUBLIC_URL_ROUTES = ["support", "privacy", "export", "delete", "subscription", "review", "legal"];
 const PUBLIC_URL_PACKET = [
@@ -1278,6 +1281,8 @@ function submissionPacketRows() {
   return [
     ["产品页定位", state.productPageReviewAt ? "poc" : "todo", "App name / subtitle / description / keywords", "TimeSlowDown 的商店页应避免夸大医疗、心理诊断或生产完成度；主张聚焦“留住可讲述瞬间”。"],
     ["截图与预览", state.screenshotPlanAt ? "poc" : "todo", "screenshots / app preview", "截图组覆盖 Memory Camera、今日切片、周章节、人生旷野、媒体墙、账户权利、隐私中心；公开版不展示真实隐私内容。"],
+    ["截图/App Preview 创意包", "poc", RELEASE_CONTRACT_VERSION, "v71 已把 6 张核心截图场景、Apple 数量/格式边界、真实 UI 截取、合成/授权素材、隐私遮罩和反恐惧营销写成 native release contract。"],
+    ["最终截图资产", "todo", "App Store Connect assets", "仍需从真实 App UI 渲染最终截图/App Preview、选择 poster frame、复核本地化、上传 App Store Connect，并完成 legal/release review。"],
     ["隐私问卷", state.privacyQuestionnaireAt ? "poc" : "todo", "App Privacy Details", "用户内容、照片/视频、账号、购买、诊断、AI 处理和可选同步需要逐项映射；当前 demo 不上传真实数据。"],
     ["年龄分级", state.ageRatingReviewAt ? "poc" : "todo", "Age Rating", "产品允许 12+ 方向，但正式上架需按用户生成内容、家庭影像、AI 处理和外部链接复核分级。"],
     ["审核备注", state.launchStoreReviewAt ? "poc" : "todo", "Review Notes", "提供 demo 路线：照片入口→生成切片→媒体墙→账户权利→隐私中心→删除/导出；说明 AI/API 均为 PoC 或生产受控。"],
@@ -1452,9 +1457,10 @@ async function copyNativeHandoffReport() {
 async function copySubmissionPacketReport() {
   const stats = submissionPacketStats();
   const text = [
-    "TimeSlowDown App Store Submission Packet（Demo v33）：",
+    `TimeSlowDown App Store Submission Packet（Web ${WEB_DEMO_VERSION} / ${RELEASE_CONTRACT_LABEL}）：`,
     `公网：${PUBLIC_DEMO_URL}`,
     `资源：${PUBLIC_RESOURCE_LABEL}`,
+    `Release Contract：${RELEASE_CONTRACT_LABEL}`,
     `Public URL Packet：${state.publicURLPacketCopiedAt || state.publicURLPacketReviewAt || "尚未复制/复核"}`,
     `产品页复核：${state.productPageReviewAt || "尚未标记"}`,
     `截图计划：${state.screenshotPlanAt || "尚未标记"}`,
@@ -1482,9 +1488,10 @@ async function copyLaunchReport() {
   const nativeStats = nativeHandoffStats();
   const submissionStats = submissionPacketStats();
   const text = [
-    "TimeSlowDown Launch Readiness Report（Demo v33）：",
+    `TimeSlowDown Launch Readiness Report（Web ${WEB_DEMO_VERSION} / ${RELEASE_CONTRACT_LABEL}）：`,
     `公网：${PUBLIC_DEMO_URL}`,
     `资源：${PUBLIC_RESOURCE_LABEL}`,
+    `Release Contract：${RELEASE_CONTRACT_LABEL}`,
     `Public URL Packet：${state.publicURLPacketCopiedAt || state.publicURLPacketReviewAt || "尚未复制/复核"}`,
     `预检：${state.launchPreflightAt || "尚未运行"}`,
     `导出校验：${state.launchChecksumAt ? launchChecksum() : "尚未生成"}`,
@@ -1580,7 +1587,8 @@ function qaSnapshot() {
   const mediaCount = mediaMoments().length;
   const claimedCount = state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length;
   return {
-    version: "v33",
+    version: WEB_DEMO_VERSION,
+    releaseContract: RELEASE_CONTRACT_LABEL,
     publicUrl: PUBLIC_DEMO_URL,
     resources: PUBLIC_RESOURCE_LABEL,
     moments: state.moments.length,
@@ -1695,7 +1703,13 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       area: "App Store 提交材料",
       status: "poc",
       route: "Launch → Submission Packet",
-      evidence: "v33 新增提交材料包：产品页定位、截图/预览计划、隐私问卷、年龄分级、审核备注、支持/隐私 URL、订阅说明和可复制 submission packet。"
+      evidence: "v33 新增提交材料包；v71 又把截图/App Preview 创意包写入 native release contract，覆盖真实 UI、隐私遮罩、合成/授权素材和反恐惧营销。"
+    },
+    {
+      area: "Release Contract",
+      status: "poc",
+      route: "Launch → Submission Packet",
+      evidence: `${RELEASE_CONTRACT_LABEL} 已在公网可见；最终截图资产、App Store Connect 上传、法务和 release review 仍是 blocker。`
     },
     {
       area: "原生上架",
@@ -1718,9 +1732,10 @@ function qaScore() {
 async function copyQaReport() {
   const snapshot = qaSnapshot();
   const text = [
-    "TimeSlowDown Demo QA Console（v33）：",
+    `TimeSlowDown Demo QA Console（Web ${snapshot.version} / ${snapshot.releaseContract}）：`,
     `公网：${snapshot.publicUrl}`,
     `资源：${snapshot.resources}`,
+    `Release Contract：${snapshot.releaseContract}`,
     `本地样本：${snapshot.moments} 张切片 / ${snapshot.mediaCount} 个影像锚点 / ${snapshot.claimedCount} 个周认领`,
     "",
     ...snapshot.checks.map((item, index) => `${index + 1}. [${item.status.toUpperCase()}] ${item.area} — ${item.route} — ${item.evidence}`),
@@ -3144,9 +3159,9 @@ function launchView() {
   return `
     <div class="topline"><div><div class="brand">上架就绪</div><div class="micro">把商品级 App 上线前的证据、缺口和回执摊开。</div></div></div>
     <section class="guide-card launch-hero">
-      <div class="eyebrow">Launch Readiness · v33</div>
+      <div class="eyebrow">Launch Readiness · Web ${WEB_DEMO_VERSION} · ${RELEASE_CONTRACT_VERSION}</div>
       <h1 class="hero-title">不是说“快好了”，<br/>而是逐项给出证据。</h1>
-      <p class="hero-subtitle">TSD 处理的是人生记忆。上架前必须能回答：影像怎么进来、数据怎么带走、删除如何回执、AI 如何降级、账号为何不是牢笼、审核材料还缺什么。</p>
+      <p class="hero-subtitle">TSD 处理的是人生记忆。上架前必须能回答：影像怎么进来、数据怎么带走、删除如何回执、AI 如何降级、账号为何不是牢笼、审核材料还缺什么。当前公开 release contract：${RELEASE_CONTRACT_LABEL}。</p>
       <div class="launch-score-grid">
         ${launchMetric("Ready", stats.ready, "已可点击验证")}
         ${launchMetric("PoC", stats.poc, "产品假面")}
@@ -3156,7 +3171,7 @@ function launchView() {
         ${launchMetric("URLs", publicURLStats.total, "公网深链")}
       </div>
       <div class="action-row"><button class="primary" data-launch-preflight>运行上架预检</button><button class="secondary" data-copy-launch>复制上线报告</button><button class="secondary" data-copy-native-handoff>复制原生移交账本</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button><button class="secondary" data-copy-public-urls>复制公开 URL 包</button><button class="secondary" data-view="legal">公开链接页</button><button class="secondary" data-view="qa">QA Console</button></div>
-      <p class="source-line">上次预检：${escapeHtml(state.launchPreflightAt || "尚未运行")}；上次报告：${escapeHtml(state.launchReportCopiedAt || "尚未复制")}。</p>
+      <p class="source-line">上次预检：${escapeHtml(state.launchPreflightAt || "尚未运行")}；上次报告：${escapeHtml(state.launchReportCopiedAt || "尚未复制")}；资源：${escapeHtml(PUBLIC_RESOURCE_LABEL)}。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="guide-card">
@@ -3198,7 +3213,7 @@ function launchView() {
     </section>
     <section class="guide-card submission-packet-card">
       <h2 class="section-title">App Store 提交材料包 <span class="micro">Submission Packet</span></h2>
-      <p class="hero-subtitle">v33 把“上架时要填什么、截图拍什么、隐私怎么答、审核备注怎么写”做成可复制材料。它面向 release / legal / App Store Connect，不代替正式提交，但能减少从产品 demo 到商店页的空白。</p>
+      <p class="hero-subtitle">v33 把“上架时要填什么、截图拍什么、隐私怎么答、审核备注怎么写”做成可复制材料；v71 把截图/App Preview 创意包进一步写进 native release contract。它面向 release / legal / App Store Connect，不代替正式提交，但能减少从产品 demo 到商店页的空白。</p>
       <div class="submission-score-grid">
         ${launchMetric("PoC", submissionStats.poc, "已有草案")}
         ${launchMetric("Todo", submissionStats.todo, "待正式填写")}
@@ -3210,6 +3225,10 @@ function launchView() {
       <div class="store-copy-card">
         <strong>商店页建议主张</strong>
         <span>不是日记、不是相册，而是帮用户把照片/视频/一句话绑定成可讲述的时间切片；90 天后能讲出 5–10 个鲜明瞬间。</span>
+      </div>
+      <div class="store-copy-card">
+        <strong>${RELEASE_CONTRACT_LABEL}</strong>
+        <span>6 张核心图：Memory Camera、今日切片、周章节、人生旷野、媒体墙、账户权利。形状证据已完成；最终渲染、App Store Connect 上传、poster frame、本地化、legal/release review 仍未完成。</span>
       </div>
       <div class="action-row"><button class="secondary" data-product-page-review>标记产品页复核</button><button class="secondary" data-screenshot-plan>标记截图计划</button><button class="secondary" data-privacy-questionnaire>标记隐私问卷</button><button class="secondary" data-age-rating-review>标记年龄分级</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button></div>
       <p class="source-line">产品页：${escapeHtml(state.productPageReviewAt || "尚未标记")}；截图：${escapeHtml(state.screenshotPlanAt || "尚未标记")}；隐私问卷：${escapeHtml(state.privacyQuestionnaireAt || "尚未标记")}；年龄分级：${escapeHtml(state.ageRatingReviewAt || "尚未标记")}；提交包：${escapeHtml(state.submissionPacketCopiedAt || "尚未复制")}。</p>
@@ -3467,7 +3486,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v33 仍不调用真实模型和真实账户；它在 v28 Memory Camera 主入口之上新增 Launch Readiness，并吸收 Day One / Diarly / Craft / Apple Journal 的优秀 DNA：Bento 首页、Journal 时间轴、照片墙/地图切换、按钮层级和微动效共同构成上架前证据链。</p>
+      <p class="source-line">v33 仍不调用真实模型和真实账户；它在 v28 Memory Camera 主入口之上新增 Launch Readiness，并吸收 Day One / Diarly / Craft / Apple Journal 的优秀 DNA。当前公开 release contract：${RELEASE_CONTRACT_LABEL}。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -3488,7 +3507,7 @@ function guideView() {
         ${readiness("Memory Camera", "v28", "底部悬浮“＋影像”让用户不用读说明也能从照片/视频开始一张切片。")}
         ${readiness("Launch Readiness", "v33", "预检账本、导出包 checksum、删除回执、App Store 审核包和可复制上线报告。")}
         ${readiness("Native Handoff", "v33", "SwiftUI 壳、PhotosPicker、Keychain/E2EE、DeepSeek 网关、App Privacy Details、Privacy Manifest 和 TestFlight 包已拆成移交账本。")}
-        ${readiness("Submission Packet", "v33", "产品页定位、截图/预览计划、隐私问卷、年龄分级、审核备注、支持/隐私 URL 和订阅说明已拆成提交材料包。")}
+        ${readiness("Submission Packet", "v33 + v71", "产品页定位、截图/预览计划、隐私问卷、年龄分级、审核备注、支持/隐私 URL 和订阅说明已拆成提交材料包；v71 已补截图/App Preview 创意包。")}
         ${readiness("QA Console", "v33", "核心试用路径、账户权利、安装体验、PoC 边界、媒体入口、媒体保险箱、上架就绪、原生移交、提交材料和生产待做被整理成可复制验收报告。")}
         ${readiness("媒体墙", "v15", "可按照片/视频/链接筛选已绑定影像，并查看回忆时间线。")}
         ${readiness("人物地点镜头", "v17", "从用户写下的词和影像备注中聚合可讲述的人/地点线索。")}
@@ -3605,16 +3624,16 @@ function qaView() {
   return `
     <div class="topline"><div><div class="brand">QA Console</div><div class="micro">把当前公网 Demo 的可靠性和边界摊开给试用者看。</div></div></div>
     <section class="guide-card qa-hero">
-      <div class="eyebrow">Demo QA Console · v33</div>
+      <div class="eyebrow">Demo QA Console · Web ${snapshot.version} · ${RELEASE_CONTRACT_VERSION}</div>
       <h1 class="hero-title">这不是口头说“能用”，<br/>而是把证据放出来。</h1>
-      <p class="hero-subtitle">TSD 的 demo 越接近商品级，越需要让用户、测试者和其他 agent 清楚知道：哪些路径已经可以点击验证，哪些仍只是 PoC，哪些上架前必须补完。</p>
+      <p class="hero-subtitle">TSD 的 demo 越接近商品级，越需要让用户、测试者和其他 agent 清楚知道：哪些路径已经可以点击验证，哪些仍只是 PoC，哪些上架前必须补完。当前公开 release contract：${escapeHtml(snapshot.releaseContract)}。</p>
       <div class="qa-scoreboard">
         ${qaMetric("PASS", score.pass, "可点击验证")}
         ${qaMetric("POC", score.poc, "假面/边界")}
         ${qaMetric("TODO", score.todo + score.warn, "生产待做")}
       </div>
       <div class="action-row"><button class="primary" data-copy-qa>复制 QA 报告</button><button class="secondary" data-view="launch">上架就绪</button><button class="secondary" data-view="guide">试用路线</button><button class="secondary" data-view="review">生产隐私中心</button></div>
-      <p class="source-line">上次 QA 报告：${escapeHtml(snapshot.qaReportAt)}。公网：${escapeHtml(snapshot.publicUrl)}；资源：${escapeHtml(snapshot.resources)}。</p>
+      <p class="source-line">上次 QA 报告：${escapeHtml(snapshot.qaReportAt)}。公网：${escapeHtml(snapshot.publicUrl)}；资源：${escapeHtml(snapshot.resources)}；release：${escapeHtml(snapshot.releaseContract)}。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="guide-card">
@@ -3658,7 +3677,7 @@ function qaView() {
         ${processingBoundary("相册权限", "PoC 边界", "v24 已有媒体保险箱路径；真实系统 Photos Picker、E2EE 文件库和删除回执仍待接入。", "warn")}
         ${processingBoundary("安装资产", "PoC 边界", "v33 保留 inline manifest、iOS meta 和安装中心；service worker、离线缓存和原生壳仍待做。", "poc")}
         ${processingBoundary("原生移交", "v33 PoC", "Native Handoff Ledger 已拆出 iOS、backend、App Store Connect、release 四类任务；真实 SwiftUI/TestFlight 仍待做。", "poc")}
-        ${processingBoundary("提交材料", "v33 PoC", "Submission Packet 已拆出产品页、截图、隐私问卷、年龄分级、审核备注和订阅说明；真实 App Store Connect 填写仍待做。", "poc")}
+        ${processingBoundary("提交材料", "v33 + v71 PoC", "Submission Packet 已拆出产品页、截图、隐私问卷、年龄分级、审核备注和订阅说明；v71 截图/App Preview 创意包已可见，真实 App Store Connect 填写和最终资产上传仍待做。", "poc")}
         ${processingBoundary("上线闭环", "v33 PoC", "Launch Readiness 已串起预检、导出校验、删除回执和审核包；真实签名、法务和原生流水线仍待做。", "poc")}
       </div>
     </section>
@@ -4221,7 +4240,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v62 以 v33 的媒体优先入口、Bento 首页、Journal 时间轴、照片墙/地图切换和上架就绪中心为基础，补上 App Store Public URL Packet：Support、Privacy、Export、Delete、Subscription、Review 六个公网 deep links 已可直接复核；正式法务 URL、TestFlight、签名设备和后端仍是 release blockers。</p>
+      <p>当前 Web Shell 是 ${WEB_DEMO_VERSION}：媒体优先入口、Bento 首页、Journal 时间轴、照片墙/地图切换和上架就绪中心仍是公网主体验；Public URL Packet 是 ${PUBLIC_URL_PACKET_VERSION}；公开 release contract 是 ${RELEASE_CONTRACT_VERSION}，新增截图/App Preview 创意包。正式法务 URL、最终截图资产、TestFlight、签名设备和后端仍是 release blockers。</p>
     </section>
   </aside>`;
 }
