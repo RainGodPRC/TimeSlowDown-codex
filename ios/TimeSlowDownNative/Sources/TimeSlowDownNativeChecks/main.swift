@@ -112,6 +112,44 @@ func runOptionalLiveDeepSeekBackendProbe(
     )
 }
 
+func runOptionalLiveDeletionServiceProbe(
+    service: DeletionServiceIntegrationEnvelope,
+    payload: DeletionServiceLiveProbePayload
+) throws -> DeletionServiceLiveProbeReceipt {
+    guard let configuredBaseURL = environmentValue("TSD_DELETION_BACKEND_BASE_URL"),
+          let testToken = environmentValue("TSD_DELETION_TEST_TOKEN") else {
+        return DeletionServiceLiveProbe.notConfiguredReceipt()
+    }
+    check(configuredBaseURL.hasPrefix("https://"), "Live deletion service probe should require https backend URL")
+    check(!testToken.localizedCaseInsensitiveContains("sk-"), "Live deletion probe token must be a TSD backend test token, not a provider key")
+    check(payload.isSafeForDeletionServiceProbe, "Live deletion service probe payload should be safe before network execution")
+    check(service.isDeletionRightsSafe, "Live deletion service envelope should be safe before network execution")
+
+    let endpointURL = URL(string: configuredBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + service.serviceEndpointPath)!
+    var urlRequest = URLRequest(url: endpointURL)
+    urlRequest.httpMethod = "POST"
+    urlRequest.timeoutInterval = 30
+    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    urlRequest.setValue("Bearer \(testToken)", forHTTPHeaderField: "Authorization")
+    urlRequest.setValue(payload.idempotencyKey, forHTTPHeaderField: "Idempotency-Key")
+    urlRequest.setValue(payload.deletionReceiptID, forHTTPHeaderField: "X-TSD-Deletion-Receipt")
+    urlRequest.setValue("true", forHTTPHeaderField: "X-TSD-Deletion-Test-Account")
+    urlRequest.httpBody = try DeletionServiceLiveProbe.encodedPayload(payload)
+
+    let (data, httpResponse) = try synchronousPOST(
+        urlRequest: urlRequest,
+        timeoutSeconds: 30
+    )
+    let response = try JSONDecoder().decode(DeletionServiceLiveProbeResponse.self, from: data)
+    return DeletionServiceLiveProbe.receipt(
+        service: service,
+        payload: payload,
+        statusCode: httpResponse.statusCode,
+        backendBaseURL: configuredBaseURL,
+        response: response
+    )
+}
+
 let photo = MediaAnchor(kind: .image, label: "park.jpg", note: "孩子第一次自己爬上滑梯")
 let slice = SliceFactory.quickMark(
     title: "他第一次自己爬上滑梯",
@@ -236,7 +274,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>59</string>"), "Info.plist should carry v59 build number")
+check(infoPlistText.contains("<string>60</string>"), "Info.plist should carry v60 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -1174,11 +1212,129 @@ check(!deletionService.responseContract.responseContainsRawMedia, "Deletion serv
 check(deletionService.responseContract.userCanDownloadReceiptAfterCompletion, "Deletion service response should preserve downloadable completion receipt")
 check(deletionService.isDeletionRightsSafe, "Deletion service envelope should be deletion-rights safe")
 
+let deletionLiveProbePayload = DeletionServiceLiveProbe.payload(for: deletionService)
+check(deletionLiveProbePayload.isSafeForDeletionServiceProbe, "Deletion live probe payload should be safe for backend execution")
+check(deletionLiveProbePayload.deletionReceiptID == deletion.id, "Deletion live probe payload should preserve deletion receipt ID")
+check(deletionLiveProbePayload.idempotencyKey == deletionRequest.idempotencyKey, "Deletion live probe payload should preserve idempotency key")
+check(deletionLiveProbePayload.systemsToErase.contains("encrypted-backup"), "Deletion live probe payload should include encrypted backup erasure")
+check(deletionLiveProbePayload.systemsToErase.contains("ai-draft-cache"), "Deletion live probe payload should include AI draft erasure")
+check(deletionLiveProbePayload.systemsToErase.contains("thumbnail-cache"), "Deletion live probe payload should include thumbnail erasure")
+check(deletionLiveProbePayload.systemsRequiringTombstone.contains("account-ledger"), "Deletion live probe payload should include account ledger tombstone")
+check(deletionLiveProbePayload.requiresReauthentication, "Deletion live probe payload should require reauthentication")
+check(deletionLiveProbePayload.requiresExportOpportunity, "Deletion live probe payload should preserve export opportunity")
+check(deletionLiveProbePayload.availableAfterSubscriptionEnds, "Deletion live probe payload should remain available after subscription ends")
+check(!deletionLiveProbePayload.containsRawMemoryPayload, "Deletion live probe payload should not contain raw memory")
+check(!deletionLiveProbePayload.containsRawMedia, "Deletion live probe payload should not contain raw media")
+check(deletionLiveProbePayload.testAccountOnly, "Deletion live probe payload should be restricted to test account boundary")
+let deletionLiveProbePayloadData = try DeletionServiceLiveProbe.encodedPayload(deletionLiveProbePayload)
+let deletionLiveProbePayloadText = String(data: deletionLiveProbePayloadData, encoding: .utf8) ?? ""
+check(deletionLiveProbePayloadText.contains("deletion_receipt_id"), "Deletion live probe payload should encode snake_case receipt field")
+check(deletionLiveProbePayloadText.contains("test_account_only"), "Deletion live probe payload should encode test account boundary")
+check(!deletionLiveProbePayloadText.localizedCaseInsensitiveContains("RAW_ORIGINAL"), "Deletion live probe payload should not encode raw media bytes")
+
+let deletionLiveProbeCompletionDigest = TrustDigest.checksum([
+    deletionService.id,
+    deletionLiveProbePayload.bodyDigest,
+    "completed"
+])
+let deletionLiveProbeResponse = DeletionServiceLiveProbeResponse(
+    deletionReceiptID: deletion.id,
+    deletionJobID: deletionService.jobID,
+    auditEventID: "audit-\(deletionLiveProbeCompletionDigest.prefix(8))",
+    tombstoneID: "tombstone-\(deletionLiveProbeCompletionDigest.prefix(8))",
+    perSystemResults: [
+        "encrypted-backup": "erased",
+        "ai-draft-cache": "erased",
+        "thumbnail-cache": "erased"
+    ],
+    completionReceiptDigest: deletionLiveProbeCompletionDigest,
+    status: .completed
+)
+let deletionLiveProbeReceipt = DeletionServiceLiveProbe.receipt(
+    service: deletionService,
+    payload: deletionLiveProbePayload,
+    statusCode: deletionService.responseContract.completedStatusCode,
+    backendBaseURL: "https://api.timeslowdown.example",
+    response: deletionLiveProbeResponse
+)
+check(deletionLiveProbeReceipt.status == .completed, "Deletion live probe should promote completed backend evidence")
+check(deletionLiveProbeReceipt.canSatisfyProductionDeletionGate, "Deletion live probe should satisfy production deletion gate when backend evidence is complete")
+check(deletionLiveProbeReceipt.canSatisfyAppStoreDeletionGate, "Deletion live probe should satisfy App Store deletion gate only with completed evidence")
+check(deletionLiveProbeReceipt.deletionJobID == deletionService.jobID, "Deletion live probe receipt should preserve backend job ID")
+check(deletionLiveProbeReceipt.tombstoneID != nil, "Deletion live probe receipt should preserve tombstone ID")
+
+let deletionAcceptedProbeResponse = DeletionServiceLiveProbeResponse(
+    deletionReceiptID: deletion.id,
+    deletionJobID: deletionService.jobID,
+    auditEventID: "audit-\(deletionLiveProbeCompletionDigest.suffix(8))",
+    tombstoneID: "tombstone-\(deletionLiveProbeCompletionDigest.suffix(8))",
+    perSystemResults: [
+        "encrypted-backup": "queued",
+        "ai-draft-cache": "queued",
+        "thumbnail-cache": "queued"
+    ],
+    completionReceiptDigest: TrustDigest.checksum(["accepted", deletionService.id]),
+    status: .accepted
+)
+let deletionAcceptedProbeReceipt = DeletionServiceLiveProbe.receipt(
+    service: deletionService,
+    payload: deletionLiveProbePayload,
+    statusCode: deletionService.responseContract.acceptedStatusCode,
+    backendBaseURL: "https://api.timeslowdown.example",
+    response: deletionAcceptedProbeResponse
+)
+check(deletionAcceptedProbeReceipt.status == .accepted, "Deletion live probe should accept queued backend evidence")
+check(deletionAcceptedProbeReceipt.canSatisfyProductionDeletionGate, "Accepted deletion live probe should satisfy production deletion request gate")
+check(!deletionAcceptedProbeReceipt.canSatisfyAppStoreDeletionGate, "Accepted-only deletion probe should not satisfy App Store completion gate")
+
+let unsafeDeletionLiveProbeResponse = DeletionServiceLiveProbeResponse(
+    deletionReceiptID: deletion.id,
+    deletionJobID: deletionService.jobID,
+    auditEventID: "audit-unsafe",
+    tombstoneID: "tombstone-unsafe",
+    perSystemResults: [
+        "encrypted-backup": "erased",
+        "ai-draft-cache": "erased",
+        "thumbnail-cache": "erased"
+    ],
+    completionReceiptDigest: TrustDigest.checksum(["unsafe-deletion-live-probe"]),
+    status: .completed,
+    responseContainsRawMemoryPayload: true
+)
+let unsafeDeletionLiveProbeReceipt = DeletionServiceLiveProbe.receipt(
+    service: deletionService,
+    payload: deletionLiveProbePayload,
+    statusCode: deletionService.responseContract.completedStatusCode,
+    backendBaseURL: "https://api.timeslowdown.example",
+    response: unsafeDeletionLiveProbeResponse
+)
+check(unsafeDeletionLiveProbeReceipt.status == .failed, "Deletion live probe should fail unsafe response evidence")
+check(!unsafeDeletionLiveProbeReceipt.canSatisfyProductionDeletionGate, "Unsafe deletion live probe should not satisfy production deletion gate")
+check(!unsafeDeletionLiveProbeReceipt.canSatisfyAppStoreDeletionGate, "Unsafe deletion live probe should not satisfy App Store deletion gate")
+
+let notConfiguredDeletionProbeReceipt = DeletionServiceLiveProbe.notConfiguredReceipt()
+check(notConfiguredDeletionProbeReceipt.status == .notConfigured, "Deletion live probe should be explicitly notConfigured without env vars")
+check(!notConfiguredDeletionProbeReceipt.canSatisfyProductionDeletionGate, "Not-configured deletion probe should not satisfy production deletion gate")
+check(!notConfiguredDeletionProbeReceipt.canSatisfyAppStoreDeletionGate, "Not-configured deletion probe should not satisfy App Store deletion gate")
+
+let optionalDeletionProbeReceipt = try runOptionalLiveDeletionServiceProbe(
+    service: deletionService,
+    payload: deletionLiveProbePayload
+)
+if optionalDeletionProbeReceipt.status == .notConfigured {
+    print("Deletion live service probe skipped: set TSD_DELETION_BACKEND_BASE_URL and TSD_DELETION_TEST_TOKEN to require a real deletion service round trip.")
+} else {
+    check(optionalDeletionProbeReceipt.canSatisfyProductionDeletionGate, "Configured deletion live probe should satisfy production deletion gate only after safe backend evidence")
+    if optionalDeletionProbeReceipt.status == .completed {
+        check(optionalDeletionProbeReceipt.canSatisfyAppStoreDeletionGate, "Completed deletion live probe should satisfy App Store deletion gate")
+    }
+}
+
 check(ProductionImplementationChecklist.rows.count == 6, "Production Implementation Checklist should track six implementation adapters after v51")
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "59", "TestFlight build notes should match v59")
+check(buildNotes.buildNumber == "60", "TestFlight build notes should match v60")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1200,11 +1356,13 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("provider proxy"), "Te
 check(buildNotes.summary.localizedCaseInsensitiveContains("endpoint execution harness"), "TestFlight build notes should mention DeepSeek endpoint execution harness")
 check(buildNotes.summary.localizedCaseInsensitiveContains("live backend probe"), "TestFlight build notes should mention DeepSeek live backend probe")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion service"), "TestFlight build notes should mention deletion service boundary")
+check(buildNotes.summary.localizedCaseInsensitiveContains("deletion live probe"), "TestFlight build notes should mention deletion live probe")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("mock gateway"), "TestFlight build notes should disclose mock/provider validation split")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("redacted backend integration test"), "TestFlight build notes should disclose redacted backend integration test boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("backend endpoint contract"), "TestFlight build notes should disclose backend endpoint contract boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("local endpoint execution harness"), "TestFlight build notes should disclose local endpoint execution harness boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("optional live backend probe"), "TestFlight build notes should disclose optional live backend probe boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("optional deletion live probe"), "TestFlight build notes should disclose optional deletion live probe boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -1224,4 +1382,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, and v59 DeepSeek live backend probe are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, and v60 deletion service live probe are aligned.")

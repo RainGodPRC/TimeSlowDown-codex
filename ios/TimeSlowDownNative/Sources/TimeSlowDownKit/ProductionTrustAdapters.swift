@@ -3609,6 +3609,318 @@ public enum DeletionServiceIntegrationPlan {
     }
 }
 
+public enum DeletionServiceLiveProbeStatus: String, Codable, Equatable, Sendable {
+    case notConfigured
+    case accepted
+    case completed
+    case failed
+}
+
+public struct DeletionServiceLiveProbePayload: Codable, Equatable, Sendable {
+    public var deletionReceiptID: String
+    public var deletionRequestID: String
+    public var bodyDigest: String
+    public var exportFileName: String?
+    public var idempotencyKey: String
+    public var systemsToErase: [String]
+    public var systemsRequiringTombstone: [String]
+    public var requiresReauthentication: Bool
+    public var requiresExportOpportunity: Bool
+    public var availableAfterSubscriptionEnds: Bool
+    public var maxCompletionHours: Int
+    public var containsRawMemoryPayload: Bool
+    public var containsRawMedia: Bool
+    public var testAccountOnly: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case deletionReceiptID = "deletion_receipt_id"
+        case deletionRequestID = "deletion_request_id"
+        case bodyDigest = "body_digest"
+        case exportFileName = "export_file_name"
+        case idempotencyKey = "idempotency_key"
+        case systemsToErase = "systems_to_erase"
+        case systemsRequiringTombstone = "systems_requiring_tombstone"
+        case requiresReauthentication = "requires_reauthentication"
+        case requiresExportOpportunity = "requires_export_opportunity"
+        case availableAfterSubscriptionEnds = "available_after_subscription_ends"
+        case maxCompletionHours = "max_completion_hours"
+        case containsRawMemoryPayload = "contains_raw_memory_payload"
+        case containsRawMedia = "contains_raw_media"
+        case testAccountOnly = "test_account_only"
+    }
+
+    public init(
+        deletionReceiptID: String,
+        deletionRequestID: String,
+        bodyDigest: String,
+        exportFileName: String?,
+        idempotencyKey: String,
+        systemsToErase: [String],
+        systemsRequiringTombstone: [String],
+        requiresReauthentication: Bool = true,
+        requiresExportOpportunity: Bool = true,
+        availableAfterSubscriptionEnds: Bool = true,
+        maxCompletionHours: Int = 24,
+        containsRawMemoryPayload: Bool = false,
+        containsRawMedia: Bool = false,
+        testAccountOnly: Bool = true
+    ) {
+        self.deletionReceiptID = deletionReceiptID
+        self.deletionRequestID = deletionRequestID
+        self.bodyDigest = bodyDigest
+        self.exportFileName = exportFileName
+        self.idempotencyKey = idempotencyKey
+        self.systemsToErase = systemsToErase
+        self.systemsRequiringTombstone = systemsRequiringTombstone
+        self.requiresReauthentication = requiresReauthentication
+        self.requiresExportOpportunity = requiresExportOpportunity
+        self.availableAfterSubscriptionEnds = availableAfterSubscriptionEnds
+        self.maxCompletionHours = maxCompletionHours
+        self.containsRawMemoryPayload = containsRawMemoryPayload
+        self.containsRawMedia = containsRawMedia
+        self.testAccountOnly = testAccountOnly
+    }
+
+    public var isSafeForDeletionServiceProbe: Bool {
+        !deletionReceiptID.isEmpty &&
+        !deletionRequestID.isEmpty &&
+        !bodyDigest.isEmpty &&
+        !idempotencyKey.isEmpty &&
+        systemsToErase.contains("encrypted-backup") &&
+        systemsToErase.contains("ai-draft-cache") &&
+        systemsToErase.contains("thumbnail-cache") &&
+        systemsRequiringTombstone.contains("account-ledger") &&
+        requiresReauthentication &&
+        requiresExportOpportunity &&
+        availableAfterSubscriptionEnds &&
+        maxCompletionHours <= 24 &&
+        !containsRawMemoryPayload &&
+        !containsRawMedia &&
+        testAccountOnly
+    }
+}
+
+public struct DeletionServiceLiveProbeResponse: Codable, Equatable, Sendable {
+    public var deletionReceiptID: String?
+    public var deletionJobID: String?
+    public var auditEventID: String?
+    public var tombstoneID: String?
+    public var perSystemResults: [String: String]
+    public var completionReceiptDigest: String
+    public var status: DeletionServiceLiveProbeStatus
+    public var completedWithReauthentication: Bool
+    public var exportOpportunityPreserved: Bool
+    public var writeFreezeApplied: Bool
+    public var receiptDownloadableAfterCompletion: Bool
+    public var maxCompletionHours: Int
+    public var responseContainsRawMemoryPayload: Bool
+    public var responseContainsRawMedia: Bool
+    public var testAccountOnly: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case deletionReceiptID = "deletion_receipt_id"
+        case deletionJobID = "deletion_job_id"
+        case auditEventID = "audit_event_id"
+        case tombstoneID = "tombstone_id"
+        case perSystemResults = "per_system_results"
+        case completionReceiptDigest = "completion_receipt_digest"
+        case status
+        case completedWithReauthentication = "completed_with_reauthentication"
+        case exportOpportunityPreserved = "export_opportunity_preserved"
+        case writeFreezeApplied = "write_freeze_applied"
+        case receiptDownloadableAfterCompletion = "receipt_downloadable_after_completion"
+        case maxCompletionHours = "max_completion_hours"
+        case responseContainsRawMemoryPayload = "response_contains_raw_memory_payload"
+        case responseContainsRawMedia = "response_contains_raw_media"
+        case testAccountOnly = "test_account_only"
+    }
+
+    public init(
+        deletionReceiptID: String?,
+        deletionJobID: String?,
+        auditEventID: String?,
+        tombstoneID: String?,
+        perSystemResults: [String: String],
+        completionReceiptDigest: String,
+        status: DeletionServiceLiveProbeStatus,
+        completedWithReauthentication: Bool = true,
+        exportOpportunityPreserved: Bool = true,
+        writeFreezeApplied: Bool = true,
+        receiptDownloadableAfterCompletion: Bool = true,
+        maxCompletionHours: Int = 24,
+        responseContainsRawMemoryPayload: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        testAccountOnly: Bool = true
+    ) {
+        self.deletionReceiptID = deletionReceiptID
+        self.deletionJobID = deletionJobID
+        self.auditEventID = auditEventID
+        self.tombstoneID = tombstoneID
+        self.perSystemResults = perSystemResults
+        self.completionReceiptDigest = completionReceiptDigest
+        self.status = status
+        self.completedWithReauthentication = completedWithReauthentication
+        self.exportOpportunityPreserved = exportOpportunityPreserved
+        self.writeFreezeApplied = writeFreezeApplied
+        self.receiptDownloadableAfterCompletion = receiptDownloadableAfterCompletion
+        self.maxCompletionHours = maxCompletionHours
+        self.responseContainsRawMemoryPayload = responseContainsRawMemoryPayload
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.testAccountOnly = testAccountOnly
+    }
+}
+
+public struct DeletionServiceLiveProbeReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var status: DeletionServiceLiveProbeStatus
+    public var deletionReceiptID: String?
+    public var deletionJobID: String?
+    public var auditEventID: String?
+    public var tombstoneID: String?
+    public var backendBaseURL: String?
+    public var payloadSafeForDeletionService: Bool
+    public var responseSafeForDeletionRights: Bool
+    public var validationNotes: [String]
+
+    public init(
+        id: String,
+        status: DeletionServiceLiveProbeStatus,
+        deletionReceiptID: String?,
+        deletionJobID: String?,
+        auditEventID: String?,
+        tombstoneID: String?,
+        backendBaseURL: String?,
+        payloadSafeForDeletionService: Bool,
+        responseSafeForDeletionRights: Bool,
+        validationNotes: [String]
+    ) {
+        self.id = id
+        self.status = status
+        self.deletionReceiptID = deletionReceiptID
+        self.deletionJobID = deletionJobID
+        self.auditEventID = auditEventID
+        self.tombstoneID = tombstoneID
+        self.backendBaseURL = backendBaseURL
+        self.payloadSafeForDeletionService = payloadSafeForDeletionService
+        self.responseSafeForDeletionRights = responseSafeForDeletionRights
+        self.validationNotes = validationNotes
+    }
+
+    public var canSatisfyProductionDeletionGate: Bool {
+        [DeletionServiceLiveProbeStatus.accepted, .completed].contains(status) &&
+        payloadSafeForDeletionService &&
+        responseSafeForDeletionRights &&
+        deletionReceiptID != nil &&
+        deletionJobID != nil &&
+        auditEventID != nil &&
+        tombstoneID != nil
+    }
+
+    public var canSatisfyAppStoreDeletionGate: Bool {
+        canSatisfyProductionDeletionGate && status == .completed
+    }
+}
+
+public enum DeletionServiceLiveProbe {
+    public static func payload(for service: DeletionServiceIntegrationEnvelope) -> DeletionServiceLiveProbePayload {
+        DeletionServiceLiveProbePayload(
+            deletionReceiptID: service.deletionReceiptID,
+            deletionRequestID: service.clientEnvelope.request.id,
+            bodyDigest: service.clientEnvelope.bodyDigest,
+            exportFileName: service.exportFileName,
+            idempotencyKey: service.clientEnvelope.request.idempotencyKey,
+            systemsToErase: service.systemsToErase.sorted(),
+            systemsRequiringTombstone: service.systemsRequiringTombstone.sorted(),
+            requiresReauthentication: service.requiresReauthentication,
+            requiresExportOpportunity: service.requiresExportOpportunity,
+            availableAfterSubscriptionEnds: service.availableAfterSubscriptionEnds,
+            maxCompletionHours: service.maxCompletionHours,
+            containsRawMemoryPayload: service.containsRawMemoryPayload,
+            containsRawMedia: service.containsRawMedia
+        )
+    }
+
+    public static func encodedPayload(_ payload: DeletionServiceLiveProbePayload) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(payload)
+    }
+
+    public static func receipt(
+        service: DeletionServiceIntegrationEnvelope,
+        payload: DeletionServiceLiveProbePayload,
+        statusCode: Int,
+        backendBaseURL: String,
+        response: DeletionServiceLiveProbeResponse
+    ) -> DeletionServiceLiveProbeReceipt {
+        let allowedStatus =
+        (statusCode == service.responseContract.acceptedStatusCode && response.status == .accepted) ||
+        (statusCode == service.responseContract.completedStatusCode && response.status == .completed)
+        let responseSafe =
+        allowedStatus &&
+        response.deletionReceiptID == service.deletionReceiptID &&
+        response.deletionJobID != nil &&
+        response.auditEventID != nil &&
+        response.tombstoneID != nil &&
+        response.perSystemResults.keys.contains("encrypted-backup") &&
+        response.perSystemResults.keys.contains("ai-draft-cache") &&
+        response.perSystemResults.keys.contains("thumbnail-cache") &&
+        !response.completionReceiptDigest.isEmpty &&
+        response.completedWithReauthentication &&
+        response.exportOpportunityPreserved &&
+        response.writeFreezeApplied &&
+        response.receiptDownloadableAfterCompletion &&
+        response.maxCompletionHours <= service.maxCompletionHours &&
+        !response.responseContainsRawMemoryPayload &&
+        !response.responseContainsRawMedia &&
+        response.testAccountOnly
+
+        let canPass = service.isDeletionRightsSafe && payload.isSafeForDeletionServiceProbe && responseSafe
+        let digest = TrustDigest.checksum([
+            service.id,
+            payload.bodyDigest,
+            response.completionReceiptDigest,
+            canPass ? "passed" : "failed"
+        ])
+        return DeletionServiceLiveProbeReceipt(
+            id: "deletion-live-probe-\(digest.prefix(12))",
+            status: canPass ? response.status : .failed,
+            deletionReceiptID: response.deletionReceiptID,
+            deletionJobID: response.deletionJobID,
+            auditEventID: response.auditEventID,
+            tombstoneID: response.tombstoneID,
+            backendBaseURL: backendBaseURL,
+            payloadSafeForDeletionService: payload.isSafeForDeletionServiceProbe,
+            responseSafeForDeletionRights: responseSafe,
+            validationNotes: canPass ? [
+                "Deletion service live probe produced job, audit, tombstone, and per-system erasure evidence.",
+                "Probe used a test account boundary and did not send or receive raw memory/media payloads."
+            ] : [
+                "Deletion service live probe evidence was incomplete or unsafe.",
+                "Production deletion and App Store deletion gates remain locked until backend evidence satisfies the contract."
+            ]
+        )
+    }
+
+    public static func notConfiguredReceipt() -> DeletionServiceLiveProbeReceipt {
+        DeletionServiceLiveProbeReceipt(
+            id: "deletion-live-probe-not-configured",
+            status: .notConfigured,
+            deletionReceiptID: nil,
+            deletionJobID: nil,
+            auditEventID: nil,
+            tombstoneID: nil,
+            backendBaseURL: nil,
+            payloadSafeForDeletionService: false,
+            responseSafeForDeletionRights: false,
+            validationNotes: [
+                "Set TSD_DELETION_BACKEND_BASE_URL and TSD_DELETION_TEST_TOKEN to run the optional live deletion service probe.",
+                "The probe must run against a TSD-owned test account boundary and must not send raw memory or raw media."
+            ]
+        )
+    }
+}
+
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
@@ -3616,6 +3928,6 @@ public enum ProductionImplementationChecklist {
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),
-        .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope and v47 adds a deletion service integration boundary.")
+        .init(id: "deletion-api-request", title: "Deletion API request", status: .poc, owner: "backend/legal", evidence: "Deletion receipt request is idempotent, authenticated, raw-memory-free, available after subscription ends; v45 adds a privacy-review-safe client audit envelope, v47 adds a deletion service integration boundary, and v60 adds an optional live deletion service probe for real backend job/audit/tombstone evidence.")
     ]
 }
