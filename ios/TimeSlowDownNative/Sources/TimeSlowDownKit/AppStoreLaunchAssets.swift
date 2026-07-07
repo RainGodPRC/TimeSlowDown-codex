@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "67",
-        summary: String = "TimeSlowDown v67 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "68",
+        summary: String = "TimeSlowDown v68 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -77,7 +77,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v65 adds an Age Rating review packet that maps private user memory/media content, no public social feed, no Kids Category claim, AI editing boundaries, external links, purchases, and support contact requirements while keeping final legal/release age-rating review blocked.",
             "v66 adds a signed-device media validation packet for PhotosPicker import and Files/share export evidence, while keeping actual Photos and Files release gates blocked until a real physical-device pass receipt exists.",
             "v67 adds an archive/signing readiness packet for full Xcode, Apple Developer Team, Release archive, Transporter upload, and App Store Connect processing evidence, while keeping actual archive/TestFlight gates blocked until a real production receipt exists.",
-            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
+            "v68 adds an App Store metadata/legal review packet for product page copy, screenshot/app preview plan, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist while keeping final App Store Connect entry and legal review blocked.",
+            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode, Apple Developer access, and release/legal approval."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
     ) {
@@ -304,7 +305,7 @@ public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, 
         signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
         signingPlan.requiresAppleDeveloperTeam &&
         signingPlan.fakeTeamIDForbidden &&
-        buildNotes.buildNumber == "67" &&
+        buildNotes.buildNumber == "68" &&
         steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
         Set(steps.map(\.kind)).count == steps.count &&
         steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
@@ -494,7 +495,7 @@ public enum ArchiveSigningValidationScaffold {
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v67 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v68 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -1012,6 +1013,231 @@ public struct AppAgeRatingReviewPacket: Codable, Equatable, Sendable {
     }
 }
 
+public enum AppStoreMetadataLegalItemKind: String, Codable, Equatable, CaseIterable, Sendable {
+    case productPagePositioning = "product-page-positioning"
+    case screenshotsAndAppPreview = "screenshots-app-preview"
+    case appReviewNotes = "app-review-notes"
+    case supportAndPrivacyURLs = "support-privacy-urls"
+    case exportAndDeletionRights = "export-deletion-rights"
+    case subscriptionCopy = "subscription-copy"
+    case aiAndDataProcessingDisclosure = "ai-data-processing-disclosure"
+    case legalReleaseChecklist = "legal-release-checklist"
+}
+
+public struct AppStoreMetadataLegalReviewItem: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var kind: AppStoreMetadataLegalItemKind
+    public var title: String
+    public var evidence: String
+    public var requiresAppStoreConnectEntry: Bool
+    public var requiresLegalReview: Bool
+    public var preservesTSDPositioning: Bool
+    public var avoidsFearDeathOrShameMarketing: Bool
+
+    public init(
+        id: String,
+        kind: AppStoreMetadataLegalItemKind,
+        title: String,
+        evidence: String,
+        requiresAppStoreConnectEntry: Bool = true,
+        requiresLegalReview: Bool = true,
+        preservesTSDPositioning: Bool = true,
+        avoidsFearDeathOrShameMarketing: Bool = true
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.evidence = evidence
+        self.requiresAppStoreConnectEntry = requiresAppStoreConnectEntry
+        self.requiresLegalReview = requiresLegalReview
+        self.preservesTSDPositioning = preservesTSDPositioning
+        self.avoidsFearDeathOrShameMarketing = avoidsFearDeathOrShameMarketing
+    }
+
+    public var isHonestTSDMetadataItem: Bool {
+        id.hasPrefix("metadata-legal-") &&
+        !title.isEmpty &&
+        !evidence.isEmpty &&
+        preservesTSDPositioning &&
+        avoidsFearDeathOrShameMarketing
+    }
+}
+
+public struct AppStoreMetadataLegalReviewPacket: Codable, Equatable, Sendable {
+    public var sourceReferences: [String]
+    public var productName: String
+    public var bundleIdentifier: String
+    public var subtitle: String
+    public var shortDescription: String
+    public var keywords: [String]
+    public var screenshotPlan: [String]
+    public var appReviewNotes: String
+    public var subscriptionCopy: String
+    public var supportURL: String
+    public var privacyURL: String
+    public var exportRightsURL: String
+    public var deletionRightsURL: String
+    public var aiDisclosure: String
+    public var items: [AppStoreMetadataLegalReviewItem]
+    public var completedInAppStoreConnect: Bool
+    public var legalReviewCompleted: Bool
+    public var releaseReviewCompleted: Bool
+
+    public init(
+        sourceReferences: [String] = [
+            "App Store Connect Help: Overview of app metadata",
+            "App Store Connect Help: Add app information",
+            "App Store Connect Help: App previews and screenshots",
+            "App Review Guidelines 2.3 Accurate Metadata",
+            "App Review Guidelines 5.1 Privacy"
+        ],
+        productName: String = "TimeSlowDown",
+        bundleIdentifier: String = "com.raingodprc.timeslowdown",
+        subtitle: String = "把今天留成以后能讲的瞬间",
+        shortDescription: String = "TimeSlowDown helps you turn photo/video anchors, quick marks, and weekly claims into private memory slices and tellable chapters without becoming a public social feed, medical tool, or full photo-library scanner.",
+        keywords: [String] = [
+            "memory",
+            "journal",
+            "photo",
+            "weekly story",
+            "private archive",
+            "time",
+            "life meadow"
+        ],
+        screenshotPlan: [String] = [
+            "Memory Camera photo/video-first capture",
+            "Today slice with media anchor and source trace",
+            "Weekly chapter: user claims three moments before AI edits",
+            "Life Meadow semantic zoom across week/month/year/life",
+            "Media wall with photo timeline and no full-library scan",
+            "Account Rights: export, deletion, subscription, and AI boundaries"
+        ],
+        appReviewNotes: String = "Reviewer can use guest mode: Memory Camera → create media slice → Media Wall → Weekly Chapter → Account Rights / Privacy Center. No login is required for the review route.",
+        subscriptionCopy: String = "Subscription enhances encrypted sync, AI quota, and storage. Existing memories, local recording, export, and deletion rights are never held hostage.",
+        supportURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#support",
+        privacyURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#privacy",
+        exportRightsURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#export",
+        deletionRightsURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#delete",
+        aiDisclosure: String = "AI is a faithful editor for user-approved weekly chapter drafts. Raw photos/videos, full archives, contacts, GPS, face embeddings, provider keys, and subscription state must not be sent to the model provider.",
+        items: [AppStoreMetadataLegalReviewItem] = AppStoreMetadataLegalReviewPacket.defaultItems,
+        completedInAppStoreConnect: Bool = false,
+        legalReviewCompleted: Bool = false,
+        releaseReviewCompleted: Bool = false
+    ) {
+        self.sourceReferences = sourceReferences
+        self.productName = productName
+        self.bundleIdentifier = bundleIdentifier
+        self.subtitle = subtitle
+        self.shortDescription = shortDescription
+        self.keywords = keywords
+        self.screenshotPlan = screenshotPlan
+        self.appReviewNotes = appReviewNotes
+        self.subscriptionCopy = subscriptionCopy
+        self.supportURL = supportURL
+        self.privacyURL = privacyURL
+        self.exportRightsURL = exportRightsURL
+        self.deletionRightsURL = deletionRightsURL
+        self.aiDisclosure = aiDisclosure
+        self.items = items
+        self.completedInAppStoreConnect = completedInAppStoreConnect
+        self.legalReviewCompleted = legalReviewCompleted
+        self.releaseReviewCompleted = releaseReviewCompleted
+    }
+
+    public static let defaultItems: [AppStoreMetadataLegalReviewItem] = [
+        .init(id: "metadata-legal-product-page", kind: .productPagePositioning, title: "Product page positioning", evidence: "TSD is positioned as a private memory-slice and weekly-story app; it is not a generic diary, photo album, public social network, or medical/cognitive diagnostic tool."),
+        .init(id: "metadata-legal-screenshots-app-preview", kind: .screenshotsAndAppPreview, title: "Screenshots and App Preview plan", evidence: "Screenshots cover Memory Camera, today slice, weekly chapter, life meadow, media wall, and Account Rights instead of vague lifestyle claims."),
+        .init(id: "metadata-legal-review-notes", kind: .appReviewNotes, title: "App Review notes", evidence: "Guest route lets reviewers inspect media capture, slice, media wall, weekly chapter, export/delete/subscription boundaries, and privacy center without login."),
+        .init(id: "metadata-legal-support-privacy-urls", kind: .supportAndPrivacyURLs, title: "Support and Privacy URLs", evidence: "Support/privacy/export/delete/subscription/review URLs exist as HTTPS public routes, while final company/legal approval remains a release blocker."),
+        .init(id: "metadata-legal-export-deletion-rights", kind: .exportAndDeletionRights, title: "Export and deletion rights copy", evidence: "Metadata must say users can export and delete memories; sync/AI/subscription cannot hold memories hostage."),
+        .init(id: "metadata-legal-subscription-copy", kind: .subscriptionCopy, title: "Subscription wording", evidence: "Subscription enhances sync, AI quota, and storage only; base recording, export, and deletion remain available."),
+        .init(id: "metadata-legal-ai-data-processing", kind: .aiAndDataProcessingDisclosure, title: "AI and data processing disclosure", evidence: "AI is disclosed as faithful editing from minimal user-approved fields; raw media, full archive, contacts, GPS, face embeddings, provider key, and subscription state are forbidden."),
+        .init(id: "metadata-legal-release-checklist", kind: .legalReleaseChecklist, title: "Legal and release checklist", evidence: "Formal App Store Connect entry, legal review, and release review are required before final gate can pass.")
+    ]
+
+    public var requiredItemKinds: [AppStoreMetadataLegalItemKind] {
+        AppStoreMetadataLegalItemKind.allCases
+    }
+
+    public var coversRequiredMetadataItems: Bool {
+        let kinds = Set(items.map(\.kind))
+        return Set(requiredItemKinds).isSubset(of: kinds)
+    }
+
+    public var usesPublicHTTPSURLs: Bool {
+        [supportURL, privacyURL, exportRightsURL, deletionRightsURL].allSatisfy { url in
+            url.hasPrefix("https://") &&
+            url.hasPrefix("https://raingodprc.github.io/TimeSlowDown-codex/") &&
+            !url.contains("localhost") &&
+            !url.localizedCaseInsensitiveContains("todo") &&
+            !url.localizedCaseInsensitiveContains("required")
+        }
+    }
+
+    public var preservesProductTruth: Bool {
+        productName == "TimeSlowDown" &&
+        bundleIdentifier == "com.raingodprc.timeslowdown" &&
+        shortDescription.localizedCaseInsensitiveContains("memory") &&
+        shortDescription.localizedCaseInsensitiveContains("photo") &&
+        shortDescription.localizedCaseInsensitiveContains("private") &&
+        shortDescription.localizedCaseInsensitiveContains("without becoming a public social feed") &&
+        shortDescription.localizedCaseInsensitiveContains("medical tool") &&
+        shortDescription.localizedCaseInsensitiveContains("full photo-library scanner")
+    }
+
+    public var avoidsFearDeathOrShameMarketing: Bool {
+        let combined = ([subtitle, shortDescription, appReviewNotes, subscriptionCopy, aiDisclosure] + items.map(\.evidence)).joined(separator: " ").lowercased()
+        let forbiddenPhrases = [
+            "death",
+            "die before",
+            "running out of life",
+            "shame",
+            "guilt",
+            "死亡",
+            "时日无多",
+            "羞耻",
+            "内疚"
+        ]
+        return forbiddenPhrases.allSatisfy { !combined.contains($0) } &&
+        items.allSatisfy(\.avoidsFearDeathOrShameMarketing)
+    }
+
+    public var preservesUserRightsAndSubscriptionEthics: Bool {
+        subscriptionCopy.localizedCaseInsensitiveContains("never held hostage") &&
+        subscriptionCopy.localizedCaseInsensitiveContains("export") &&
+        subscriptionCopy.localizedCaseInsensitiveContains("deletion") &&
+        items.contains { $0.kind == .exportAndDeletionRights && $0.evidence.localizedCaseInsensitiveContains("export") && $0.evidence.localizedCaseInsensitiveContains("delete") }
+    }
+
+    public var preservesAIBoundary: Bool {
+        aiDisclosure.localizedCaseInsensitiveContains("faithful editor") &&
+        aiDisclosure.localizedCaseInsensitiveContains("raw photos/videos") &&
+        aiDisclosure.localizedCaseInsensitiveContains("must not be sent") &&
+        aiDisclosure.localizedCaseInsensitiveContains("provider")
+    }
+
+    public var canSatisfyMetadataLegalShapeGate: Bool {
+        sourceReferences.count >= 5 &&
+        coversRequiredMetadataItems &&
+        items.allSatisfy(\.isHonestTSDMetadataItem) &&
+        preservesProductTruth &&
+        avoidsFearDeathOrShameMarketing &&
+        usesPublicHTTPSURLs &&
+        screenshotPlan.count >= 6 &&
+        keywords.count >= 6 &&
+        appReviewNotes.localizedCaseInsensitiveContains("guest mode") &&
+        preservesUserRightsAndSubscriptionEthics &&
+        preservesAIBoundary
+    }
+
+    public var canSatisfyFinalMetadataLegalGate: Bool {
+        canSatisfyMetadataLegalShapeGate &&
+        completedInAppStoreConnect &&
+        legalReviewCompleted &&
+        releaseReviewCompleted
+    }
+}
+
 public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
     case passed
     case blocked
@@ -1057,7 +1283,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "67", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "68", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -1098,6 +1324,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         publicURLPacket: AppStorePublicURLPacket = AppStorePublicURLPacket(),
         appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket = AppPrivacyQuestionnairePacket(),
         ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
+        metadataLegalReviewPacket: AppStoreMetadataLegalReviewPacket = AppStoreMetadataLegalReviewPacket(),
         archiveSigningReceipt: ArchiveSigningValidationReceipt? = nil,
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
@@ -1116,6 +1343,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let finalLegalURLsReady = publicURLPacket.canSatisfyFinalLegalURLGate
         let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
         let ageRatingShapeReady = ageRatingReviewPacket.canSatisfyAgeRatingShapeGate
+        let metadataLegalShapeReady = metadataLegalReviewPacket.canSatisfyMetadataLegalShapeGate
         let archiveSigningPacketShapeReady = archiveSigningReceipt?.isHonestPendingReceipt == true || archiveSigningReceipt?.isProductionArchiveUploadReceipt == true
         let mediaValidationPacketShapeReady = signedDeviceMediaReceipt?.isHonestPendingReceipt == true || signedDeviceMediaReceipt?.isProductionPassReceipt == true
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
@@ -1125,7 +1353,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         submissionRows.map(\.id).contains("privacy-questionnaire-packet") &&
         submissionRows.map(\.id).contains("age-rating") &&
         submissionRows.map(\.id).contains("age-rating-review-packet") &&
-        submissionRows.map(\.id).contains("support-privacy-urls")
+        submissionRows.map(\.id).contains("support-privacy-urls") &&
+        submissionRows.map(\.id).contains("metadata-legal-review-packet")
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
         let productionContractsCovered = productionRows.count >= 7 && productionRows.allSatisfy { $0.status == .poc }
         let signedDevicePassed = signedDeviceReceipt?.isProductionPassReceipt == true
@@ -1197,6 +1426,22 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 requiredForTestFlight: false,
                 evidence: publicURLShapeReady ? publicURLPacket.privacyURL : "Public URL packet is incomplete or not HTTPS.",
                 unblockAction: "Keep HTTPS public support/privacy/export/delete/subscription/review deep links reachable from the launch packet."
+            ),
+            .init(
+                id: "app-store-connect-metadata",
+                title: "App Store Connect metadata and legal review",
+                status: metadataLegalReviewPacket.canSatisfyFinalMetadataLegalGate ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: metadataLegalReviewPacket.canSatisfyFinalMetadataLegalGate ? "Product page, screenshots/app preview, review notes, subscription copy, support/privacy/data-rights URLs, AI disclosure, App Store Connect entry, legal review, and release review are complete." : "Metadata/legal packet exists only as a draft until App Store Connect entry plus legal/release review are complete.",
+                unblockAction: "Enter final metadata in App Store Connect, attach reviewed screenshots/app preview, approve support/privacy/data-rights URLs, review subscription and AI disclosures, then capture legal/release approval."
+            ),
+            .init(
+                id: "metadata-legal-review-packet",
+                title: "Metadata/legal review packet",
+                status: metadataLegalShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: metadataLegalShapeReady ? "v68 maps product page positioning, screenshots/app preview, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist without death/fear/shame marketing or subscription-hostage claims." : "Metadata/legal review packet is missing or malformed.",
+                unblockAction: "Repair the machine-checkable metadata/legal review packet before App Store Connect and legal handoff."
             ),
             .init(
                 id: "app-privacy-questionnaire",

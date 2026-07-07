@@ -184,11 +184,12 @@ check(!chapter.narrative.contains("第四个候选"), "Weekly chapter should not
 check(chapter.sources.filter { $0.hasPrefix("slice:") }.count == 3, "Weekly chapter should keep slice provenance")
 
 check(NativeHandoffLedger.rows.count == 8, "Native Handoff Ledger should keep the v32 eight-row contract")
-check(SubmissionPacket.rows.count == 10, "Submission Packet should keep the v65 ten-row contract")
+check(SubmissionPacket.rows.count == 11, "Submission Packet should keep the v68 eleven-row contract")
 check(NativeHandoffLedger.rows.map(\.id).contains("photos-picker"), "Native Handoff should include PhotosPicker")
 check(NativeHandoffLedger.rows.map(\.id).contains("keychain-e2ee"), "Native Handoff should include Keychain/E2EE")
 check(SubmissionPacket.rows.map(\.id).contains("privacy-questionnaire"), "Submission Packet should include privacy questionnaire")
 check(SubmissionPacket.rows.map(\.id).contains("subscription-copy"), "Submission Packet should include subscription wording")
+check(SubmissionPacket.rows.map(\.id).contains("metadata-legal-review-packet"), "Submission Packet should include metadata/legal review packet")
 check(NativeHandoffLedger.rows.first { $0.id == "swiftui-shell" }?.status == .poc, "SwiftUI shell should be promoted to PoC after v37 Xcode project skeleton")
 check(NativeHandoffLedger.rows.first { $0.id == "photos-picker" }?.status == .poc, "PhotosPicker should be promoted to PoC after v50 byte import adapter")
 check(NativeHandoffLedger.rows.first { $0.id == "keychain-e2ee" }?.status == .poc, "Keychain/E2EE should be promoted to PoC after v38 trust contracts")
@@ -274,7 +275,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>67</string>"), "Info.plist should carry v67 build number")
+check(infoPlistText.contains("<string>68</string>"), "Info.plist should carry v68 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -1497,7 +1498,7 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "67", "TestFlight build notes should match v67")
+check(buildNotes.buildNumber == "68", "TestFlight build notes should match v68")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1506,6 +1507,7 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("Secure Enclave device
 check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device validation scaffold"), "TestFlight build notes should mention signed-device validation scaffold")
 check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device media validation packet"), "TestFlight build notes should mention signed-device media validation packet")
 check(buildNotes.summary.localizedCaseInsensitiveContains("archive/signing readiness packet"), "TestFlight build notes should mention archive/signing readiness packet")
+check(buildNotes.summary.localizedCaseInsensitiveContains("metadata/legal review packet"), "TestFlight build notes should mention metadata/legal review packet")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -1540,6 +1542,7 @@ check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiv
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("Age Rating review packet"), "TestFlight build notes should disclose Age Rating review packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("signed-device media validation packet"), "TestFlight build notes should disclose signed-device media validation packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive/signing readiness packet"), "TestFlight build notes should disclose archive/signing readiness packet boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("metadata/legal review packet"), "TestFlight build notes should disclose metadata/legal review packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -1728,6 +1731,52 @@ let gamblingAgeRatingPacket = AppAgeRatingReviewPacket(answers: Array(AppAgeRati
 check(!gamblingAgeRatingPacket.disallowsAdultOrRegulatedContentByDefault, "Age Rating review packet should fail if gambling/loot boxes are included")
 check(!gamblingAgeRatingPacket.canSatisfyAgeRatingShapeGate, "Age Rating review packet should not pass shape gate with gambling/loot boxes")
 
+let metadataLegalPacket = AppStoreMetadataLegalReviewPacket()
+check(metadataLegalPacket.sourceReferences.count == 5, "Metadata/legal review packet should name five source references")
+check(metadataLegalPacket.productName == "TimeSlowDown", "Metadata/legal review packet should preserve product name")
+check(metadataLegalPacket.bundleIdentifier == "com.raingodprc.timeslowdown", "Metadata/legal review packet should preserve bundle identifier")
+check(metadataLegalPacket.items.count == 8, "Metadata/legal review packet should cover eight metadata/legal items")
+check(metadataLegalPacket.requiredItemKinds.allSatisfy { requiredKind in metadataLegalPacket.items.map(\.kind).contains(requiredKind) }, "Metadata/legal review packet should include every required metadata/legal item")
+check(metadataLegalPacket.items.map(\.kind).contains(.productPagePositioning), "Metadata/legal review packet should include product page positioning")
+check(metadataLegalPacket.items.map(\.kind).contains(.screenshotsAndAppPreview), "Metadata/legal review packet should include screenshot/app preview plan")
+check(metadataLegalPacket.items.map(\.kind).contains(.appReviewNotes), "Metadata/legal review packet should include App Review notes")
+check(metadataLegalPacket.items.map(\.kind).contains(.supportAndPrivacyURLs), "Metadata/legal review packet should include support/privacy URLs")
+check(metadataLegalPacket.items.map(\.kind).contains(.subscriptionCopy), "Metadata/legal review packet should include subscription copy")
+check(metadataLegalPacket.items.map(\.kind).contains(.aiAndDataProcessingDisclosure), "Metadata/legal review packet should include AI/data disclosure")
+check(metadataLegalPacket.screenshotPlan.count >= 6, "Metadata/legal review packet should define at least six screenshot/app preview moments")
+check(metadataLegalPacket.usesPublicHTTPSURLs, "Metadata/legal review packet should use HTTPS public URLs")
+check(metadataLegalPacket.preservesProductTruth, "Metadata/legal review packet should preserve TSD product truth")
+check(metadataLegalPacket.avoidsFearDeathOrShameMarketing, "Metadata/legal review packet should avoid fear/death/shame marketing")
+check(metadataLegalPacket.preservesUserRightsAndSubscriptionEthics, "Metadata/legal review packet should preserve user rights and subscription ethics")
+check(metadataLegalPacket.preservesAIBoundary, "Metadata/legal review packet should preserve AI provider boundary")
+check(metadataLegalPacket.canSatisfyMetadataLegalShapeGate, "Metadata/legal review packet should satisfy local shape gate")
+check(!metadataLegalPacket.canSatisfyFinalMetadataLegalGate, "Metadata/legal review packet should not satisfy final metadata/legal gate before App Store Connect/legal/release completion")
+
+let completedMetadataLegalPacket = AppStoreMetadataLegalReviewPacket(
+    completedInAppStoreConnect: true,
+    legalReviewCompleted: true,
+    releaseReviewCompleted: true
+)
+check(completedMetadataLegalPacket.canSatisfyFinalMetadataLegalGate, "Completed metadata/legal packet should satisfy final metadata/legal evidence contract")
+
+let fearMarketingMetadataPacket = AppStoreMetadataLegalReviewPacket(
+    shortDescription: "Your life is running out of life, so record before death."
+)
+check(!fearMarketingMetadataPacket.avoidsFearDeathOrShameMarketing, "Metadata/legal review packet should reject death/fear marketing")
+check(!fearMarketingMetadataPacket.canSatisfyMetadataLegalShapeGate, "Metadata/legal review packet should fail shape gate with death/fear marketing")
+
+let localhostMetadataPacket = AppStoreMetadataLegalReviewPacket(
+    supportURL: "http://localhost:54194/#support"
+)
+check(!localhostMetadataPacket.usesPublicHTTPSURLs, "Metadata/legal review packet should reject localhost/non-HTTPS support URLs")
+check(!localhostMetadataPacket.canSatisfyMetadataLegalShapeGate, "Metadata/legal review packet should fail shape gate with localhost URLs")
+
+let hostageSubscriptionMetadataPacket = AppStoreMetadataLegalReviewPacket(
+    subscriptionCopy: "Subscription is required to export or delete memories."
+)
+check(!hostageSubscriptionMetadataPacket.preservesUserRightsAndSubscriptionEthics, "Metadata/legal review packet should reject subscription-hostage wording")
+check(!hostageSubscriptionMetadataPacket.canSatisfyMetadataLegalShapeGate, "Metadata/legal review packet should fail shape gate with subscription-hostage wording")
+
 let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     hasFullXcode: unsignedHostEnvironment.hasFullXcode,
     archiveCreated: false,
@@ -1744,6 +1793,7 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     publicURLPacket: publicURLPacket,
     appPrivacyQuestionnairePacket: appPrivacyPacket,
     ageRatingReviewPacket: ageRatingPacket,
+    metadataLegalReviewPacket: metadataLegalPacket,
     archiveSigningReceipt: archiveSigningPendingReceipt,
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
@@ -1751,8 +1801,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "67", "App Store submission gate should track v67")
-check(appStoreSubmissionGate.rows.count == 22, "App Store submission gate should track twenty-two release gates after v67 archive/signing readiness packet")
+check(appStoreSubmissionGate.buildNumber == "68", "App Store submission gate should track v68")
+check(appStoreSubmissionGate.rows.count == 24, "App Store submission gate should track twenty-four release gates after v68 metadata/legal review packet")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -1762,6 +1812,8 @@ check(appStoreSubmissionGate.blockerIDs.contains("testflight-upload"), "Submissi
 check(!appStoreSubmissionGate.blockerIDs.contains("archive-signing-readiness-packet"), "Archive/signing readiness packet shape should not block once honestly mapped")
 check(appStoreSubmissionGate.blockerIDs.contains("support-privacy-urls"), "Submission gate should block without support/privacy URLs")
 check(!appStoreSubmissionGate.blockerIDs.contains("public-url-packet"), "Public URL packet shape should not block once HTTPS deep links exist")
+check(appStoreSubmissionGate.blockerIDs.contains("app-store-connect-metadata"), "Submission gate should block without final App Store Connect metadata/legal review")
+check(!appStoreSubmissionGate.blockerIDs.contains("metadata-legal-review-packet"), "Metadata/legal review packet shape should not block once mapped")
 check(appStoreSubmissionGate.blockerIDs.contains("app-privacy-questionnaire"), "Submission gate should block without App Privacy questionnaire")
 check(!appStoreSubmissionGate.blockerIDs.contains("app-privacy-questionnaire-packet"), "App Privacy questionnaire packet shape should not block once mapped")
 check(appStoreSubmissionGate.blockerIDs.contains("age-rating-12-plus"), "Submission gate should block without age-rating review")
@@ -1862,6 +1914,34 @@ let backendProvenSubmissionGate = AppStoreSubmissionGate.current(
 check(!backendProvenSubmissionGate.blockerIDs.contains("backend-release-manifest"), "Reviewed backend deployment evidence should satisfy the backend release manifest gate")
 check(backendProvenSubmissionGate.blockerIDs.contains("full-xcode"), "Backend evidence should not mask unrelated Xcode blockers")
 
+let metadataLegalCompletedSubmissionGate = AppStoreSubmissionGate.current(
+    hasFullXcode: false,
+    archiveCreated: false,
+    testFlightUploadReceiptPresent: false,
+    supportPrivacyURLsPublished: false,
+    appPrivacyQuestionnaireCompleted: false,
+    ageRatingReviewedFor12Plus: false,
+    photosImportSignedDevicePassed: false,
+    filesExportSignedDevicePassed: false,
+    signingPlan: signingPlan,
+    buildNotes: buildNotes,
+    reviewRoute: reviewRoute,
+    privacyBoundary: boundary,
+    publicURLPacket: publicURLPacket,
+    appPrivacyQuestionnairePacket: appPrivacyPacket,
+    ageRatingReviewPacket: ageRatingPacket,
+    metadataLegalReviewPacket: completedMetadataLegalPacket,
+    archiveSigningReceipt: archiveSigningPendingReceipt,
+    backendReleaseEvidence: TSDBackendReleaseEvidence(),
+    signedDeviceReceipt: signedDevicePendingReceipt,
+    signedDeviceMediaReceipt: signedDeviceMediaPendingReceipt,
+    deepSeekReceipt: providerPassReceipt,
+    deletionReceipt: deletionLiveProbeReceipt
+)
+check(!metadataLegalCompletedSubmissionGate.blockerIDs.contains("metadata-legal-review-packet"), "Completed metadata/legal packet should keep shape gate satisfied")
+check(!metadataLegalCompletedSubmissionGate.blockerIDs.contains("app-store-connect-metadata"), "Completed metadata/legal packet should satisfy final metadata/legal gate")
+check(metadataLegalCompletedSubmissionGate.blockerIDs.contains("full-xcode"), "Metadata/legal completion should not mask unrelated Xcode blockers")
+
 let unprovenBackendSubmissionGate = AppStoreSubmissionGate.current(
     hasFullXcode: false,
     archiveCreated: false,
@@ -1878,6 +1958,7 @@ let unprovenBackendSubmissionGate = AppStoreSubmissionGate.current(
     publicURLPacket: publicURLPacket,
     appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket(noTracking: false),
     ageRatingReviewPacket: AppAgeRatingReviewPacket(noPublicSocialFeed: false),
+    metadataLegalReviewPacket: fearMarketingMetadataPacket,
     archiveSigningReceipt: secretBearingArchiveReceipt,
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
@@ -1890,6 +1971,7 @@ check(unprovenBackendSubmissionGate.blockerIDs.contains("deepseek-provider-pass"
 check(unprovenBackendSubmissionGate.blockerIDs.contains("deletion-completion-pass"), "Submission gate should block deletion without completion evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("app-privacy-questionnaire-packet"), "Submission gate should block malformed privacy questionnaire packet evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("age-rating-review-packet"), "Submission gate should block malformed Age Rating review packet evidence")
+check(unprovenBackendSubmissionGate.blockerIDs.contains("metadata-legal-review-packet"), "Submission gate should block malformed metadata/legal review packet evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("archive-signing-readiness-packet"), "Submission gate should block malformed archive/signing packet evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("signed-device-media-validation-packet"), "Submission gate should block malformed signed-device media packet evidence")
 
@@ -1897,4 +1979,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, and v67 archive/signing readiness packet are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, and v68 App Store metadata/legal review packet are aligned.")
