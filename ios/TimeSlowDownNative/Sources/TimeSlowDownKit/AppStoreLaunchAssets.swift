@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "63",
-        summary: String = "TimeSlowDown v63 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "64",
+        summary: String = "TimeSlowDown v64 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -73,6 +73,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v61 adds an App Store submission gate that remains blocked until full Xcode, Team ID, archive, TestFlight upload, App Store Connect metadata, support/privacy URLs, App Privacy questionnaire, age rating, DeepSeek provider pass, deletion completion, and signed-device privacy receipts exist.",
             "v62 adds a public URL packet with HTTPS support/privacy/export/delete/subscription/review deep links on the public GitHub Pages demo, while keeping formal legal review and final company support/privacy URLs as release blockers.",
             "v63 adds a backend release manifest gate that remains blocked until a real HTTPS TSD backend, server-side DeepSeek secret manager, weekly chapter endpoint, deletion jobs endpoint, audit/deletion worker, live provider receipt, completed deletion receipt, and deployment review exist.",
+            "v64 adds an App Privacy questionnaire packet that maps user content, photo/video anchors, account identifiers, purchases, diagnostics, minimal AI task payloads, and optional encrypted sync to App Store privacy answers, but keeps final App Store Connect/legal completion blocked.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -227,6 +228,243 @@ public struct AppStorePublicURLPacket: Codable, Equatable, Sendable {
     }
 }
 
+public enum AppPrivacyDataUse: String, Codable, Equatable, CaseIterable, Sendable {
+    case appFunctionality = "app-functionality"
+    case aiAssistance = "ai-assistance"
+    case optionalSync = "optional-encrypted-sync"
+    case accountManagement = "account-management"
+    case purchases = "purchases"
+    case diagnostics = "diagnostics"
+}
+
+public struct AppPrivacyDataAnswer: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var appleDataCategory: String
+    public var appleDataType: String
+    public var collectedByAppOrBackend: Bool
+    public var linkedToUser: Bool
+    public var usedForTracking: Bool
+    public var uses: [AppPrivacyDataUse]
+    public var userConsentRequired: Bool
+    public var deletionAndExportCovered: Bool
+    public var rawMediaSentToAIProvider: Bool
+    public var evidence: String
+
+    public init(
+        id: String,
+        appleDataCategory: String,
+        appleDataType: String,
+        collectedByAppOrBackend: Bool,
+        linkedToUser: Bool,
+        usedForTracking: Bool = false,
+        uses: [AppPrivacyDataUse],
+        userConsentRequired: Bool,
+        deletionAndExportCovered: Bool = true,
+        rawMediaSentToAIProvider: Bool = false,
+        evidence: String
+    ) {
+        self.id = id
+        self.appleDataCategory = appleDataCategory
+        self.appleDataType = appleDataType
+        self.collectedByAppOrBackend = collectedByAppOrBackend
+        self.linkedToUser = linkedToUser
+        self.usedForTracking = usedForTracking
+        self.uses = uses
+        self.userConsentRequired = userConsentRequired
+        self.deletionAndExportCovered = deletionAndExportCovered
+        self.rawMediaSentToAIProvider = rawMediaSentToAIProvider
+        self.evidence = evidence
+    }
+}
+
+public struct AppPrivacyQuestionnairePacket: Codable, Equatable, Sendable {
+    public var sourceReferences: [String]
+    public var answers: [AppPrivacyDataAnswer]
+    public var notCollectedAppleDataTypes: [String]
+    public var noTracking: Bool
+    public var noThirdPartyAdvertising: Bool
+    public var noContactsAccess: Bool
+    public var noGPSOrLocationInference: Bool
+    public var noFaceRecognitionOrBiometricProfile: Bool
+    public var rawMediaNeverSentToAIProvider: Bool
+    public var aiUsesOnlyUserApprovedMinimalFields: Bool
+    public var exportAndDeleteRightsPreserved: Bool
+    public var privacyURLIncluded: Bool
+    public var completedInAppStoreConnect: Bool
+    public var legalReviewCompleted: Bool
+
+    public init(
+        sourceReferences: [String] = [
+            "Apple Developer: App privacy details on the App Store",
+            "App Store Connect Help: Manage app privacy",
+            "App Store Connect Help: Data types"
+        ],
+        answers: [AppPrivacyDataAnswer] = AppPrivacyQuestionnairePacket.defaultAnswers,
+        notCollectedAppleDataTypes: [String] = [
+            "Contacts",
+            "Precise Location",
+            "Coarse Location",
+            "Health",
+            "Fitness",
+            "Financial Info",
+            "Browsing History",
+            "Search History",
+            "Sensitive Info"
+        ],
+        noTracking: Bool = true,
+        noThirdPartyAdvertising: Bool = true,
+        noContactsAccess: Bool = true,
+        noGPSOrLocationInference: Bool = true,
+        noFaceRecognitionOrBiometricProfile: Bool = true,
+        rawMediaNeverSentToAIProvider: Bool = true,
+        aiUsesOnlyUserApprovedMinimalFields: Bool = true,
+        exportAndDeleteRightsPreserved: Bool = true,
+        privacyURLIncluded: Bool = true,
+        completedInAppStoreConnect: Bool = false,
+        legalReviewCompleted: Bool = false
+    ) {
+        self.sourceReferences = sourceReferences
+        self.answers = answers
+        self.notCollectedAppleDataTypes = notCollectedAppleDataTypes
+        self.noTracking = noTracking
+        self.noThirdPartyAdvertising = noThirdPartyAdvertising
+        self.noContactsAccess = noContactsAccess
+        self.noGPSOrLocationInference = noGPSOrLocationInference
+        self.noFaceRecognitionOrBiometricProfile = noFaceRecognitionOrBiometricProfile
+        self.rawMediaNeverSentToAIProvider = rawMediaNeverSentToAIProvider
+        self.aiUsesOnlyUserApprovedMinimalFields = aiUsesOnlyUserApprovedMinimalFields
+        self.exportAndDeleteRightsPreserved = exportAndDeleteRightsPreserved
+        self.privacyURLIncluded = privacyURLIncluded
+        self.completedInAppStoreConnect = completedInAppStoreConnect
+        self.legalReviewCompleted = legalReviewCompleted
+    }
+
+    public static let defaultAnswers: [AppPrivacyDataAnswer] = [
+        .init(
+            id: "memory-user-content",
+            appleDataCategory: "User Content",
+            appleDataType: "Other User Content",
+            collectedByAppOrBackend: true,
+            linkedToUser: true,
+            uses: [.appFunctionality, .optionalSync],
+            userConsentRequired: true,
+            evidence: "Memory slices, titles, notes, tags, and weekly chapter source traces are user-created content."
+        ),
+        .init(
+            id: "photo-video-anchors",
+            appleDataCategory: "User Content",
+            appleDataType: "Photos or Videos",
+            collectedByAppOrBackend: true,
+            linkedToUser: true,
+            uses: [.appFunctionality, .optionalSync],
+            userConsentRequired: true,
+            evidence: "Photo/video anchors are user-selected through limited-library flows; no full-library scan, GPS inference, face recognition, or AI raw-media upload."
+        ),
+        .init(
+            id: "account-identifier",
+            appleDataCategory: "Identifiers",
+            appleDataType: "User ID",
+            collectedByAppOrBackend: true,
+            linkedToUser: true,
+            uses: [.accountManagement, .appFunctionality],
+            userConsentRequired: true,
+            evidence: "Account ID is needed only for optional account, sync, export, deletion, and review-safe backend operations."
+        ),
+        .init(
+            id: "subscription-purchases",
+            appleDataCategory: "Purchases",
+            appleDataType: "Purchase History",
+            collectedByAppOrBackend: true,
+            linkedToUser: true,
+            uses: [.purchases, .appFunctionality],
+            userConsentRequired: true,
+            evidence: "Subscription state unlocks enhanced sync/AI/storage only; export/delete rights remain available after subscription ends."
+        ),
+        .init(
+            id: "diagnostics",
+            appleDataCategory: "Diagnostics",
+            appleDataType: "Crash Data and Performance Data",
+            collectedByAppOrBackend: true,
+            linkedToUser: false,
+            uses: [.diagnostics],
+            userConsentRequired: false,
+            evidence: "Diagnostics should be limited to crash/performance quality monitoring and must not contain raw memories or media."
+        ),
+        .init(
+            id: "minimal-ai-task-payload",
+            appleDataCategory: "User Content",
+            appleDataType: "Other User Content",
+            collectedByAppOrBackend: true,
+            linkedToUser: true,
+            uses: [.aiAssistance],
+            userConsentRequired: true,
+            evidence: "DeepSeek weekly chapter tasks use only user-approved slice IDs, titles, tags, media kinds, and selected claims; no raw media or full archive."
+        ),
+        .init(
+            id: "encrypted-sync-backup",
+            appleDataCategory: "User Content",
+            appleDataType: "Other User Content",
+            collectedByAppOrBackend: true,
+            linkedToUser: true,
+            uses: [.optionalSync, .appFunctionality],
+            userConsentRequired: true,
+            evidence: "Optional encrypted backup/sync carries only consented memory data and remains exportable/deletable."
+        )
+    ]
+
+    public var requiredAnswerIDs: [String] {
+        [
+            "memory-user-content",
+            "photo-video-anchors",
+            "account-identifier",
+            "subscription-purchases",
+            "diagnostics",
+            "minimal-ai-task-payload",
+            "encrypted-sync-backup"
+        ]
+    }
+
+    public var coversRequiredTSDDataTypes: Bool {
+        let ids = Set(answers.map(\.id))
+        return Set(requiredAnswerIDs).isSubset(of: ids)
+    }
+
+    public var forbidsTrackingAndAds: Bool {
+        noTracking &&
+        noThirdPartyAdvertising &&
+        answers.allSatisfy { !$0.usedForTracking }
+    }
+
+    public var preservesPrivacyBoundaries: Bool {
+        noContactsAccess &&
+        noGPSOrLocationInference &&
+        noFaceRecognitionOrBiometricProfile &&
+        rawMediaNeverSentToAIProvider &&
+        aiUsesOnlyUserApprovedMinimalFields &&
+        answers.allSatisfy { !$0.rawMediaSentToAIProvider }
+    }
+
+    public var preservesUserRights: Bool {
+        exportAndDeleteRightsPreserved &&
+        answers.filter(\.collectedByAppOrBackend).allSatisfy(\.deletionAndExportCovered)
+    }
+
+    public var canSatisfyQuestionnaireShapeGate: Bool {
+        sourceReferences.count >= 3 &&
+        privacyURLIncluded &&
+        coversRequiredTSDDataTypes &&
+        forbidsTrackingAndAds &&
+        preservesPrivacyBoundaries &&
+        preservesUserRights
+    }
+
+    public var canSatisfyFinalAppStoreQuestionnaireGate: Bool {
+        canSatisfyQuestionnaireShapeGate &&
+        completedInAppStoreConnect &&
+        legalReviewCompleted
+    }
+}
+
 public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
     case passed
     case blocked
@@ -272,7 +510,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "63", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "64", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -311,6 +549,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         reviewRoute: AppReviewRoute = AppReviewRoute(),
         privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
         publicURLPacket: AppStorePublicURLPacket = AppStorePublicURLPacket(),
+        appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket = AppPrivacyQuestionnairePacket(),
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
         deepSeekReceipt: DeepSeekGatewayIntegrationReceipt? = nil,
@@ -325,10 +564,12 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let supportContactPresent = !buildNotes.supportContact.localizedCaseInsensitiveContains("required")
         let publicURLShapeReady = publicURLPacket.canSatisfyPublicURLShapeGate
         let finalLegalURLsReady = publicURLPacket.canSatisfyFinalLegalURLGate
+        let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
         nativeRows.map(\.id).contains("keychain-e2ee") &&
         nativeRows.map(\.id).contains("deepseek-gateway")
         let submissionContractCovered = submissionRows.map(\.id).contains("privacy-questionnaire") &&
+        submissionRows.map(\.id).contains("privacy-questionnaire-packet") &&
         submissionRows.map(\.id).contains("age-rating") &&
         submissionRows.map(\.id).contains("support-privacy-urls")
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
@@ -394,8 +635,16 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 title: "App Privacy questionnaire",
                 status: appPrivacyQuestionnaireCompleted ? .passed : .blocked,
                 requiredForTestFlight: false,
-                evidence: appPrivacyQuestionnaireCompleted ? "App Store Connect privacy answers are reviewed." : "Privacy questionnaire remains a todo in the submission packet.",
+                evidence: appPrivacyQuestionnaireCompleted ? "App Store Connect privacy answers are reviewed." : "Privacy questionnaire remains blocked until App Store Connect entry and legal/release review are complete.",
                 unblockAction: "Complete App Store Connect data-use answers for user content, media, account, purchases, diagnostics, AI, and sync."
+            ),
+            .init(
+                id: "app-privacy-questionnaire-packet",
+                title: "App Privacy questionnaire packet",
+                status: privacyQuestionnaireShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: privacyQuestionnaireShapeReady ? "v64 maps TSD user content, photos/videos, account identifiers, purchases, diagnostics, AI task payloads, and optional encrypted sync to privacy-answer evidence without tracking or raw-media AI upload." : "Privacy questionnaire packet is incomplete.",
+                unblockAction: "Repair the machine-checkable privacy data mapping before release/legal handoff."
             ),
             .init(
                 id: "age-rating-12-plus",
