@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "60",
-        summary: String = "TimeSlowDown v60 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "61",
+        summary: String = "TimeSlowDown v61 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -70,6 +70,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
         knownLimitations: [String] = [
             "No production backend, account sync, or bundled DeepSeek provider key is included in this build; v55 separates pending backend, mock gateway, and future provider-passed validation receipts, v56 defines the redacted backend integration test request/result contract, v57 defines the backend endpoint contract plus provider proxy boundary, v58 adds a local endpoint execution harness that can pass only stub gates, v59 adds an optional live backend probe that requires TSD backend URL/token environment variables plus real provider evidence before any production AI/App Store AI gate can pass, and v60 adds an optional deletion live probe that requires TSD deletion backend URL/token plus real job/audit/tombstone/per-system evidence before deletion gates can pass.",
             "Secure Enclave generation request, reference receipt, and signed-device validation scaffold are now Swift-verifiable contracts, but no signed-device Secure Enclave/Keychain pass receipt, signed-device Photos import validation, or production E2EE media vault validation is claimed yet.",
+            "v61 adds an App Store submission gate that remains blocked until full Xcode, Team ID, archive, TestFlight upload, App Store Connect metadata, support/privacy URLs, App Privacy questionnaire, age rating, DeepSeek provider pass, deletion completion, and signed-device privacy receipts exist.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -153,4 +154,229 @@ public enum AppStoreLaunchAssetChecklist {
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
+}
+
+public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
+    case passed
+    case blocked
+}
+
+public struct AppStoreSubmissionGateRow: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var title: String
+    public var status: AppStoreSubmissionGateStatus
+    public var requiredForTestFlight: Bool
+    public var requiredForAppStore: Bool
+    public var evidence: String
+    public var unblockAction: String
+
+    public init(
+        id: String,
+        title: String,
+        status: AppStoreSubmissionGateStatus,
+        requiredForTestFlight: Bool = true,
+        requiredForAppStore: Bool = true,
+        evidence: String,
+        unblockAction: String
+    ) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.requiredForTestFlight = requiredForTestFlight
+        self.requiredForAppStore = requiredForAppStore
+        self.evidence = evidence
+        self.unblockAction = unblockAction
+    }
+
+    public var blocksTestFlight: Bool {
+        requiredForTestFlight && status == .blocked
+    }
+
+    public var blocksAppStore: Bool {
+        requiredForAppStore && status == .blocked
+    }
+}
+
+public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
+    public var buildNumber: String
+    public var rows: [AppStoreSubmissionGateRow]
+
+    public init(buildNumber: String = "61", rows: [AppStoreSubmissionGateRow]) {
+        self.buildNumber = buildNumber
+        self.rows = rows
+    }
+
+    public var testFlightBlockers: [AppStoreSubmissionGateRow] {
+        rows.filter(\.blocksTestFlight)
+    }
+
+    public var appStoreBlockers: [AppStoreSubmissionGateRow] {
+        rows.filter(\.blocksAppStore)
+    }
+
+    public var canSubmitToTestFlight: Bool {
+        testFlightBlockers.isEmpty
+    }
+
+    public var canSubmitToAppStore: Bool {
+        appStoreBlockers.isEmpty
+    }
+
+    public var blockerIDs: [String] {
+        appStoreBlockers.map(\.id)
+    }
+
+    public static func current(
+        hasFullXcode: Bool,
+        archiveCreated: Bool,
+        testFlightUploadReceiptPresent: Bool,
+        supportPrivacyURLsPublished: Bool,
+        appPrivacyQuestionnaireCompleted: Bool,
+        ageRatingReviewedFor12Plus: Bool,
+        photosImportSignedDevicePassed: Bool,
+        filesExportSignedDevicePassed: Bool,
+        signingPlan: SigningReadinessPlan = SigningReadinessPlan(),
+        buildNotes: TestFlightBuildNotes = TestFlightBuildNotes(),
+        reviewRoute: AppReviewRoute = AppReviewRoute(),
+        privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
+        signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
+        deepSeekReceipt: DeepSeekGatewayIntegrationReceipt? = nil,
+        deletionReceipt: DeletionServiceLiveProbeReceipt? = nil,
+        nativeRows: [ReadinessRow] = NativeHandoffLedger.rows,
+        submissionRows: [ReadinessRow] = SubmissionPacket.rows,
+        launchRows: [ReadinessRow] = AppStoreLaunchAssetChecklist.rows,
+        productionRows: [ReadinessRow] = ProductionImplementationChecklist.rows
+    ) -> AppStoreSubmissionGate {
+        let teamIDPresent = signingPlan.teamID?.isEmpty == false
+        let bundleIDMatches = signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown"
+        let supportContactPresent = !buildNotes.supportContact.localizedCaseInsensitiveContains("required")
+        let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
+        nativeRows.map(\.id).contains("keychain-e2ee") &&
+        nativeRows.map(\.id).contains("deepseek-gateway")
+        let submissionContractCovered = submissionRows.map(\.id).contains("privacy-questionnaire") &&
+        submissionRows.map(\.id).contains("age-rating") &&
+        submissionRows.map(\.id).contains("support-privacy-urls")
+        let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
+        let productionContractsCovered = productionRows.count >= 6 && productionRows.allSatisfy { $0.status == .poc }
+        let signedDevicePassed = signedDeviceReceipt?.isProductionPassReceipt == true
+        let aiProviderPassed = deepSeekReceipt?.canBeUsedForAppStoreGate == true
+        let deletionCompleted = deletionReceipt?.canSatisfyAppStoreDeletionGate == true
+
+        return AppStoreSubmissionGate(rows: [
+            .init(
+                id: "full-xcode",
+                title: "Full Xcode toolchain",
+                status: hasFullXcode ? .passed : .blocked,
+                evidence: hasFullXcode ? "Full Xcode is available for archive/signing." : "Current SwiftPM host can build contracts but cannot archive/sign the iOS app.",
+                unblockAction: "Install/select full Xcode and rerun archive checks."
+            ),
+            .init(
+                id: "apple-developer-team",
+                title: "Apple Developer Team ID",
+                status: teamIDPresent ? .passed : .blocked,
+                evidence: teamIDPresent ? "Signing plan includes a Team ID." : "Team ID is intentionally blank; fake signing is forbidden.",
+                unblockAction: "Set the real Apple Developer Team ID in the Xcode project/signing plan."
+            ),
+            .init(
+                id: "bundle-id",
+                title: "Production bundle identifier",
+                status: bundleIDMatches ? .passed : .blocked,
+                evidence: signingPlan.bundleIdentifier,
+                unblockAction: "Keep the project and App Store Connect bundle ID aligned."
+            ),
+            .init(
+                id: "archive",
+                title: "Release archive",
+                status: hasFullXcode && archiveCreated ? .passed : .blocked,
+                evidence: archiveCreated ? "Release archive receipt is present." : signingPlan.archiveCommandWhenXcodeAvailable,
+                unblockAction: "Create a Release archive with full Xcode."
+            ),
+            .init(
+                id: "testflight-upload",
+                title: "TestFlight upload receipt",
+                status: testFlightUploadReceiptPresent ? .passed : .blocked,
+                evidence: testFlightUploadReceiptPresent ? "Upload receipt exists." : "No Transporter/App Store Connect upload receipt exists yet.",
+                unblockAction: "Upload the signed archive to App Store Connect/TestFlight and capture the receipt."
+            ),
+            .init(
+                id: "support-privacy-urls",
+                title: "Support and privacy URLs",
+                status: supportPrivacyURLsPublished && supportContactPresent ? .passed : .blocked,
+                evidence: supportPrivacyURLsPublished ? buildNotes.supportContact : "Public support/privacy/export/delete URLs are not published.",
+                unblockAction: "Publish support, privacy, export, deletion, and subscription-rights pages."
+            ),
+            .init(
+                id: "app-privacy-questionnaire",
+                title: "App Privacy questionnaire",
+                status: appPrivacyQuestionnaireCompleted ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: appPrivacyQuestionnaireCompleted ? "App Store Connect privacy answers are reviewed." : "Privacy questionnaire remains a todo in the submission packet.",
+                unblockAction: "Complete App Store Connect data-use answers for user content, media, account, purchases, diagnostics, AI, and sync."
+            ),
+            .init(
+                id: "age-rating-12-plus",
+                title: "12+ age rating review",
+                status: ageRatingReviewedFor12Plus ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: ageRatingReviewedFor12Plus ? "12+ age rating assumptions reviewed." : "12+ direction still requires legal/release review.",
+                unblockAction: "Review UGC, family media, AI, links, and account flows against App Store age-rating rules."
+            ),
+            .init(
+                id: "guest-review-route",
+                title: "Guest App Review route",
+                status: reviewRoute.isGuestReviewFriendly ? .passed : .blocked,
+                evidence: reviewRoute.reviewerNotes,
+                unblockAction: "Keep a no-login App Review route through Memory Camera, media wall, weekly chapter, and Account Rights."
+            ),
+            .init(
+                id: "privacy-safe-defaults",
+                title: "Privacy-safe defaults",
+                status: privacyBoundary.isAppStoreSafeDefault ? .passed : .blocked,
+                evidence: "No raw-media upload, contacts, GPS inference, face recognition, or subscription-hostage export by default.",
+                unblockAction: "Restore local-first privacy defaults."
+            ),
+            .init(
+                id: "launch-contracts",
+                title: "Launch contract coverage",
+                status: nativeContractCovered && submissionContractCovered && launchContractsCovered && productionContractsCovered ? .passed : .blocked,
+                evidence: "Native, submission, launch asset, and production trust ledgers are present.",
+                unblockAction: "Repair missing ledger rows before release handoff."
+            ),
+            .init(
+                id: "signed-device-keychain",
+                title: "Signed-device Keychain/Secure Enclave pass",
+                status: signedDevicePassed ? .passed : .blocked,
+                evidence: signedDevicePassed ? "Production signed-device receipt passed." : "Only a pending SwiftPM-host scaffold exists; no physical-device pass receipt exists.",
+                unblockAction: "Run the signed production app on a physical device and capture all Secure Enclave/Keychain step receipts."
+            ),
+            .init(
+                id: "signed-device-photos-import",
+                title: "Signed-device Photos import pass",
+                status: photosImportSignedDevicePassed ? .passed : .blocked,
+                evidence: photosImportSignedDevicePassed ? "Limited-library import passed on signed device." : "Photos import is contract-tested only; signed-device PhotosPicker validation is missing.",
+                unblockAction: "Validate limited-library photo/video import on a signed physical device."
+            ),
+            .init(
+                id: "signed-device-files-export",
+                title: "Signed-device Files export pass",
+                status: filesExportSignedDevicePassed ? .passed : .blocked,
+                evidence: filesExportSignedDevicePassed ? "Files/share export passed on signed device." : "ZIP/fileExporter path is contract-tested only; signed-device Files export validation is missing.",
+                unblockAction: "Validate Files/share-sheet export and re-open the ZIP package on a signed physical device."
+            ),
+            .init(
+                id: "deepseek-provider-pass",
+                title: "DeepSeek provider round trip",
+                status: aiProviderPassed ? .passed : .blocked,
+                evidence: aiProviderPassed ? "Provider pass receipt can unlock App Store AI gate." : "No real TSD backend/DeepSeek provider pass receipt is present.",
+                unblockAction: "Run the live backend probe against a deployed TSD backend using server-side DeepSeek credentials."
+            ),
+            .init(
+                id: "deletion-completion-pass",
+                title: "Account deletion completion",
+                status: deletionCompleted ? .passed : .blocked,
+                evidence: deletionCompleted ? "Deletion live probe completed with job/audit/tombstone/per-system evidence." : "No completed deletion service receipt exists.",
+                unblockAction: "Run the deletion live probe against a real test account until completion evidence is available."
+            )
+        ])
+    }
 }
