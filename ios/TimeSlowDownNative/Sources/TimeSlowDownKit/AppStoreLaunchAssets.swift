@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "62",
-        summary: String = "TimeSlowDown v62 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "63",
+        summary: String = "TimeSlowDown v63 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -72,6 +72,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "Secure Enclave generation request, reference receipt, and signed-device validation scaffold are now Swift-verifiable contracts, but no signed-device Secure Enclave/Keychain pass receipt, signed-device Photos import validation, or production E2EE media vault validation is claimed yet.",
             "v61 adds an App Store submission gate that remains blocked until full Xcode, Team ID, archive, TestFlight upload, App Store Connect metadata, support/privacy URLs, App Privacy questionnaire, age rating, DeepSeek provider pass, deletion completion, and signed-device privacy receipts exist.",
             "v62 adds a public URL packet with HTTPS support/privacy/export/delete/subscription/review deep links on the public GitHub Pages demo, while keeping formal legal review and final company support/privacy URLs as release blockers.",
+            "v63 adds a backend release manifest gate that remains blocked until a real HTTPS TSD backend, server-side DeepSeek secret manager, weekly chapter endpoint, deletion jobs endpoint, audit/deletion worker, live provider receipt, completed deletion receipt, and deployment review exist.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -271,7 +272,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "62", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "63", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -310,6 +311,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         reviewRoute: AppReviewRoute = AppReviewRoute(),
         privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
         publicURLPacket: AppStorePublicURLPacket = AppStorePublicURLPacket(),
+        backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
         deepSeekReceipt: DeepSeekGatewayIntegrationReceipt? = nil,
         deletionReceipt: DeletionServiceLiveProbeReceipt? = nil,
@@ -330,10 +332,11 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         submissionRows.map(\.id).contains("age-rating") &&
         submissionRows.map(\.id).contains("support-privacy-urls")
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
-        let productionContractsCovered = productionRows.count >= 6 && productionRows.allSatisfy { $0.status == .poc }
+        let productionContractsCovered = productionRows.count >= 7 && productionRows.allSatisfy { $0.status == .poc }
         let signedDevicePassed = signedDeviceReceipt?.isProductionPassReceipt == true
         let aiProviderPassed = deepSeekReceipt?.canBeUsedForAppStoreGate == true
         let deletionCompleted = deletionReceipt?.canSatisfyAppStoreDeletionGate == true
+        let backendDeploymentPassed = backendReleaseEvidence.canSatisfyBackendDeploymentGate
 
         return AppStoreSubmissionGate(rows: [
             .init(
@@ -443,6 +446,13 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 status: filesExportSignedDevicePassed ? .passed : .blocked,
                 evidence: filesExportSignedDevicePassed ? "Files/share export passed on signed device." : "ZIP/fileExporter path is contract-tested only; signed-device Files export validation is missing.",
                 unblockAction: "Validate Files/share-sheet export and re-open the ZIP package on a signed physical device."
+            ),
+            .init(
+                id: "backend-release-manifest",
+                title: "Backend release manifest",
+                status: backendDeploymentPassed ? .passed : .blocked,
+                evidence: backendDeploymentPassed ? "Backend deployment evidence includes HTTPS base URL, server-side DeepSeek secret boundary, live provider receipt, and completed deletion receipt." : backendReleaseEvidence.blockerReasons.joined(separator: "; "),
+                unblockAction: "Deploy the real TSD backend, configure server-side DeepSeek credentials, run live provider/deletion probes, and complete backend release review."
             ),
             .init(
                 id: "deepseek-provider-pass",

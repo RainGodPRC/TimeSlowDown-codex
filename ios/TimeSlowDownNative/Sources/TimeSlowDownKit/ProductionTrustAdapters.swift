@@ -3921,10 +3921,169 @@ public enum DeletionServiceLiveProbe {
     }
 }
 
+public struct TSDBackendReleaseManifest: Codable, Equatable, Sendable {
+    public var baseURL: String?
+    public var healthEndpointPath: String
+    public var weeklyChapterEndpointPath: String
+    public var deletionJobsEndpointPath: String
+    public var serverRuntime: String
+    public var serverSecretManager: String
+    public var deepSeekProviderCredentialStoredServerSide: Bool
+    public var deletionWorkerConfigured: Bool
+    public var auditLogConfigured: Bool
+    public var testAccountBoundaryEnabled: Bool
+    public var rawMediaUploadDisabledForAI: Bool
+    public var fullArchiveUploadDisabledForAI: Bool
+    public var providerKeyBlockedFromClient: Bool
+    public var deletionCompletionReceiptDownloadable: Bool
+
+    public init(
+        baseURL: String? = nil,
+        healthEndpointPath: String = "/v1/health",
+        weeklyChapterEndpointPath: String = "/v1/ai/tasks/weekly-chapter",
+        deletionJobsEndpointPath: String = "/v1/account/deletion-jobs",
+        serverRuntime: String = "not-deployed",
+        serverSecretManager: String = "required-before-release",
+        deepSeekProviderCredentialStoredServerSide: Bool = false,
+        deletionWorkerConfigured: Bool = false,
+        auditLogConfigured: Bool = false,
+        testAccountBoundaryEnabled: Bool = false,
+        rawMediaUploadDisabledForAI: Bool = true,
+        fullArchiveUploadDisabledForAI: Bool = true,
+        providerKeyBlockedFromClient: Bool = true,
+        deletionCompletionReceiptDownloadable: Bool = false
+    ) {
+        self.baseURL = baseURL
+        self.healthEndpointPath = healthEndpointPath
+        self.weeklyChapterEndpointPath = weeklyChapterEndpointPath
+        self.deletionJobsEndpointPath = deletionJobsEndpointPath
+        self.serverRuntime = serverRuntime
+        self.serverSecretManager = serverSecretManager
+        self.deepSeekProviderCredentialStoredServerSide = deepSeekProviderCredentialStoredServerSide
+        self.deletionWorkerConfigured = deletionWorkerConfigured
+        self.auditLogConfigured = auditLogConfigured
+        self.testAccountBoundaryEnabled = testAccountBoundaryEnabled
+        self.rawMediaUploadDisabledForAI = rawMediaUploadDisabledForAI
+        self.fullArchiveUploadDisabledForAI = fullArchiveUploadDisabledForAI
+        self.providerKeyBlockedFromClient = providerKeyBlockedFromClient
+        self.deletionCompletionReceiptDownloadable = deletionCompletionReceiptDownloadable
+    }
+
+    public var usesProductionHTTPSBaseURL: Bool {
+        guard let baseURL else { return false }
+        return baseURL.hasPrefix("https://") &&
+        !baseURL.localizedCaseInsensitiveContains("localhost") &&
+        !baseURL.localizedCaseInsensitiveContains("127.0.0.1") &&
+        !baseURL.localizedCaseInsensitiveContains("example.com") &&
+        !baseURL.localizedCaseInsensitiveContains("required") &&
+        !baseURL.localizedCaseInsensitiveContains("todo")
+    }
+
+    public var endpointShapeMatchesNativeProbes: Bool {
+        healthEndpointPath == "/v1/health" &&
+        weeklyChapterEndpointPath == "/v1/ai/tasks/weekly-chapter" &&
+        deletionJobsEndpointPath == "/v1/account/deletion-jobs"
+    }
+
+    public var hasServerSideCredentialBoundary: Bool {
+        deepSeekProviderCredentialStoredServerSide &&
+        providerKeyBlockedFromClient &&
+        !serverSecretManager.isEmpty &&
+        !serverSecretManager.localizedCaseInsensitiveContains("required") &&
+        !serverSecretManager.localizedCaseInsensitiveContains("client")
+    }
+
+    public var hasDeletionServiceBoundary: Bool {
+        deletionWorkerConfigured &&
+        auditLogConfigured &&
+        testAccountBoundaryEnabled &&
+        deletionCompletionReceiptDownloadable
+    }
+
+    public var forbidsUnsafeAIPayloads: Bool {
+        rawMediaUploadDisabledForAI && fullArchiveUploadDisabledForAI
+    }
+
+    public var hasDeployableShape: Bool {
+        usesProductionHTTPSBaseURL &&
+        endpointShapeMatchesNativeProbes &&
+        serverRuntime != "not-deployed" &&
+        hasServerSideCredentialBoundary &&
+        hasDeletionServiceBoundary &&
+        forbidsUnsafeAIPayloads
+    }
+}
+
+public struct TSDBackendReleaseEvidence: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var manifest: TSDBackendReleaseManifest
+    public var deepSeekReceipt: DeepSeekBackendRoundTripProbeReceipt?
+    public var deletionReceipt: DeletionServiceLiveProbeReceipt?
+    public var deploymentReviewCompleted: Bool
+
+    public init(
+        manifest: TSDBackendReleaseManifest = TSDBackendReleaseManifest(),
+        deepSeekReceipt: DeepSeekBackendRoundTripProbeReceipt? = nil,
+        deletionReceipt: DeletionServiceLiveProbeReceipt? = nil,
+        deploymentReviewCompleted: Bool = false
+    ) {
+        let digest = TrustDigest.checksum([
+            manifest.baseURL ?? "no-backend-url",
+            manifest.weeklyChapterEndpointPath,
+            manifest.deletionJobsEndpointPath,
+            deepSeekReceipt?.id ?? "no-deepseek-receipt",
+            deletionReceipt?.id ?? "no-deletion-receipt",
+            deploymentReviewCompleted ? "reviewed" : "unreviewed"
+        ])
+        self.id = "tsd-backend-release-\(digest.prefix(12))"
+        self.manifest = manifest
+        self.deepSeekReceipt = deepSeekReceipt
+        self.deletionReceipt = deletionReceipt
+        self.deploymentReviewCompleted = deploymentReviewCompleted
+    }
+
+    public var canSatisfyBackendDeploymentGate: Bool {
+        manifest.hasDeployableShape &&
+        deepSeekReceipt?.canUnlockAppStoreAIGate == true &&
+        deletionReceipt?.canSatisfyAppStoreDeletionGate == true &&
+        deploymentReviewCompleted
+    }
+
+    public var blockerReasons: [String] {
+        var reasons: [String] = []
+        if !manifest.usesProductionHTTPSBaseURL {
+            reasons.append("production HTTPS backend base URL missing")
+        }
+        if !manifest.endpointShapeMatchesNativeProbes {
+            reasons.append("backend endpoint paths do not match native live probes")
+        }
+        if !manifest.hasServerSideCredentialBoundary {
+            reasons.append("server-side DeepSeek credential boundary missing")
+        }
+        if !manifest.hasDeletionServiceBoundary {
+            reasons.append("deletion worker/audit/test-account/completion receipt boundary missing")
+        }
+        if !manifest.forbidsUnsafeAIPayloads {
+            reasons.append("AI payload policy still allows raw media or full archive upload")
+        }
+        if deepSeekReceipt?.canUnlockAppStoreAIGate != true {
+            reasons.append("real DeepSeek provider round trip receipt missing")
+        }
+        if deletionReceipt?.canSatisfyAppStoreDeletionGate != true {
+            reasons.append("completed deletion service receipt missing")
+        }
+        if !deploymentReviewCompleted {
+            reasons.append("backend deployment review not completed")
+        }
+        return reasons
+    }
+}
+
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
         .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, v56 adds redacted integration test request/result contracts, v57 adds the backend endpoint/provider proxy contract, v58 adds a local executable endpoint harness that validates gates without pretending to be a real provider pass, and v59 adds an optional live backend probe for real TSD backend/provider evidence."),
+        .init(id: "backend-release-manifest", title: "Backend release manifest", status: .poc, owner: "backend/release", evidence: "v63 adds a backend release manifest gate for a real HTTPS TSD backend, server-side DeepSeek secret manager, weekly chapter endpoint, deletion jobs endpoint, audit log, deletion worker, and live provider/deletion receipts."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),
