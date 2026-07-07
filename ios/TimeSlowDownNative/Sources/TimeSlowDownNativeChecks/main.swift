@@ -8,6 +8,110 @@ func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     precondition(condition(), message)
 }
 
+func environmentValue(_ name: String) -> String? {
+    guard let value = ProcessInfo.processInfo.environment[name]?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty else {
+        return nil
+    }
+    return value
+}
+
+final class HTTPResultBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data: Data?
+    private var response: HTTPURLResponse?
+    private var error: Error?
+
+    func store(data: Data?, response: HTTPURLResponse?, error: Error?) {
+        lock.lock()
+        self.data = data
+        self.response = response
+        self.error = error
+        lock.unlock()
+    }
+
+    func snapshot() -> (Data?, HTTPURLResponse?, Error?) {
+        lock.lock()
+        let snapshot = (data, response, error)
+        lock.unlock()
+        return snapshot
+    }
+}
+
+func synchronousPOST(
+    urlRequest: URLRequest,
+    timeoutSeconds: TimeInterval
+) throws -> (Data, HTTPURLResponse) {
+    let semaphore = DispatchSemaphore(value: 0)
+    let resultBox = HTTPResultBox()
+
+    let task = URLSession.shared.dataTask(with: urlRequest) { data, response, error in
+        resultBox.store(data: data, response: response as? HTTPURLResponse, error: error)
+        semaphore.signal()
+    }
+    task.resume()
+
+    guard semaphore.wait(timeout: .now() + timeoutSeconds) == .success else {
+        task.cancel()
+        throw NSError(
+            domain: "TimeSlowDownNativeChecks",
+            code: 408,
+            userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for DeepSeek backend probe response."]
+        )
+    }
+    let (responseData, httpResponse, responseError) = resultBox.snapshot()
+    if let responseError {
+        throw responseError
+    }
+    guard let httpResponse else {
+        throw NSError(
+            domain: "TimeSlowDownNativeChecks",
+            code: 502,
+            userInfo: [NSLocalizedDescriptionKey: "DeepSeek backend probe did not return an HTTP response."]
+        )
+    }
+    return (responseData ?? Data(), httpResponse)
+}
+
+func runOptionalLiveDeepSeekBackendProbe(
+    plan: DeepSeekGatewayIntegrationPlan,
+    request: DeepSeekGatewayIntegrationTestRequest,
+    payload: DeepSeekBackendRoundTripProbePayload
+) throws -> DeepSeekBackendRoundTripProbeReceipt {
+    guard let configuredBaseURL = environmentValue("TSD_DEEPSEEK_BACKEND_BASE_URL"),
+          let testToken = environmentValue("TSD_DEEPSEEK_TEST_TOKEN") else {
+        return DeepSeekBackendRoundTripProbe.notConfiguredReceipt()
+    }
+    check(configuredBaseURL.hasPrefix("https://"), "Live DeepSeek backend probe should require https backend URL")
+    check(!testToken.localizedCaseInsensitiveContains("sk-"), "Live probe token must be a TSD backend test token, not a DeepSeek provider key")
+    check(payload.isSafeForBackendRoundTrip, "Live DeepSeek backend probe payload should be safe before network execution")
+    check(request.isSafeToExecuteAgainstBackend, "Live DeepSeek backend probe request should be safe before network execution")
+
+    let endpointURL = URL(string: configuredBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + request.endpointPath)!
+    var urlRequest = URLRequest(url: endpointURL)
+    urlRequest.httpMethod = request.method
+    urlRequest.timeoutInterval = TimeInterval(request.timeoutSeconds)
+    for (key, value) in request.headers {
+        urlRequest.setValue(value, forHTTPHeaderField: key)
+    }
+    urlRequest.setValue("Bearer \(testToken)", forHTTPHeaderField: "Authorization")
+    urlRequest.setValue("true", forHTTPHeaderField: "X-TSD-Provider-Round-Trip-Required")
+    urlRequest.httpBody = try DeepSeekBackendRoundTripProbe.encodedPayload(payload)
+
+    let (data, httpResponse) = try synchronousPOST(
+        urlRequest: urlRequest,
+        timeoutSeconds: TimeInterval(request.timeoutSeconds)
+    )
+    let response = try JSONDecoder().decode(DeepSeekBackendRoundTripProbeResponse.self, from: data)
+    return DeepSeekBackendRoundTripProbe.receipt(
+        plan: plan,
+        request: request,
+        payload: payload,
+        statusCode: httpResponse.statusCode,
+        response: response
+    )
+}
+
 let photo = MediaAnchor(kind: .image, label: "park.jpg", note: "孩子第一次自己爬上滑梯")
 let slice = SliceFactory.quickMark(
     title: "他第一次自己爬上滑梯",
@@ -132,7 +236,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>58</string>"), "Info.plist should carry v58 build number")
+check(infoPlistText.contains("<string>59</string>"), "Info.plist should carry v59 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -635,6 +739,82 @@ check(providerPassReceipt.canBeUsedForAppStoreGate, "Provider pass receipt shoul
 check(providerPassReceipt.stepReceipts.allSatisfy { $0.status == .providerPassed }, "Provider pass receipt steps should all be providerPassed")
 check(providerPassReceipt.costEstimateCents == 2, "Provider pass receipt should preserve cost estimate")
 
+let liveProbePayload = DeepSeekBackendRoundTripProbe.payload(
+    for: deployedGatewayValidationPlan,
+    claimed: moments
+)
+check(liveProbePayload.isSafeForBackendRoundTrip, "Live DeepSeek backend probe payload should contain only minimal safe fields")
+check(liveProbePayload.userSelectedClaims.count == 3, "Live DeepSeek backend probe payload should carry at most three user-selected claims")
+check(liveProbePayload.mediaKindsOnly.allSatisfy { ["image", "video", "link", "none"].contains($0) }, "Live DeepSeek backend probe payload should carry media kinds only")
+check(!liveProbePayload.containsRawMedia, "Live DeepSeek backend probe payload should not contain raw media")
+check(!liveProbePayload.containsFullMemoryArchive, "Live DeepSeek backend probe payload should not contain a full archive")
+check(!liveProbePayload.clientProviderCredentialPresent, "Live DeepSeek backend probe payload should not contain provider credentials")
+let liveProbePayloadData = try DeepSeekBackendRoundTripProbe.encodedPayload(liveProbePayload)
+let liveProbePayloadText = String(data: liveProbePayloadData, encoding: .utf8) ?? ""
+check(liveProbePayloadText.contains("userSelectedClaims") || liveProbePayloadText.contains("user_selected_claims"), "Live DeepSeek backend probe payload should encode selected claims")
+check(!liveProbePayloadText.localizedCaseInsensitiveContains("RAW_ORIGINAL"), "Live DeepSeek backend probe payload should not encode raw media bytes")
+check(!liveProbePayloadText.localizedCaseInsensitiveContains("provider_api_key"), "Live DeepSeek backend probe payload should not encode provider key fields")
+
+let liveProbeResponse = DeepSeekBackendRoundTripProbeResponse(
+    gatewayJobID: "job-\(providerTestResultDigest.prefix(8))",
+    auditEventID: "audit-\(providerTestResultDigest.prefix(8))",
+    costEstimateCents: 2,
+    retentionHours: 1,
+    responseDigest: providerTestResultDigest,
+    requestWasMocked: false,
+    providerCallPerformed: true
+)
+let liveProbeReceipt = DeepSeekBackendRoundTripProbe.receipt(
+    plan: deployedGatewayValidationPlan,
+    request: providerTestRequest,
+    payload: liveProbePayload,
+    statusCode: providerTestRequest.expectedStatusCode,
+    response: liveProbeResponse
+)
+check(liveProbeReceipt.status == .providerPassed, "Live DeepSeek backend probe response should promote to providerPassed when evidence is safe")
+check(liveProbeReceipt.canUnlockProductionAI, "Live DeepSeek backend probe should unlock production AI only with provider pass receipt")
+check(liveProbeReceipt.canUnlockAppStoreAIGate, "Live DeepSeek backend probe should unlock App Store AI gate only with provider pass receipt")
+check(liveProbeReceipt.providerReceipt?.isProviderPassReceipt == true, "Live DeepSeek backend probe should reuse the provider pass receipt gate")
+
+let unsafeLiveProbeResponse = DeepSeekBackendRoundTripProbeResponse(
+    gatewayJobID: "job-unsafe",
+    auditEventID: "audit-unsafe",
+    costEstimateCents: 2,
+    retentionHours: 1,
+    responseDigest: TrustDigest.checksum(["unsafe-live-probe"]),
+    requestWasMocked: false,
+    providerCallPerformed: true,
+    responseContainsRawMedia: true
+)
+let unsafeLiveProbeReceipt = DeepSeekBackendRoundTripProbe.receipt(
+    plan: deployedGatewayValidationPlan,
+    request: providerTestRequest,
+    payload: liveProbePayload,
+    statusCode: providerTestRequest.expectedStatusCode,
+    response: unsafeLiveProbeResponse
+)
+check(unsafeLiveProbeReceipt.status == .failed, "Live DeepSeek backend probe should fail unsafe response evidence")
+check(!unsafeLiveProbeReceipt.canUnlockProductionAI, "Unsafe live probe response should not unlock production AI")
+check(!unsafeLiveProbeReceipt.canUnlockAppStoreAIGate, "Unsafe live probe response should not unlock App Store AI gate")
+
+let notConfiguredLiveProbeReceipt = DeepSeekBackendRoundTripProbe.notConfiguredReceipt()
+check(notConfiguredLiveProbeReceipt.status == .notConfigured, "Live DeepSeek backend probe should be explicitly notConfigured without env vars")
+check(!notConfiguredLiveProbeReceipt.canUnlockProductionAI, "Not-configured live probe should not unlock production AI")
+check(!notConfiguredLiveProbeReceipt.canUnlockAppStoreAIGate, "Not-configured live probe should not unlock App Store AI gate")
+
+let optionalLiveProbeReceipt = try runOptionalLiveDeepSeekBackendProbe(
+    plan: deployedGatewayValidationPlan,
+    request: providerTestRequest,
+    payload: liveProbePayload
+)
+if optionalLiveProbeReceipt.status == .notConfigured {
+    print("DeepSeek live backend probe skipped: set TSD_DEEPSEEK_BACKEND_BASE_URL and TSD_DEEPSEEK_TEST_TOKEN to require a real provider round trip.")
+} else {
+    check(optionalLiveProbeReceipt.status == .providerPassed, "Configured live DeepSeek backend probe should pass provider evidence")
+    check(optionalLiveProbeReceipt.canUnlockProductionAI, "Configured live DeepSeek backend probe should unlock production AI only after provider pass")
+    check(optionalLiveProbeReceipt.canUnlockAppStoreAIGate, "Configured live DeepSeek backend probe should unlock App Store AI gate only after provider pass")
+}
+
 let mockIntegrationRequest = DeepSeekGatewayIntegrationTestRunner.request(
     for: deployedGatewayValidationPlan,
     mode: .mockGateway
@@ -998,7 +1178,7 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "58", "TestFlight build notes should match v58")
+check(buildNotes.buildNumber == "59", "TestFlight build notes should match v59")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1018,11 +1198,13 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("integration test runn
 check(buildNotes.summary.localizedCaseInsensitiveContains("backend endpoint"), "TestFlight build notes should mention DeepSeek backend endpoint contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("provider proxy"), "TestFlight build notes should mention DeepSeek provider proxy contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("endpoint execution harness"), "TestFlight build notes should mention DeepSeek endpoint execution harness")
+check(buildNotes.summary.localizedCaseInsensitiveContains("live backend probe"), "TestFlight build notes should mention DeepSeek live backend probe")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion service"), "TestFlight build notes should mention deletion service boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("mock gateway"), "TestFlight build notes should disclose mock/provider validation split")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("redacted backend integration test"), "TestFlight build notes should disclose redacted backend integration test boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("backend endpoint contract"), "TestFlight build notes should disclose backend endpoint contract boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("local endpoint execution harness"), "TestFlight build notes should disclose local endpoint execution harness boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("optional live backend probe"), "TestFlight build notes should disclose optional live backend probe boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -1042,4 +1224,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, and v58 DeepSeek endpoint execution harness are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, and v59 DeepSeek live backend probe are aligned.")

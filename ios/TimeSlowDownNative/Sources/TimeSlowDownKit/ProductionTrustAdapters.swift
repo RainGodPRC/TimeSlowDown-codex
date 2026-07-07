@@ -1387,6 +1387,302 @@ public enum DeepSeekGatewayIntegrationTestRunner {
     }
 }
 
+public enum DeepSeekBackendRoundTripProbeStatus: String, Codable, Equatable, Sendable {
+    case notConfigured
+    case providerPassed
+    case failed
+}
+
+public struct DeepSeekBackendRoundTripProbePayload: Codable, Equatable, Sendable {
+    public var taskID: String
+    public var model: String
+    public var purpose: DeepSeekTaskPurpose
+    public var minimalPayloadDigest: String
+    public var requestBodyDigest: String
+    public var budgetCeilingCents: Int
+    public var consentReceiptID: String
+    public var allowedPayloadKeys: [String]
+    public var forbiddenPayloadKeys: [String]
+    public var userSelectedClaims: [String]
+    public var mediaKindsOnly: [String]
+    public var containsRawMedia: Bool
+    public var containsFullMemoryArchive: Bool
+    public var clientProviderCredentialPresent: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case taskID = "task_id"
+        case model
+        case purpose
+        case minimalPayloadDigest = "minimal_payload_digest"
+        case requestBodyDigest = "request_body_digest"
+        case budgetCeilingCents = "budget_ceiling_cents"
+        case consentReceiptID = "consent_receipt_id"
+        case allowedPayloadKeys = "allowed_payload_keys"
+        case forbiddenPayloadKeys = "forbidden_payload_keys"
+        case userSelectedClaims = "user_selected_claims"
+        case mediaKindsOnly = "media_kinds_only"
+        case containsRawMedia = "contains_raw_media"
+        case containsFullMemoryArchive = "contains_full_memory_archive"
+        case clientProviderCredentialPresent = "client_provider_credential_present"
+    }
+
+    public init(
+        taskID: String,
+        model: String,
+        purpose: DeepSeekTaskPurpose,
+        minimalPayloadDigest: String,
+        requestBodyDigest: String,
+        budgetCeilingCents: Int,
+        consentReceiptID: String,
+        allowedPayloadKeys: [String],
+        forbiddenPayloadKeys: [String],
+        userSelectedClaims: [String],
+        mediaKindsOnly: [String],
+        containsRawMedia: Bool = false,
+        containsFullMemoryArchive: Bool = false,
+        clientProviderCredentialPresent: Bool = false
+    ) {
+        self.taskID = taskID
+        self.model = model
+        self.purpose = purpose
+        self.minimalPayloadDigest = minimalPayloadDigest
+        self.requestBodyDigest = requestBodyDigest
+        self.budgetCeilingCents = budgetCeilingCents
+        self.consentReceiptID = consentReceiptID
+        self.allowedPayloadKeys = allowedPayloadKeys
+        self.forbiddenPayloadKeys = forbiddenPayloadKeys
+        self.userSelectedClaims = userSelectedClaims
+        self.mediaKindsOnly = mediaKindsOnly
+        self.containsRawMedia = containsRawMedia
+        self.containsFullMemoryArchive = containsFullMemoryArchive
+        self.clientProviderCredentialPresent = clientProviderCredentialPresent
+    }
+
+    public var isSafeForBackendRoundTrip: Bool {
+        model == "deepseek-v4-flash" &&
+        !minimalPayloadDigest.isEmpty &&
+        !requestBodyDigest.isEmpty &&
+        !consentReceiptID.isEmpty &&
+        budgetCeilingCents <= 4 &&
+        allowedPayloadKeys.contains("user_selected_claims") &&
+        forbiddenPayloadKeys.contains("raw_media_binary") &&
+        forbiddenPayloadKeys.contains("full_memory_archive") &&
+        userSelectedClaims.count <= 3 &&
+        mediaKindsOnly.allSatisfy { ["image", "video", "link", "none"].contains($0) } &&
+        !containsRawMedia &&
+        !containsFullMemoryArchive &&
+        !clientProviderCredentialPresent
+    }
+}
+
+public struct DeepSeekBackendRoundTripProbeResponse: Codable, Equatable, Sendable {
+    public var gatewayJobID: String?
+    public var auditEventID: String?
+    public var model: String
+    public var costEstimateCents: Int?
+    public var retentionHours: Int
+    public var responseDigest: String
+    public var requestWasMocked: Bool
+    public var providerCallPerformed: Bool
+    public var providerCredentialVisibleToClient: Bool
+    public var responseContainsProviderCredential: Bool
+    public var responseContainsRawMedia: Bool
+    public var responseContainsFullMemoryArchive: Bool
+    public var responsePreservesEditableDraft: Bool
+    public var completedWithUserConsent: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case gatewayJobID = "gateway_job_id"
+        case auditEventID = "audit_event_id"
+        case model
+        case costEstimateCents = "cost_estimate_cents"
+        case retentionHours = "retention_hours"
+        case responseDigest = "response_digest"
+        case requestWasMocked = "request_was_mocked"
+        case providerCallPerformed = "provider_call_performed"
+        case providerCredentialVisibleToClient = "provider_credential_visible_to_client"
+        case responseContainsProviderCredential = "response_contains_provider_credential"
+        case responseContainsRawMedia = "response_contains_raw_media"
+        case responseContainsFullMemoryArchive = "response_contains_full_memory_archive"
+        case responsePreservesEditableDraft = "response_preserves_editable_draft"
+        case completedWithUserConsent = "completed_with_user_consent"
+    }
+
+    public init(
+        gatewayJobID: String?,
+        auditEventID: String?,
+        model: String = "deepseek-v4-flash",
+        costEstimateCents: Int?,
+        retentionHours: Int,
+        responseDigest: String,
+        requestWasMocked: Bool,
+        providerCallPerformed: Bool,
+        providerCredentialVisibleToClient: Bool = false,
+        responseContainsProviderCredential: Bool = false,
+        responseContainsRawMedia: Bool = false,
+        responseContainsFullMemoryArchive: Bool = false,
+        responsePreservesEditableDraft: Bool = true,
+        completedWithUserConsent: Bool = true
+    ) {
+        self.gatewayJobID = gatewayJobID
+        self.auditEventID = auditEventID
+        self.model = model
+        self.costEstimateCents = costEstimateCents
+        self.retentionHours = retentionHours
+        self.responseDigest = responseDigest
+        self.requestWasMocked = requestWasMocked
+        self.providerCallPerformed = providerCallPerformed
+        self.providerCredentialVisibleToClient = providerCredentialVisibleToClient
+        self.responseContainsProviderCredential = responseContainsProviderCredential
+        self.responseContainsRawMedia = responseContainsRawMedia
+        self.responseContainsFullMemoryArchive = responseContainsFullMemoryArchive
+        self.responsePreservesEditableDraft = responsePreservesEditableDraft
+        self.completedWithUserConsent = completedWithUserConsent
+    }
+}
+
+public struct DeepSeekBackendRoundTripProbeReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var status: DeepSeekBackendRoundTripProbeStatus
+    public var requestID: String?
+    public var backendBaseURL: String?
+    public var providerReceipt: DeepSeekGatewayIntegrationReceipt?
+    public var payloadSafeForBackend: Bool
+    public var validationNotes: [String]
+
+    public init(
+        id: String,
+        status: DeepSeekBackendRoundTripProbeStatus,
+        requestID: String?,
+        backendBaseURL: String?,
+        providerReceipt: DeepSeekGatewayIntegrationReceipt?,
+        payloadSafeForBackend: Bool,
+        validationNotes: [String]
+    ) {
+        self.id = id
+        self.status = status
+        self.requestID = requestID
+        self.backendBaseURL = backendBaseURL
+        self.providerReceipt = providerReceipt
+        self.payloadSafeForBackend = payloadSafeForBackend
+        self.validationNotes = validationNotes
+    }
+
+    public var canUnlockProductionAI: Bool {
+        status == .providerPassed &&
+        payloadSafeForBackend &&
+        providerReceipt?.isProviderPassReceipt == true
+    }
+
+    public var canUnlockAppStoreAIGate: Bool {
+        canUnlockProductionAI && providerReceipt?.canBeUsedForAppStoreGate == true
+    }
+}
+
+public enum DeepSeekBackendRoundTripProbe {
+    public static func payload(
+        for plan: DeepSeekGatewayIntegrationPlan,
+        claimed slices: [MemorySlice]
+    ) -> DeepSeekBackendRoundTripProbePayload {
+        DeepSeekBackendRoundTripProbePayload(
+            taskID: plan.gateway.request.task.id,
+            model: plan.productionModel,
+            purpose: plan.gateway.request.task.purpose,
+            minimalPayloadDigest: plan.gateway.request.task.minimalPayloadDigest,
+            requestBodyDigest: plan.gateway.requestBodyDigest,
+            budgetCeilingCents: plan.gateway.budgetCeilingCents,
+            consentReceiptID: plan.gateway.consentReceiptID,
+            allowedPayloadKeys: plan.gateway.request.task.allowedPayloadKeys,
+            forbiddenPayloadKeys: plan.gateway.request.task.forbiddenPayloadKeys,
+            userSelectedClaims: Array(slices.prefix(3)).map(\.title),
+            mediaKindsOnly: Array(slices.prefix(3)).map { $0.media?.kind.rawValue ?? "none" }
+        )
+    }
+
+    public static func encodedPayload(_ payload: DeepSeekBackendRoundTripProbePayload) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(payload)
+    }
+
+    public static func result(
+        from response: DeepSeekBackendRoundTripProbeResponse,
+        statusCode: Int,
+        request: DeepSeekGatewayIntegrationTestRequest
+    ) -> DeepSeekGatewayIntegrationTestResult {
+        DeepSeekGatewayIntegrationTestResult(
+            id: "deepseek-live-result-\(TrustDigest.checksum([request.id, response.responseDigest, "\(statusCode)"]).prefix(12))",
+            request: request,
+            statusCode: statusCode,
+            gatewayJobID: response.gatewayJobID,
+            auditEventID: response.auditEventID,
+            model: response.model,
+            costEstimateCents: response.costEstimateCents,
+            retentionHours: response.retentionHours,
+            responseDigest: response.responseDigest,
+            requestWasMocked: response.requestWasMocked,
+            providerCallPerformed: response.providerCallPerformed,
+            providerCredentialVisibleToClient: response.providerCredentialVisibleToClient,
+            responseContainsProviderCredential: response.responseContainsProviderCredential,
+            responseContainsRawMedia: response.responseContainsRawMedia,
+            responseContainsFullMemoryArchive: response.responseContainsFullMemoryArchive,
+            responsePreservesEditableDraft: response.responsePreservesEditableDraft,
+            completedWithUserConsent: response.completedWithUserConsent
+        )
+    }
+
+    public static func receipt(
+        plan: DeepSeekGatewayIntegrationPlan,
+        request: DeepSeekGatewayIntegrationTestRequest,
+        payload: DeepSeekBackendRoundTripProbePayload,
+        statusCode: Int,
+        response: DeepSeekBackendRoundTripProbeResponse
+    ) -> DeepSeekBackendRoundTripProbeReceipt {
+        let result = result(from: response, statusCode: statusCode, request: request)
+        let providerReceipt = DeepSeekGatewayIntegrationTestRunner.providerPassedReceipt(
+            for: plan,
+            result: result
+        )
+        let passed = payload.isSafeForBackendRoundTrip && providerReceipt.isProviderPassReceipt
+        let digest = TrustDigest.checksum([
+            request.id,
+            payload.requestBodyDigest,
+            response.responseDigest,
+            passed ? "passed" : "failed"
+        ])
+        return DeepSeekBackendRoundTripProbeReceipt(
+            id: "deepseek-live-probe-\(digest.prefix(12))",
+            status: passed ? .providerPassed : .failed,
+            requestID: request.id,
+            backendBaseURL: request.backendBaseURL,
+            providerReceipt: providerReceipt,
+            payloadSafeForBackend: payload.isSafeForBackendRoundTrip,
+            validationNotes: passed ? [
+                "Live backend response promoted to providerPassed through the existing provider receipt gate.",
+                "Payload carried only minimal user-selected claims, media kinds, consent, digests, and budget metadata."
+            ] : [
+                "Live backend response could not be promoted to providerPassed.",
+                "Production AI remains locked until payload, backend, and provider evidence all satisfy the gate."
+            ]
+        )
+    }
+
+    public static func notConfiguredReceipt() -> DeepSeekBackendRoundTripProbeReceipt {
+        DeepSeekBackendRoundTripProbeReceipt(
+            id: "deepseek-live-probe-not-configured",
+            status: .notConfigured,
+            requestID: nil,
+            backendBaseURL: nil,
+            providerReceipt: nil,
+            payloadSafeForBackend: false,
+            validationNotes: [
+                "Set TSD_DEEPSEEK_BACKEND_BASE_URL and TSD_DEEPSEEK_TEST_TOKEN to run the optional live backend probe.",
+                "The client never accepts a DeepSeek provider key; provider credentials must remain behind the TSD backend."
+            ]
+        )
+    }
+}
+
 public enum ExportArchiveEntryKind: String, Codable, Equatable, Sendable {
     case manifest
     case slices
@@ -3316,7 +3612,7 @@ public enum DeletionServiceIntegrationPlan {
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
-        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, v56 adds redacted integration test request/result contracts, v57 adds the backend endpoint/provider proxy contract, and v58 adds a local executable endpoint harness that validates gates without pretending to be a real provider pass."),
+        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, v56 adds redacted integration test request/result contracts, v57 adds the backend endpoint/provider proxy contract, v58 adds a local executable endpoint harness that validates gates without pretending to be a real provider pass, and v59 adds an optional live backend probe for real TSD backend/provider evidence."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),
