@@ -512,6 +512,261 @@ public enum DeepSeekBackendEndpointPlan {
     }
 }
 
+public enum DeepSeekBackendEndpointExecutionMode: String, Codable, Equatable, Sendable {
+    case localStub
+    case providerGateway
+}
+
+public enum DeepSeekBackendEndpointExecutionStatus: String, Codable, Equatable, Sendable {
+    case stubPassed
+    case providerRequired
+    case failed
+}
+
+public struct DeepSeekBackendEndpointExecutionRequest: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var endpointID: String
+    public var gatewayID: String
+    public var mode: DeepSeekBackendEndpointExecutionMode
+    public var accountAuthenticated: Bool
+    public var consentReceiptID: String
+    public var idempotencyKey: String
+    public var taskDigest: String
+    public var requestBodyDigest: String
+    public var budgetCeilingCents: Int
+
+    public init(
+        id: String,
+        endpointID: String,
+        gatewayID: String,
+        mode: DeepSeekBackendEndpointExecutionMode,
+        accountAuthenticated: Bool,
+        consentReceiptID: String,
+        idempotencyKey: String,
+        taskDigest: String,
+        requestBodyDigest: String,
+        budgetCeilingCents: Int
+    ) {
+        self.id = id
+        self.endpointID = endpointID
+        self.gatewayID = gatewayID
+        self.mode = mode
+        self.accountAuthenticated = accountAuthenticated
+        self.consentReceiptID = consentReceiptID
+        self.idempotencyKey = idempotencyKey
+        self.taskDigest = taskDigest
+        self.requestBodyDigest = requestBodyDigest
+        self.budgetCeilingCents = budgetCeilingCents
+    }
+
+    public static func reviewed(
+        endpoint: DeepSeekBackendEndpointContract,
+        gateway: DeepSeekServerGatewayEnvelope,
+        mode: DeepSeekBackendEndpointExecutionMode
+    ) -> DeepSeekBackendEndpointExecutionRequest {
+        let digest = TrustDigest.checksum([
+            endpoint.id,
+            gateway.id,
+            gateway.requestBodyDigest,
+            mode.rawValue
+        ])
+        return DeepSeekBackendEndpointExecutionRequest(
+            id: "deepseek-endpoint-exec-\(digest.prefix(12))",
+            endpointID: endpoint.id,
+            gatewayID: gateway.id,
+            mode: mode,
+            accountAuthenticated: true,
+            consentReceiptID: gateway.consentReceiptID,
+            idempotencyKey: gateway.request.idempotencyKey,
+            taskDigest: gateway.request.task.minimalPayloadDigest,
+            requestBodyDigest: gateway.requestBodyDigest,
+            budgetCeilingCents: gateway.budgetCeilingCents
+        )
+    }
+
+    public var hasRequiredExecutionContext: Bool {
+        endpointID.hasPrefix("deepseek-backend-endpoint-") &&
+        gatewayID.hasPrefix("server-gateway-") &&
+        accountAuthenticated &&
+        !consentReceiptID.isEmpty &&
+        !idempotencyKey.isEmpty &&
+        !taskDigest.isEmpty &&
+        !requestBodyDigest.isEmpty &&
+        budgetCeilingCents > 0
+    }
+}
+
+public struct DeepSeekBackendEndpointExecutionReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var requestID: String
+    public var endpointID: String
+    public var mode: DeepSeekBackendEndpointExecutionMode
+    public var status: DeepSeekBackendEndpointExecutionStatus
+    public var endpointContractSafe: Bool
+    public var gatewayBoundarySafe: Bool
+    public var providerProxyRequestSafe: Bool
+    public var providerProxyResponseSafe: Bool
+    public var requiredInputGatePassed: Bool
+    public var forbiddenFieldGatePassed: Bool
+    public var providerCallPerformed: Bool
+    public var requestWasMocked: Bool
+    public var canBeUsedForProductionAIGate: Bool
+    public var canBeUsedForAppStoreGate: Bool
+    public var validationNotes: [String]
+
+    public init(
+        id: String,
+        requestID: String,
+        endpointID: String,
+        mode: DeepSeekBackendEndpointExecutionMode,
+        status: DeepSeekBackendEndpointExecutionStatus,
+        endpointContractSafe: Bool,
+        gatewayBoundarySafe: Bool,
+        providerProxyRequestSafe: Bool,
+        providerProxyResponseSafe: Bool,
+        requiredInputGatePassed: Bool,
+        forbiddenFieldGatePassed: Bool,
+        providerCallPerformed: Bool,
+        requestWasMocked: Bool,
+        canBeUsedForProductionAIGate: Bool,
+        canBeUsedForAppStoreGate: Bool,
+        validationNotes: [String]
+    ) {
+        self.id = id
+        self.requestID = requestID
+        self.endpointID = endpointID
+        self.mode = mode
+        self.status = status
+        self.endpointContractSafe = endpointContractSafe
+        self.gatewayBoundarySafe = gatewayBoundarySafe
+        self.providerProxyRequestSafe = providerProxyRequestSafe
+        self.providerProxyResponseSafe = providerProxyResponseSafe
+        self.requiredInputGatePassed = requiredInputGatePassed
+        self.forbiddenFieldGatePassed = forbiddenFieldGatePassed
+        self.providerCallPerformed = providerCallPerformed
+        self.requestWasMocked = requestWasMocked
+        self.canBeUsedForProductionAIGate = canBeUsedForProductionAIGate
+        self.canBeUsedForAppStoreGate = canBeUsedForAppStoreGate
+        self.validationNotes = validationNotes
+    }
+
+    public var isHonestLocalStubPass: Bool {
+        mode == .localStub &&
+        status == .stubPassed &&
+        endpointContractSafe &&
+        gatewayBoundarySafe &&
+        providerProxyRequestSafe &&
+        providerProxyResponseSafe &&
+        requiredInputGatePassed &&
+        forbiddenFieldGatePassed &&
+        requestWasMocked &&
+        !providerCallPerformed &&
+        !canBeUsedForProductionAIGate &&
+        !canBeUsedForAppStoreGate
+    }
+}
+
+public enum DeepSeekBackendEndpointExecutionHarness {
+    public static func execute(
+        endpoint: DeepSeekBackendEndpointContract,
+        gateway: DeepSeekServerGatewayEnvelope,
+        request: DeepSeekBackendEndpointExecutionRequest
+    ) -> DeepSeekBackendEndpointExecutionReceipt {
+        let endpointMatchesGateway = request.endpointID == endpoint.id &&
+        request.gatewayID == gateway.id &&
+        request.consentReceiptID == gateway.consentReceiptID &&
+        request.idempotencyKey == gateway.request.idempotencyKey &&
+        request.taskDigest == gateway.request.task.minimalPayloadDigest &&
+        request.requestBodyDigest == gateway.requestBodyDigest &&
+        request.budgetCeilingCents == gateway.budgetCeilingCents
+
+        let requiredInputGatePassed = request.hasRequiredExecutionContext && endpointMatchesGateway
+        let endpointContractSafe = endpoint.isProductionEndpointSafe
+        let gatewayBoundarySafe = gateway.isProductionSafeBoundary
+        let providerProxyRequestSafe = endpoint.providerProxyRequest.isSafeProviderProxyBoundary
+        let providerProxyResponseSafe = endpoint.providerProxyResponse.isSafeBackendResponseBoundary
+        let forbiddenFieldGatePassed = !gateway.request.containsProviderAPIKey &&
+        !gateway.request.sendsRawMedia &&
+        !gateway.request.sendsFullArchive &&
+        !endpoint.providerProxyRequest.bodyContainsRawMedia &&
+        !endpoint.providerProxyRequest.bodyContainsFullMemoryArchive &&
+        !endpoint.providerProxyRequest.bodyContainsContacts &&
+        !endpoint.providerProxyRequest.bodyContainsGPS &&
+        !endpoint.providerProxyRequest.bodyContainsFaceEmbeddings &&
+        !endpoint.providerProxyRequest.bodyContainsSubscriptionState &&
+        !endpoint.providerProxyResponse.responseContainsProviderCredential &&
+        !endpoint.providerProxyResponse.responseContainsRawMedia &&
+        !endpoint.providerProxyResponse.responseContainsFullMemoryArchive &&
+        !endpoint.providerProxyResponse.responseContainsContacts &&
+        !endpoint.providerProxyResponse.responseContainsGPS &&
+        !endpoint.providerProxyResponse.responseContainsFaceEmbeddings
+
+        let allLocalGatesPassed = endpointContractSafe &&
+        gatewayBoundarySafe &&
+        providerProxyRequestSafe &&
+        providerProxyResponseSafe &&
+        requiredInputGatePassed &&
+        forbiddenFieldGatePassed
+
+        let status: DeepSeekBackendEndpointExecutionStatus
+        switch (request.mode, allLocalGatesPassed) {
+        case (.localStub, true):
+            status = .stubPassed
+        case (.providerGateway, true):
+            status = .providerRequired
+        default:
+            status = .failed
+        }
+
+        let digest = TrustDigest.checksum([
+            request.id,
+            endpoint.id,
+            gateway.id,
+            status.rawValue
+        ])
+        return DeepSeekBackendEndpointExecutionReceipt(
+            id: "deepseek-endpoint-receipt-\(digest.prefix(12))",
+            requestID: request.id,
+            endpointID: endpoint.id,
+            mode: request.mode,
+            status: status,
+            endpointContractSafe: endpointContractSafe,
+            gatewayBoundarySafe: gatewayBoundarySafe,
+            providerProxyRequestSafe: providerProxyRequestSafe,
+            providerProxyResponseSafe: providerProxyResponseSafe,
+            requiredInputGatePassed: requiredInputGatePassed,
+            forbiddenFieldGatePassed: forbiddenFieldGatePassed,
+            providerCallPerformed: false,
+            requestWasMocked: request.mode == .localStub,
+            canBeUsedForProductionAIGate: false,
+            canBeUsedForAppStoreGate: false,
+            validationNotes: notes(for: status)
+        )
+    }
+
+    private static func notes(
+        for status: DeepSeekBackendEndpointExecutionStatus
+    ) -> [String] {
+        switch status {
+        case .stubPassed:
+            return [
+                "Local executable harness proved endpoint, gateway, provider proxy, required-input, and forbidden-field gates.",
+                "No DeepSeek provider call was performed; this stub receipt cannot unlock production AI, TestFlight, or App Store gates."
+            ]
+        case .providerRequired:
+            return [
+                "Endpoint and payload gates passed, but a deployed backend with server-side DeepSeek credentials is still required.",
+                "Provider evidence must come from a real gateway round trip, not this local SwiftPM harness."
+            ]
+        case .failed:
+            return [
+                "Endpoint execution harness rejected the request because one or more required gates failed.",
+                "Production AI remains locked until auth, consent, idempotency, digest, budget, and forbidden-field gates all pass."
+            ]
+        }
+    }
+}
+
 public enum DeepSeekGatewayValidationStatus: String, Codable, Equatable, Sendable {
     case pendingBackend
     case mockPassed
@@ -3061,7 +3316,7 @@ public enum DeletionServiceIntegrationPlan {
 public enum ProductionImplementationChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "keychain-persistence-plan", title: "Keychain persistence plan", status: .poc, owner: "iOS", evidence: "Device key storage plan uses this-device-only Keychain defaults and no access group until Team ID exists; v41 adds a Security.framework Keychain record store adapter."),
-        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, v56 adds redacted integration test request/result contracts, and v57 adds the backend endpoint/provider proxy contract so only real provider evidence can promote to production AI gate."),
+        .init(id: "deepseek-gateway-request", title: "DeepSeek gateway request", status: .poc, owner: "backend/AI", evidence: "Client request targets TSD backend, never carries provider API key, keeps local-rules fallback, v46 adds a server gateway envelope with budget/consent/retention/data residency, v55 adds pending/mock/provider validation receipts, v56 adds redacted integration test request/result contracts, v57 adds the backend endpoint/provider proxy contract, and v58 adds a local executable endpoint harness that validates gates without pretending to be a real provider pass."),
         .init(id: "export-archive-plan", title: "Export archive plan", status: .poc, owner: "iOS/backend", evidence: "ZIP package plan includes manifest/slices/chapters/media index/deletion rights and remains available after subscription ends; v42 adds an on-device store-only ZIP builder."),
         .init(id: "raw-media-export-policy", title: "Raw media export policy", status: .poc, owner: "iOS/privacy", evidence: "v48 adds an explicit opt-in raw photo/video export envelope; v49 adds a staged file export builder that writes thumbnails and user-selected originals into a local ZIP package without cloud/provider upload or AI transcripts."),
         .init(id: "e2ee-media-vault-adapter", title: "E2EE media vault adapter", status: .poc, owner: "iOS/privacy", evidence: "v51 adds a local media vault adapter that seals user-selected media payloads into ciphertext records, unseals them for export after consent, and produces deletion receipts without cloud/provider upload or plaintext persistence; v52 adds a CryptoKit AES.GCM envelope contract for the production implementation path; v53 adds a Secure Enclave device-key request/reference contract; v54 adds the signed-device Keychain/Secure Enclave validation scaffold."),

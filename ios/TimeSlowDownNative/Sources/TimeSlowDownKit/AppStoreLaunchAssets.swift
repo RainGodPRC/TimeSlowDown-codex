@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "57",
-        summary: String = "TimeSlowDown v57 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, deletion service boundary, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "58",
+        summary: String = "TimeSlowDown v58 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, deletion service boundary, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -68,7 +68,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "Open launch readiness to review App Store/TestFlight packet boundaries."
         ],
         knownLimitations: [String] = [
-            "No production backend, account sync, or real DeepSeek provider call is bundled in this build; v55 separates pending backend, mock gateway, and future provider-passed validation receipts, v56 defines the redacted backend integration test request/result contract, and v57 defines the backend endpoint contract plus provider proxy boundary.",
+            "No production backend, account sync, or real DeepSeek provider call is bundled in this build; v55 separates pending backend, mock gateway, and future provider-passed validation receipts, v56 defines the redacted backend integration test request/result contract, v57 defines the backend endpoint contract plus provider proxy boundary, and v58 adds a local endpoint execution harness that can pass only stub gates, not production AI or App Store gates.",
             "Secure Enclave generation request, reference receipt, and signed-device validation scaffold are now Swift-verifiable contracts, but no signed-device Secure Enclave/Keychain pass receipt, signed-device Photos import validation, or production E2EE media vault validation is claimed yet.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],

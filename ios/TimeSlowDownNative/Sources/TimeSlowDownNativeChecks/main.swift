@@ -132,7 +132,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>57</string>"), "Info.plist should carry v57 build number")
+check(infoPlistText.contains("<string>58</string>"), "Info.plist should carry v58 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -437,6 +437,86 @@ check(!backendEndpoint.providerProxyResponse.responseContainsGPS, "Provider prox
 check(!backendEndpoint.providerProxyResponse.responseContainsFaceEmbeddings, "Provider proxy response should not contain face embeddings")
 check(backendEndpoint.providerProxyResponse.isSafeBackendResponseBoundary, "Provider proxy response should be safe at the backend/client boundary")
 check(backendEndpoint.isProductionEndpointSafe, "Backend endpoint contract should be production-safe as a service boundary")
+
+let endpointExecutionRequest = DeepSeekBackendEndpointExecutionRequest.reviewed(
+    endpoint: backendEndpoint,
+    gateway: serverGateway,
+    mode: .localStub
+)
+check(endpointExecutionRequest.hasRequiredExecutionContext, "Endpoint execution request should carry auth, consent, idempotency, digest, and budget context")
+check(endpointExecutionRequest.endpointID == backendEndpoint.id, "Endpoint execution request should bind to the reviewed endpoint contract")
+check(endpointExecutionRequest.gatewayID == serverGateway.id, "Endpoint execution request should bind to the reviewed server gateway")
+check(endpointExecutionRequest.consentReceiptID == serverGateway.consentReceiptID, "Endpoint execution request should carry the reviewed consent receipt")
+check(endpointExecutionRequest.idempotencyKey == serverGateway.request.idempotencyKey, "Endpoint execution request should carry the reviewed idempotency key")
+check(endpointExecutionRequest.taskDigest == aiEnvelope.minimalPayloadDigest, "Endpoint execution request should carry the minimal AI task digest")
+check(endpointExecutionRequest.requestBodyDigest == serverGateway.requestBodyDigest, "Endpoint execution request should carry the reviewed body digest")
+check(endpointExecutionRequest.budgetCeilingCents == serverGateway.budgetCeilingCents, "Endpoint execution request should carry the reviewed budget ceiling")
+
+let endpointExecutionReceipt = DeepSeekBackendEndpointExecutionHarness.execute(
+    endpoint: backendEndpoint,
+    gateway: serverGateway,
+    request: endpointExecutionRequest
+)
+check(endpointExecutionReceipt.status == .stubPassed, "Local endpoint execution harness should pass as a stub when all gates are safe")
+check(endpointExecutionReceipt.isHonestLocalStubPass, "Local endpoint execution receipt should be honest about stub trust")
+check(endpointExecutionReceipt.endpointContractSafe, "Endpoint execution harness should validate endpoint contract safety")
+check(endpointExecutionReceipt.gatewayBoundarySafe, "Endpoint execution harness should validate gateway boundary safety")
+check(endpointExecutionReceipt.providerProxyRequestSafe, "Endpoint execution harness should validate provider proxy request safety")
+check(endpointExecutionReceipt.providerProxyResponseSafe, "Endpoint execution harness should validate provider proxy response safety")
+check(endpointExecutionReceipt.requiredInputGatePassed, "Endpoint execution harness should validate required input gates")
+check(endpointExecutionReceipt.forbiddenFieldGatePassed, "Endpoint execution harness should validate forbidden payload gates")
+check(endpointExecutionReceipt.requestWasMocked, "Local endpoint execution receipt should disclose stub execution")
+check(!endpointExecutionReceipt.providerCallPerformed, "Local endpoint execution harness must not claim a provider call")
+check(!endpointExecutionReceipt.canBeUsedForProductionAIGate, "Local endpoint execution harness must not unlock production AI")
+check(!endpointExecutionReceipt.canBeUsedForAppStoreGate, "Local endpoint execution harness must not unlock App Store AI gate")
+
+let providerModeExecutionRequest = DeepSeekBackendEndpointExecutionRequest.reviewed(
+    endpoint: backendEndpoint,
+    gateway: serverGateway,
+    mode: .providerGateway
+)
+let providerModeExecutionReceipt = DeepSeekBackendEndpointExecutionHarness.execute(
+    endpoint: backendEndpoint,
+    gateway: serverGateway,
+    request: providerModeExecutionRequest
+)
+check(providerModeExecutionReceipt.status == .providerRequired, "Provider mode endpoint execution should require real backend/provider evidence")
+check(!providerModeExecutionReceipt.requestWasMocked, "Provider mode endpoint execution should not be marked mocked")
+check(!providerModeExecutionReceipt.providerCallPerformed, "Provider mode endpoint execution harness should not perform the provider call locally")
+check(!providerModeExecutionReceipt.canBeUsedForProductionAIGate, "Provider-required receipt should not unlock production AI")
+check(!providerModeExecutionReceipt.canBeUsedForAppStoreGate, "Provider-required receipt should not unlock App Store AI gate")
+
+var missingAuthExecutionRequest = endpointExecutionRequest
+missingAuthExecutionRequest.accountAuthenticated = false
+let missingAuthExecutionReceipt = DeepSeekBackendEndpointExecutionHarness.execute(
+    endpoint: backendEndpoint,
+    gateway: serverGateway,
+    request: missingAuthExecutionRequest
+)
+check(missingAuthExecutionReceipt.status == .failed, "Endpoint execution harness should fail when account auth is missing")
+check(!missingAuthExecutionReceipt.requiredInputGatePassed, "Missing auth should fail the required input gate")
+check(!missingAuthExecutionReceipt.canBeUsedForProductionAIGate, "Missing auth failure should not unlock production AI")
+
+var missingConsentExecutionRequest = endpointExecutionRequest
+missingConsentExecutionRequest.consentReceiptID = ""
+let missingConsentExecutionReceipt = DeepSeekBackendEndpointExecutionHarness.execute(
+    endpoint: backendEndpoint,
+    gateway: serverGateway,
+    request: missingConsentExecutionRequest
+)
+check(missingConsentExecutionReceipt.status == .failed, "Endpoint execution harness should fail when consent receipt is missing")
+check(!missingConsentExecutionReceipt.requiredInputGatePassed, "Missing consent should fail the required input gate")
+
+var unsafeProviderEndpoint = backendEndpoint
+unsafeProviderEndpoint.providerProxyRequest.bodyContainsRawMedia = true
+let unsafeProviderExecutionReceipt = DeepSeekBackendEndpointExecutionHarness.execute(
+    endpoint: unsafeProviderEndpoint,
+    gateway: serverGateway,
+    request: endpointExecutionRequest
+)
+check(unsafeProviderExecutionReceipt.status == .failed, "Endpoint execution harness should fail unsafe provider proxy fields")
+check(!unsafeProviderExecutionReceipt.providerProxyRequestSafe, "Raw media in provider proxy should fail provider request safety")
+check(!unsafeProviderExecutionReceipt.forbiddenFieldGatePassed, "Raw media in provider proxy should fail forbidden field gate")
 
 let gatewayValidationEnvironment = DeepSeekGatewayValidationEnvironment.swiftPMHostWithoutBackend()
 check(gatewayValidationEnvironment.model == "deepseek-v4-flash", "Gateway validation environment should target the selected DeepSeek PoC model")
@@ -918,7 +998,7 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "57", "TestFlight build notes should match v57")
+check(buildNotes.buildNumber == "58", "TestFlight build notes should match v58")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -937,10 +1017,12 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("provider validation s
 check(buildNotes.summary.localizedCaseInsensitiveContains("integration test runner contract"), "TestFlight build notes should mention DeepSeek integration test runner contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("backend endpoint"), "TestFlight build notes should mention DeepSeek backend endpoint contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("provider proxy"), "TestFlight build notes should mention DeepSeek provider proxy contract")
+check(buildNotes.summary.localizedCaseInsensitiveContains("endpoint execution harness"), "TestFlight build notes should mention DeepSeek endpoint execution harness")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion service"), "TestFlight build notes should mention deletion service boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("mock gateway"), "TestFlight build notes should disclose mock/provider validation split")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("redacted backend integration test"), "TestFlight build notes should disclose redacted backend integration test boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("backend endpoint contract"), "TestFlight build notes should disclose backend endpoint contract boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("local endpoint execution harness"), "TestFlight build notes should disclose local endpoint execution harness boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -960,4 +1042,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, and v57 DeepSeek backend endpoint/provider proxy contract are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, and v58 DeepSeek endpoint execution harness are aligned.")
