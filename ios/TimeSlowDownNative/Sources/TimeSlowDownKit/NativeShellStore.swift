@@ -27,6 +27,9 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
     public var privacySafe: Bool
     public var hasExportPackage: Bool
     public var lastExportEntryCount: Int
+    public var dailyDifferenceCandidateCount: Int
+    public var ninetyDayTellableCount: Int
+    public var ninetyDayMinimumTarget: Int
 
     public init(
         routeCount: Int,
@@ -36,7 +39,10 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
         submissionTodoCount: Int,
         privacySafe: Bool,
         hasExportPackage: Bool = false,
-        lastExportEntryCount: Int = 0
+        lastExportEntryCount: Int = 0,
+        dailyDifferenceCandidateCount: Int = 0,
+        ninetyDayTellableCount: Int = 0,
+        ninetyDayMinimumTarget: Int = 5
     ) {
         self.routeCount = routeCount
         self.sliceCount = sliceCount
@@ -46,6 +52,9 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
         self.privacySafe = privacySafe
         self.hasExportPackage = hasExportPackage
         self.lastExportEntryCount = lastExportEntryCount
+        self.dailyDifferenceCandidateCount = dailyDifferenceCandidateCount
+        self.ninetyDayTellableCount = ninetyDayTellableCount
+        self.ninetyDayMinimumTarget = ninetyDayMinimumTarget
     }
 }
 
@@ -143,7 +152,12 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     }
 
     public var snapshot: NativeShellSnapshot {
-        NativeShellSnapshot(
+        let radar = SliceFactory.dailyDifferenceRadar(from: slices)
+        let progress = SliceFactory.ninetyDayTellableProgress(
+            from: slices,
+            claimedSliceIDs: Array(slices.prefix(3)).map(\.id)
+        )
+        return NativeShellSnapshot(
             routeCount: NativeShellRoute.allCases.count,
             sliceCount: slices.count,
             mediaAnchorCount: slices.filter(\.hasMediaAnchor).count,
@@ -151,7 +165,10 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             submissionTodoCount: SubmissionPacket.rows.filter { $0.status == .todo }.count,
             privacySafe: privacyBoundary.isAppStoreSafeDefault,
             hasExportPackage: latestExportSummary != nil,
-            lastExportEntryCount: latestExportSummary?.entryCount ?? 0
+            lastExportEntryCount: latestExportSummary?.entryCount ?? 0,
+            dailyDifferenceCandidateCount: radar.candidates.count,
+            ninetyDayTellableCount: progress.tellableCount,
+            ninetyDayMinimumTarget: progress.minimumTarget
         )
     }
 

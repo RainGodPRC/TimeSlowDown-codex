@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "71",
-        summary: String = "TimeSlowDown v71 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, screenshot/App Preview creative packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "72",
+        summary: String = "TimeSlowDown v72 tests the P0 daily loop: Daily Difference Radar candidates, 90-day tellable progress, native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, screenshot/App Preview creative packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -81,6 +81,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v69 adds a Privacy Manifest required reason API audit packet that keeps the current no-tracking/no-collected-data/no-accessed-API manifest shape honest for the local shipping path while keeping dependency manifest review, Xcode privacy report generation, and release review blocked.",
             "v70 adds an encryption export compliance review packet and a conservative Info.plist encryption declaration, while keeping final App Store Connect export-compliance answers, legal review, and release review blocked.",
             "v71 adds a screenshot/App Preview creative packet that maps six App Store scenes, Apple asset-count constraints, real-UI capture requirements, privacy masking, and anti-fear-marketing rules while keeping final rendered asset upload, poster frame, localization, legal review, and release review blocked.",
+            "v72 adds the P0 Daily Difference Radar and 90-day tellable progress model so the home screen is anchored to real daily memory capture and the north-star outcome instead of another release-packet-only iteration.",
             "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, full Xcode privacy report, dependency privacy manifest review, encryption export compliance, and legal review require full Xcode, Apple Developer access, and release/legal approval."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -308,7 +309,7 @@ public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, 
         signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
         signingPlan.requiresAppleDeveloperTeam &&
         signingPlan.fakeTeamIDForbidden &&
-        buildNotes.buildNumber == "71" &&
+        buildNotes.buildNumber == "72" &&
         steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
         Set(steps.map(\.kind)).count == steps.count &&
         steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
@@ -498,7 +499,7 @@ public enum ArchiveSigningValidationScaffold {
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v71 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, screenshot/App Preview packet, Privacy Manifest required reason API audit packet, encryption export compliance packet, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v72 build notes name P0 Daily Difference Radar, 90-day tellable progress, media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, screenshot/App Preview packet, Privacy Manifest required reason API audit packet, encryption export compliance packet, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -1859,7 +1860,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "71", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "72", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }

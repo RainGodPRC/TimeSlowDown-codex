@@ -183,8 +183,27 @@ check(chapter.narrative.contains("5 公里"), "Weekly chapter should include cla
 check(!chapter.narrative.contains("第四个候选"), "Weekly chapter should not include a fourth candidate")
 check(chapter.sources.filter { $0.hasPrefix("slice:") }.count == 3, "Weekly chapter should keep slice provenance")
 
+let radar = SliceFactory.dailyDifferenceRadar(from: [slice, updated] + moments)
+check(radar.isTSDDailyLoopReady, "Daily Difference Radar should produce three sourced candidates")
+check(radar.candidates.map(\.kind).contains(.mediaAnchor), "Daily Difference Radar should include a media-anchor candidate")
+check(radar.candidates.map(\.kind).contains(.relationship), "Daily Difference Radar should include a relationship candidate")
+check(radar.candidates.map(\.kind).contains(.turningPoint), "Daily Difference Radar should include a turning-point candidate")
+let radarSlice = SliceFactory.quickMark(from: radar.candidates[0], media: photo)
+check(radarSlice.sources.contains("今日差异雷达"), "Radar Quick Mark should preserve the Daily Difference Radar source")
+check(radarSlice.hasMediaAnchor, "Radar Quick Mark should allow media to remain a memory anchor")
+
+let ninetyDayProgress = SliceFactory.ninetyDayTellableProgress(
+    from: [slice, updated] + moments,
+    claimedSliceIDs: Array(moments.prefix(3)).map(\.id)
+)
+check(ninetyDayProgress.minimumTarget == 5, "90-day tellable progress should use five memories as the minimum north-star target")
+check(ninetyDayProgress.aspirationalTarget == 10, "90-day tellable progress should keep ten memories as the aspirational target")
+check(ninetyDayProgress.mediaAnchorCount >= 2, "90-day tellable progress should count media anchors")
+check(ninetyDayProgress.weeklyClaimMissing == 0, "90-day tellable progress should recognize three weekly claimed moments")
+check(ninetyDayProgress.isTSDNorthStarAligned, "90-day tellable progress should avoid shame/failure language")
+
 check(NativeHandoffLedger.rows.count == 8, "Native Handoff Ledger should keep the v32 eight-row contract")
-check(SubmissionPacket.rows.count == 13, "Submission Packet should keep the v71 thirteen-row contract")
+check(SubmissionPacket.rows.count == 13, "Submission Packet should keep the thirteen-row contract after v72 P0 daily loop")
 check(NativeHandoffLedger.rows.map(\.id).contains("photos-picker"), "Native Handoff should include PhotosPicker")
 check(NativeHandoffLedger.rows.map(\.id).contains("keychain-e2ee"), "Native Handoff should include Keychain/E2EE")
 check(SubmissionPacket.rows.map(\.id).contains("privacy-questionnaire"), "Submission Packet should include privacy questionnaire")
@@ -217,6 +236,9 @@ check(firstSnapshot.submissionTodoCount == SubmissionPacket.rows.filter { $0.sta
 check(firstSnapshot.privacySafe, "Native shell should start with a safe privacy boundary")
 check(!firstSnapshot.hasExportPackage, "Native shell should not claim an export package before the user asks")
 check(firstSnapshot.lastExportEntryCount == 0, "Native shell should start with no export entries")
+check(firstSnapshot.dailyDifferenceCandidateCount == 3, "Native shell snapshot should expose three Daily Difference Radar candidates")
+check(firstSnapshot.ninetyDayTellableCount >= 3, "Native shell snapshot should expose 90-day tellable progress")
+check(firstSnapshot.ninetyDayMinimumTarget == 5, "Native shell snapshot should expose the 90-day minimum tellable target")
 
 let captured = shell.captureFromMemoryCamera(
     MediaAnchor(kind: .image, label: "native-memory-camera.jpg", note: "SwiftUI Memory Camera")
@@ -277,7 +299,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>71</string>"), "Info.plist should carry v71 build number")
+check(infoPlistText.contains("<string>72</string>"), "Info.plist should carry v72 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -1510,7 +1532,7 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "71", "TestFlight build notes should match v71")
+check(buildNotes.buildNumber == "72", "TestFlight build notes should match v72")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1943,8 +1965,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "71", "App Store submission gate should track v71")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should track thirty release gates after v71 screenshot/App Preview creative packet")
+check(appStoreSubmissionGate.buildNumber == "72", "App Store submission gate should track v72")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v72 P0 daily loop")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2220,4 +2242,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, and v71 screenshot/App Preview creative packet are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, and v72 P0 daily loop are aligned.")

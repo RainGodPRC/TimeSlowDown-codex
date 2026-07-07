@@ -8,6 +8,7 @@ Public demo: https://raingodprc.github.io/TimeSlowDown-codex/
 
 Current demo focus:
 
+- P0 Daily Loop: the home screen now turns Daily Difference Radar candidates into real slices and shows 90-day tellable progress toward the north-star target of 5–10 vivid memories
 - Quick Mark → today slice
 - Claim 3 moments → editable weekly chapter
 - Semantic zoom meadow: day / week / month / year / life
@@ -69,7 +70,7 @@ Current demo focus:
 - Privacy Manifest required reason API audit packet: native checks now audit current shipping-target use of Apple required reason API categories, keep the current `PrivacyInfo.xcprivacy` no-tracking/no-collected-data/no-accessed-API shape honest for the local app path, and keep the final full-Xcode privacy report/dependency-manifest/release-review gate blocked
 - Encryption export compliance review packet: native checks now conservatively declare encryption use in `Info.plist`, map CryptoKit AES.GCM, Secure Enclave, Keychain metadata, encrypted media vault, and HTTPS transport to export-compliance review, and keep final App Store Connect/legal/release classification blocked
 - Screenshot/App Preview creative packet: native checks now map Memory Camera, today slice, weekly chapter, life meadow, media wall, and Account Rights to Apple screenshot/App Preview constraints with real-UI capture, synthetic/consented media, privacy masking, and no death/fear/shame marketing, while keeping final rendered assets, App Store Connect upload, localization/legal/release review blocked
-- Public release contract marker: the Web demo remains the v33 shell but now publicly displays `Release Contract v71 · Screenshot/App Preview Creative Packet` in Launch Readiness, QA Console, and copied release reports so GitHub Pages visibly reflects native release-contract progress even when the UI shell is unchanged
+- Public release contract marker: the Web demo now displays `Release Contract v72 · P0 Daily Loop`, with `styles.css?v=34` / `app.js?v=72`, so GitHub Pages visibly reflects the homepage product-loop upgrade instead of another release-packet-only iteration
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report

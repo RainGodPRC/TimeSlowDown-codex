@@ -4,10 +4,10 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const STORAGE_KEY = "tsd-codex-demo-state-v1";
 const VAULT_SCHEMA_VERSION = "tsd-codex-vault-v1";
 const PUBLIC_DEMO_URL = "https://raingodprc.github.io/TimeSlowDown-codex/";
-const WEB_DEMO_VERSION = "v33";
-const RELEASE_CONTRACT_VERSION = "v71";
-const RELEASE_CONTRACT_LABEL = "Release Contract v71 · Screenshot/App Preview Creative Packet";
-const PUBLIC_RESOURCE_LABEL = "styles.css?v=33 / app.js?v=71";
+const WEB_DEMO_VERSION = "v34";
+const RELEASE_CONTRACT_VERSION = "v72";
+const RELEASE_CONTRACT_LABEL = "Release Contract v72 · P0 Daily Loop";
+const PUBLIC_RESOURCE_LABEL = "styles.css?v=34 / app.js?v=72";
 const PUBLIC_URL_PACKET_VERSION = "v62";
 const PUBLIC_URL_ROUTES = ["support", "privacy", "export", "delete", "subscription", "review", "legal"];
 const PUBLIC_URL_PACKET = [
@@ -76,6 +76,7 @@ const defaultState = {
   moments: seedMoments,
   aiMode: "rules",
   selectedGolden: "G001",
+  homeGuide: "",
   weeklyClaimed: ["m1", "m2", "m3"],
   chapterTitle: "",
   chapterStory: "",
@@ -593,6 +594,166 @@ function mediaMoments() {
   return state.moments.filter(moment => moment.media);
 }
 
+function momentSearchText(moment) {
+  return [
+    moment.title,
+    moment.text,
+    ...(moment.tags || []),
+    moment.media?.note,
+    moment.media?.label,
+    ...(moment.sources || [])
+  ].filter(Boolean).join(" ");
+}
+
+function firstMomentMatching(pattern) {
+  return state.moments.find(moment => pattern.test(momentSearchText(moment)));
+}
+
+function dailyDifferenceCandidates() {
+  const mediaMoment = mediaMoments()[0];
+  const relationshipMoment = firstMomentMatching(/爸爸|妈妈|家人|孩子|朋友|同学|同事|故知|一起|见面|吃面|通话/);
+  const achievementMoment = firstMomentMatching(/第一次|第一个|跑完|完成|成就|学会|金榜|做到|撑过|低落|工作|烦|雨天/);
+  const used = new Set();
+  const sourceLine = moment => moment ? `来自：${moment.date} · ${moment.title}` : "来自：今日占位建议";
+  const pickSource = moment => {
+    if (!moment || used.has(moment.id)) return null;
+    used.add(moment.id);
+    return moment;
+  };
+  const mediaSource = pickSource(mediaMoment);
+  const relationshipSource = pickSource(relationshipMoment);
+  const achievementSource = pickSource(achievementMoment);
+  return [
+    {
+      id: "radar-media",
+      type: "media",
+      icon: "▧",
+      label: "影像锚点",
+      title: mediaSource ? `${mediaKindLabel(mediaSource.media.kind)}里有一个今天` : "先用照片/视频占住今天",
+      prompt: mediaSource ? "影像已经在，给它认领成一个可讲述切片。" : "如果今天拍过什么，不必先写长文，先选一张。",
+      body: mediaSource ? `${mediaSource.title}。${mediaSource.media?.note || "这条影像能把我带回当时。"}` : "今天有一张照片/视频，先把现场钉住；文字可以周末再补。",
+      evidence: sourceLine(mediaSource),
+      tags: ["影像线索", "普通但值得"],
+      strength: "memory",
+      sourceMomentId: mediaSource?.id || "",
+      primaryAction: mediaSource ? "认领为今日切片" : "去添加影像"
+    },
+    {
+      id: "radar-person",
+      type: "relationship",
+      icon: "♙",
+      label: "人",
+      title: relationshipSource ? `今天从“${relationshipSource.title}”讲起` : "今天有没有一个人更清晰？",
+      prompt: relationshipSource ? "关系记忆通常不是大道理，而是一句话、一顿饭、一个表情。" : "一个人名、一句话、一张饭桌，都可以先占位。",
+      body: relationshipSource ? `${relationshipSource.title}。${relationshipSource.text}` : "今天有一个人比平时更清晰，我想先把这个瞬间留下。",
+      evidence: sourceLine(relationshipSource),
+      tags: ["人", "普通但值得"],
+      strength: "memory",
+      sourceMomentId: relationshipSource?.id || "",
+      primaryAction: "留成今日切片"
+    },
+    {
+      id: "radar-turn",
+      type: "turning",
+      icon: "✦",
+      label: "转弯点",
+      title: achievementSource ? `这个转弯值得留下` : "今天有没有一个小小转弯？",
+      prompt: achievementSource ? "第一次、完成、低落后的路，都算时间里的差异。" : "第一次、完成一件小事、或一段不太顺的情绪天气，都可以被留下。",
+      body: achievementSource ? `${achievementSource.title}。${achievementSource.text}` : "今天有一个小小转弯：它不一定宏大，但我想以后还能想起。",
+      evidence: sourceLine(achievementSource),
+      tags: ["情绪转弯", "普通但值得"],
+      strength: achievementSource?.strength === "strong" || achievementSource?.tags?.some(tag => ["第一次", "成就"].includes(tag)) ? "strong" : "memory",
+      sourceMomentId: achievementSource?.id || "",
+      primaryAction: "留成今日切片"
+    }
+  ];
+}
+
+function markDailyDifference(candidateId) {
+  const candidate = dailyDifferenceCandidates().find(item => item.id === candidateId);
+  if (!candidate) return;
+  if (candidate.type === "media" && !candidate.sourceMomentId) {
+    setState({
+      view: "slice",
+      activeTags: [...new Set([...state.activeTags, "照片"])],
+      draft: candidate.body,
+      toast: "先进入今日切片：你可以添加照片/视频，也可以只留一句影像备注。"
+    });
+    return;
+  }
+  const sourceMoment = state.moments.find(moment => moment.id === candidate.sourceMomentId);
+  if (sourceMoment?.date === "今天") {
+    const moments = state.moments.map(moment => moment.id === sourceMoment.id ? {
+      ...moment,
+      sources: [...new Set([...(moment.sources || []), "今日差异雷达"])]
+    } : moment);
+    setState({
+      moments,
+      weeklyClaimed: [...new Set([...state.weeklyClaimed, sourceMoment.id])].slice(-3),
+      view: "slice",
+      toast: "已把这个瞬间认领为今天的差异切片，并加入本周可讲述候选。"
+    });
+    return;
+  }
+  const gates = analyzeMemory(candidate.body, candidate.tags);
+  const moment = {
+    id: `radar-${Date.now()}`,
+    date: "今天",
+    title: candidate.title.replace(/^今天从“|”讲起$/g, "").slice(0, 24),
+    text: faithfulEdit(candidate.body, candidate.tags, gates),
+    tags: candidate.tags,
+    strength: candidate.strength,
+    gates,
+    media: sourceMoment?.media,
+    sources: [...new Set(["今日差异雷达", candidate.evidence, ...(sourceMoment ? [`source:${sourceMoment.id}`] : [])])]
+  };
+  setState({
+    moments: [moment, ...state.moments],
+    weeklyClaimed: [...new Set([...state.weeklyClaimed, moment.id])].slice(-3),
+    view: "slice",
+    toast: "已从今日差异雷达生成一张切片。你可以周末再补照片、细节或删改文字。"
+  });
+}
+
+function tellableMomentScore(moment) {
+  let score = 0;
+  if (moment.media) score += 2;
+  if (moment.strength === "strong") score += 2;
+  if ((moment.text || "").length >= 28) score += 1;
+  if ((moment.tags || []).some(tag => /第一次|成就|家人|低落|工作|普通但值得|人生补录|情绪转弯/.test(tag))) score += 2;
+  if ((moment.sources || []).length >= 2) score += 1;
+  return score;
+}
+
+function ninetyDayTellableProgress() {
+  const minimumTarget = 5;
+  const aspirationalTarget = 10;
+  const candidates = quarterMemoryCandidates();
+  const tellable = candidates.filter(moment => tellableMomentScore(moment) >= 2).slice(0, aspirationalTarget);
+  const mediaCount = candidates.filter(moment => moment.media).length;
+  const claimedCount = state.weeklyClaimed.filter(id => state.moments.some(moment => moment.id === id)).length;
+  const progress = Math.min(100, Math.round((tellable.length / minimumTarget) * 100));
+  const missingToMinimum = Math.max(0, minimumTarget - tellable.length);
+  const weeklyMissing = Math.max(0, 3 - claimedCount);
+  const nextAction = weeklyMissing
+    ? `本周再认领 ${weeklyMissing} 个瞬间，就能编成一段可讲述章节。`
+    : missingToMinimum
+      ? `再留下 ${missingToMinimum} 个有画面/人物/转弯的切片，90 天会更好讲。`
+      : "已经有一组能讲起的季度记忆，可以去回忆仪式里梳理。";
+  return {
+    candidates,
+    tellable,
+    mediaCount,
+    claimedCount,
+    minimumTarget,
+    aspirationalTarget,
+    progress,
+    missingToMinimum,
+    weeklyMissing,
+    nextAction
+  };
+}
+
 function filteredMediaMoments() {
   const items = mediaMoments();
   if (state.mediaFilter === "all") return items;
@@ -692,9 +853,9 @@ function mediaLibraryManifest() {
   const stats = mediaLibraryStats();
   return {
     product: "TimeSlowDown Media Vault Path",
-    version: "v33-demo",
+    version: `${WEB_DEMO_VERSION}-demo`,
     generatedAt: new Date().toISOString(),
-    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v33 adds App Store Submission Packet on top of Native Handoff Ledger and Launch Readiness, while keeping Memory Camera, Bento cards, account rights, media vault path, and app-like install boundaries.",
+    boundary: "Demo only: no persistent Photos permission, no GPS, no contacts, no face recognition, no real E2EE service. v34 adds the P0 Daily Difference Radar and 90-day tellable progress on top of the v33 App Store Submission Packet, Native Handoff Ledger, Launch Readiness, Memory Camera, Bento cards, account rights, media vault path, and app-like install boundaries.",
     vaultState: {
       permission: state.mediaPermissionReviewAt ? "limited-picker-reviewed" : "single-picker-only",
       sealedAt: state.mediaVaultSealedAt || "",
@@ -1198,7 +1359,7 @@ async function requestInstallDemo() {
 async function copyInstallGuide() {
   const manifest = installManifestState();
   const text = [
-    "TimeSlowDown Codex 安装说明（Demo v33）：",
+    `TimeSlowDown Codex 安装说明（Demo ${WEB_DEMO_VERSION}）：`,
     `公网地址：${PUBLIC_DEMO_URL}`,
     "",
     "iPhone / iPad：用 Safari 打开 → 点分享按钮 → 添加到主屏幕。",
@@ -1206,7 +1367,7 @@ async function copyInstallGuide() {
     "桌面 Chrome / Edge：打开地址栏右侧安装图标，或菜单 → 安装 TimeSlowDown。",
     "",
     `当前检测：manifest=${manifest.hasManifest ? "yes" : "no"}；apple-meta=${manifest.hasAppleMeta ? "yes" : "no"}；standalone=${manifest.standalone ? "yes" : "no"}；prompt=${manifest.promptReady ? "ready" : "manual"}.`,
-    "边界：v33 使用 inline manifest 和 iOS meta，不新增文件；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
+    "边界：当前 Web Demo 使用 inline manifest 和 iOS meta；尚未接入 service worker/offline cache，也不是原生 iOS 壳。"
   ].join("\n");
   const stamp = new Date().toLocaleString("zh-CN");
   try {
@@ -1240,7 +1401,9 @@ function launchChecksum() {
 function launchReadinessRows() {
   const mediaCount = mediaMoments().length;
   const stats = vaultStats();
+  const progress = ninetyDayTellableProgress();
   return [
+    ["P0 daily loop", "ready", `首页已展示 3 个今日差异候选与 ${progress.tellable.length}/${progress.minimumTarget} 个 90 天可讲述进度。`],
     ["Memory capture", "ready", "照片/视频可从 onboarding、顶部 Dock、底部“＋影像”、此刻页和媒体墙进入。"],
     ["Local vault", "ready", `${stats.moments} 条切片、${stats.media} 个影像锚点可导出为 JSON。`],
     ["Media vault", state.mediaVaultSealedAt || state.mediaPackageExportAt ? "ready" : "poc", mediaCount ? `${mediaCount} 个影像锚点；E2EE/导出包/删除审计为 PoC。` : "等待用户绑定第一张真实影像。"],
@@ -1281,7 +1444,8 @@ function submissionPacketRows() {
   return [
     ["产品页定位", state.productPageReviewAt ? "poc" : "todo", "App name / subtitle / description / keywords", "TimeSlowDown 的商店页应避免夸大医疗、心理诊断或生产完成度；主张聚焦“留住可讲述瞬间”。"],
     ["截图与预览", state.screenshotPlanAt ? "poc" : "todo", "screenshots / app preview", "截图组覆盖 Memory Camera、今日切片、周章节、人生旷野、媒体墙、账户权利、隐私中心；公开版不展示真实隐私内容。"],
-    ["截图/App Preview 创意包", "poc", RELEASE_CONTRACT_VERSION, "v71 已把 6 张核心截图场景、Apple 数量/格式边界、真实 UI 截取、合成/授权素材、隐私遮罩和反恐惧营销写成 native release contract。"],
+    ["P0 Daily Loop", "poc", RELEASE_CONTRACT_VERSION, "v72 已把今日差异雷达和 90 天可讲述进度写进首页与 native core，让产品回到“今天留下一个差异，90 天后能讲起 5–10 个瞬间”的北极星。"],
+    ["截图/App Preview 创意包", "poc", "v71", "v71 已把 6 张核心截图场景、Apple 数量/格式边界、真实 UI 截取、合成/授权素材、隐私遮罩和反恐惧营销写成 native release contract。"],
     ["最终截图资产", "todo", "App Store Connect assets", "仍需从真实 App UI 渲染最终截图/App Preview、选择 poster frame、复核本地化、上传 App Store Connect，并完成 legal/release review。"],
     ["隐私问卷", state.privacyQuestionnaireAt ? "poc" : "todo", "App Privacy Details", "用户内容、照片/视频、账号、购买、诊断、AI 处理和可选同步需要逐项映射；当前 demo 不上传真实数据。"],
     ["年龄分级", state.ageRatingReviewAt ? "poc" : "todo", "Age Rating", "产品允许 12+ 方向，但正式上架需按用户生成内容、家庭影像、AI 处理和外部链接复核分级。"],
@@ -1433,7 +1597,7 @@ async function copyPublicURLPacket() {
 async function copyNativeHandoffReport() {
   const stats = nativeHandoffStats();
   const text = [
-    "TimeSlowDown Native Handoff Ledger（Demo v33）：",
+    `TimeSlowDown Native Handoff Ledger（Demo ${WEB_DEMO_VERSION}）：`,
     `公网：${PUBLIC_DEMO_URL}`,
     `资源：${PUBLIC_RESOURCE_LABEL}`,
     `原生迁移复核：${state.nativeMigrationReviewAt || "尚未标记"}`,
@@ -1564,7 +1728,7 @@ async function copyReviewPacket() {
 
 async function copyComplianceReport() {
   const text = [
-    "TimeSlowDown 生产隐私报告（Demo v33）：",
+    `TimeSlowDown 生产隐私报告（Demo ${WEB_DEMO_VERSION}）：`,
     "1. 当前 Demo：静态站点 + localStorage；不登录、不云同步、不调用真实模型、不请求持久相册/定位/通讯录/麦克风/通知。",
     "2. 数据生命周期：用户主动输入/选择 → 设备本地保存 → 可选 AI/同步任务单 → 导出/删除 → 分享包去隐私。",
     "3. 权限升级梯子：先单次选择；只有批量整理、同步、提醒等明确动作出现时才解释并请求更多权限。",
@@ -1595,7 +1759,7 @@ function qaSnapshot() {
     mediaCount,
     claimedCount,
     gatewayStatus: gatewayStatusLabel(),
-    privacyCenter: "v33",
+    privacyCenter: WEB_DEMO_VERSION,
     qaReportAt: state.lastQaReportAt || "尚未复制",
     checks: qaChecks(mediaCount, claimedCount)
   };
@@ -1603,6 +1767,12 @@ function qaSnapshot() {
 
 function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weeklyClaimed.length) {
   return [
+    {
+      area: "P0 Daily Loop",
+      status: "pass",
+      route: "此刻",
+      evidence: `今日差异雷达提供 ${dailyDifferenceCandidates().length} 个可操作候选；90 天可讲述进度显示 ${ninetyDayTellableProgress().tellable.length}/5 个北极星瞬间，并导向周认领、回忆仪式和媒体锚点。`
+    },
     {
       area: "首次体验",
       status: "pass",
@@ -2150,6 +2320,8 @@ function bindEvents() {
   $$("[data-media-filter]").forEach(btn => btn.addEventListener("click", () => setState({ mediaFilter: btn.dataset.mediaFilter })));
   $$("[data-media-layout]").forEach(btn => btn.addEventListener("click", () => setState({ mediaLayout: btn.dataset.mediaLayout })));
   $$("[data-attach-media-link]").forEach(btn => btn.addEventListener("click", () => attachMediaLinkToMoment(btn.dataset.attachMediaLink)));
+  $$("[data-home-guide]").forEach(btn => btn.addEventListener("click", () => setState({ homeGuide: btn.dataset.homeGuide })));
+  $$("[data-radar-mark]").forEach(btn => btn.addEventListener("click", () => markDailyDifference(btn.dataset.radarMark)));
   $$("[data-claim]").forEach(btn => btn.addEventListener("click", () => toggleClaim(btn.dataset.claim)));
   $$("[data-share-mode]").forEach(btn => btn.addEventListener("click", () => setState({ shareMode: btn.dataset.shareMode })));
   $("[data-age]")?.addEventListener("input", (e) => setState({ age: Number(e.target.value || 36) }));
@@ -2295,6 +2467,10 @@ function onboardingTemplate() {
 }
 
 function nowView() {
+  const radar = dailyDifferenceCandidates();
+  const progress = ninetyDayTellableProgress();
+  const activeGuide = state.homeGuide || "";
+  const selectedRadar = radar.find(item => item.id === activeGuide);
   return `
     <div class="topline">
       <div><div class="brand">此刻</div><div class="micro">今天不像昨天的地方，会在这里变成一张切片。</div></div>
@@ -2303,52 +2479,50 @@ function nowView() {
     <section class="hero-card">
       <div class="eyebrow">Difference Radar</div>
       <h1 class="hero-title">今天有什么，<br/>不太一样？</h1>
-      <p class="hero-subtitle">不需要完整日记。可以先拍下/选中一个画面，再补一句话；影像本身就是回忆的入口。</p>
+      <p class="hero-subtitle">先选一个入口。细节可以下一步再补。</p>
       <div class="action-row">
         <label class="primary media-inline-file">
           <span>添加照片/视频</span>
           <input data-media-file data-after-view="slice" data-clear-draft="true" type="file" accept="image/*,video/*" />
         </label>
-        <button class="secondary" data-view="slice">文字 Quick Mark</button>
-        <button class="secondary" data-view="media">看媒体记忆墙</button>
+        <button class="secondary" data-view="slice">写一句</button>
       </div>
-      <p class="media-dock-note">如果你已经拍了照片，不用先想文字：点上方“照片/视频”，TSD 会把它作为今日切片的记忆锚点。</p>
     </section>
-    <section class="bento-board" aria-label="今日 Bento 记忆工作台">
-      ${bentoCard("capture", "Memory Camera", "先把现场钉住", "照片/视频优先，文字以后补。", "添加照片/视频", "slice")}
-      ${bentoCard("timeline", "Journal Timeline", `${mediaMoments().length} 个影像锚点`, "按时间重新走一遍最近的瞬间。", "看时间线", "media")}
-      ${bentoCard("chapter", "Weekly Story", "认领 3 个瞬间", "把零散切片编成能讲给人的章节。", "编译章节", "chapter")}
-      ${bentoCard("meadow", "Life Meadow", "月、年、一生缩放", "让花丛、小草和雨天一起构成人生。", "缩放旷野", "meadow")}
-    </section>
-    <section class="media-first-strip">
-      <div>
-        <div class="eyebrow">Photo / Video First</div>
-        <strong>用照片或视频，先把这一刻钉住。</strong>
-        <span>选完会进入今日切片：可以只留影像备注，也可以周末再补完整故事。</span>
+    <section class="home-radar-panel" aria-label="今日差异雷达">
+      <div class="mini-section-head">
+        <span>今日差异雷达</span>
+        <em>点一个就好</em>
       </div>
-      <label class="media-first-button">
-        <span>选择照片/视频</span>
-        <input data-media-file data-after-view="slice" data-clear-draft="true" type="file" accept="image/*,video/*" />
-      </label>
-    </section>
-    <div class="radar">
-      ${radarItem("第一次", "任何第一次都值得先占位，不必先判断它重不重要。", "✦")}
-      ${radarItem("人", "今天有没有一个人，比平时更清晰？", "♙")}
-      ${radarItem("影像", "照片、视频、截图、录音备注，都可以成为切片的第一线索。", "▧")}
-    </div>
-    <section class="journey-card">
-      <div class="eyebrow">Try This Demo</div>
-      <h2 class="section-title">推荐体验路线 <span class="micro">3 分钟</span></h2>
-      <div class="journey-steps">
-        ${journeyStep("01", "留下一张切片", "用照片/视频或一句话，先占住今天不同的地方。", "slice")}
-        ${journeyStep("02", "编译本周章节", "认领 3 个瞬间，生成可编辑故事。", "chapter")}
-        ${journeyStep("03", "缩放人生旷野", "从月度风景缩到一生周格。", "meadow")}
-        ${journeyStep("04", "打开媒体记忆墙", "看照片、视频如何把切片串成时间线。", "media")}
-        ${journeyStep("05", "打开人物地点镜头", "从谁和哪里，重新讲起最近的瞬间。", "lens")}
-        ${journeyStep("06", "检查媒体库边界", "看相册权限、加密库、导出删除和分享。", "library")}
-        ${journeyStep("07", "试一次 90 天回忆", "先自由回忆，再揭开季度风景。", "ritual")}
-        ${journeyStep("08", "生成视觉成品", "把周章节、季度回忆和人生旷野变成可分享卡片。", "studio")}
+      <div class="radar-choice-grid">
+        ${radar.map(candidate => radarChoice(candidate, activeGuide === candidate.id)).join("")}
       </div>
+      ${selectedRadar ? radarGuidePanel(selectedRadar) : `<p class="home-hint">不用判断重不重要。TSD 先帮你把“可能值得留下”的入口摆出来。</p>`}
+    </section>
+    <section class="tellable-progress-card compact">
+      <button class="progress-summary" data-home-guide="${activeGuide === "progress" ? "" : "progress"}">
+        <span>90 天可讲述</span>
+        <strong>${progress.tellable.length}/${progress.minimumTarget}</strong>
+        <em>${progress.weeklyMissing ? `本周还差 ${progress.weeklyMissing}` : "本周可成章"}</em>
+      </button>
+      <div class="meter tellable-meter"><i style="width:${progress.progress}%"></i></div>
+      ${activeGuide === "progress" ? progressGuidePanel(progress) : ""}
+    </section>
+    <section class="home-shortcuts" aria-label="其他入口">
+      <button data-view="chapter"><strong>周章节</strong><span>认领 3 个</span></button>
+      <button data-view="media"><strong>影像墙</strong><span>${mediaMoments().length} 个锚点</span></button>
+      <button data-view="meadow"><strong>人生旷野</strong><span>缩放看看</span></button>
+    </section>
+    <section class="journey-card collapsed">
+      <button class="journey-toggle" data-home-guide="${activeGuide === "journey" ? "" : "journey"}">
+        <span>不知道怎么试？</span>
+        <strong>打开 3 分钟路线</strong>
+      </button>
+      ${activeGuide === "journey" ? `<div class="journey-steps">
+        ${journeyStep("01", "留下一张切片", "照片/视频或一句话。", "slice")}
+        ${journeyStep("02", "认领本周", "选 3 个瞬间。", "chapter")}
+        ${journeyStep("03", "看 90 天", "回忆最近三个月。", "ritual")}
+      </div>
+      ` : ""}
     </section>
   `;
 }
@@ -2364,6 +2538,58 @@ function bentoCard(kind, label, title, copy, action, view) {
 
 function radarItem(title, copy, icon) {
   return `<div class="radar-item"><div class="radar-copy"><strong>${title}</strong><span>${copy}</span></div><div class="radar-icon">${icon}</div></div>`;
+}
+
+function radarChoice(candidate, active) {
+  return `<button class="radar-choice ${candidate.type} ${active ? "active" : ""}" data-home-guide="${escapeHtml(candidate.id)}">
+    <span>${escapeHtml(candidate.icon)}</span>
+    <strong>${escapeHtml(candidate.label)}</strong>
+    <em>${escapeHtml(candidate.title)}</em>
+  </button>`;
+}
+
+function radarGuidePanel(candidate) {
+  return `<article class="home-guide-card">
+    <div>
+      <span>${escapeHtml(candidate.label)}</span>
+      <strong>${escapeHtml(candidate.title)}</strong>
+      <p>${escapeHtml(candidate.prompt)}</p>
+      <small>${escapeHtml(candidate.evidence)}</small>
+    </div>
+    <button class="primary" data-radar-mark="${escapeHtml(candidate.id)}">${escapeHtml(candidate.primaryAction)}</button>
+  </article>`;
+}
+
+function progressGuidePanel(progress) {
+  return `<div class="progress-guide">
+    <p>${escapeHtml(progress.nextAction)}</p>
+    <div class="progress-stats">
+      ${progressStat("影像", progress.mediaCount, "锚点")}
+      ${progressStat("认领", `${progress.claimedCount}/3`, "本周")}
+      ${progressStat("目标", "5–10", "瞬间")}
+    </div>
+    <div class="action-row">
+      <button class="primary" data-view="ritual">开始回忆</button>
+      <button class="secondary" data-view="chapter">去认领</button>
+    </div>
+  </div>`;
+}
+
+function radarCandidateCard(candidate) {
+  return `<article class="radar-item radar-candidate ${candidate.type}">
+    <div class="radar-icon">${escapeHtml(candidate.icon)}</div>
+    <div class="radar-copy">
+      <small>${escapeHtml(candidate.label)}</small>
+      <strong>${escapeHtml(candidate.title)}</strong>
+      <span>${escapeHtml(candidate.prompt)}</span>
+      <em>${escapeHtml(candidate.evidence)}</em>
+    </div>
+    <button class="radar-action" data-radar-mark="${escapeHtml(candidate.id)}">${escapeHtml(candidate.primaryAction)}</button>
+  </article>`;
+}
+
+function progressStat(label, value, copy) {
+  return `<div class="progress-stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span><em>${escapeHtml(copy)}</em></div>`;
 }
 
 function journeyStep(num, title, copy, view) {
@@ -3108,9 +3334,9 @@ function installView() {
   return `
     <div class="topline"><div><div class="brand">安装中心</div><div class="micro">让公网 Demo 更像一个能放到主屏幕的 App。</div></div></div>
     <section class="guide-card install-hero">
-      <div class="eyebrow">Install Center · v33</div>
+      <div class="eyebrow">Install Center · ${WEB_DEMO_VERSION}</div>
       <h1 class="hero-title">把 TSD 放到主屏幕，<br/>像 App 一样试用。</h1>
-      <p class="hero-subtitle">v33 在不新增文件的前提下保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测，并新增上架就绪中心。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
+      <p class="hero-subtitle">${WEB_DEMO_VERSION} 保留 inline manifest、iOS Web App meta、安装说明和 standalone 检测，并把今日差异雷达与 90 天可讲述进度放进首页。它提升外部试用质感，但仍不是原生 iOS App，也没有 service worker 离线缓存。</p>
       <div class="install-badges">
         ${installBadge("Manifest", install.hasManifest ? "ready" : "missing")}
         ${installBadge("iOS Meta", install.hasAppleMeta ? "ready" : "missing")}
@@ -3478,7 +3704,7 @@ function guideView() {
       <div class="action-row"><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-review>复制审核包</button><button class="secondary" data-view="launch">上架就绪中心</button><button class="secondary" data-view="account">账户权利中心</button><button class="secondary" data-view="qa">打开 QA Console</button><button class="secondary" data-view="ai">查看 AI 边界</button></div>
     </section>
     <section class="guide-card">
-      <h2 class="section-title">真实产品边界图 <span class="micro">v33</span></h2>
+      <h2 class="section-title">真实产品边界图 <span class="micro">${WEB_DEMO_VERSION}</span></h2>
       <div class="production-map">
         ${productionNode("设备本地", "Quick Mark、敏感标记、仅设备记忆先留在本机。", "ready")}
         ${productionNode("L0 规则层", "事实门、语气门、照片门先在本地兜底。", "ready")}
@@ -3486,7 +3712,7 @@ function guideView() {
         ${productionNode("加密同步", "生产版需账户、E2EE、恢复窗口和地区数据边界。", "todo")}
         ${productionNode("用户权利", "导出、删除、撤销 AI 草稿、查看来源必须是一级能力。", "ready")}
       </div>
-      <p class="source-line">v33 仍不调用真实模型和真实账户；它在 v28 Memory Camera 主入口之上新增 Launch Readiness，并吸收 Day One / Diarly / Craft / Apple Journal 的优秀 DNA。当前公开 release contract：${RELEASE_CONTRACT_LABEL}。</p>
+      <p class="source-line">${WEB_DEMO_VERSION} 仍不调用真实模型和真实账户；它在 v28 Memory Camera 主入口和 v33 Launch Readiness 之上，新增今日差异雷达与 90 天可讲述进度。当前公开 release contract：${RELEASE_CONTRACT_LABEL}。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">App Store 方向清单</h2>
@@ -3505,6 +3731,7 @@ function guideView() {
         ${readiness("PNG 分享成品", "v20", "分享工作室可本地生成 PNG；公开版默认隐藏原图、人名、地点和原文。")}
         ${readiness("模型网关控制台", "v21", "Provider、预算、队列、授权、降级和撤销日志可点击演示。")}
         ${readiness("Memory Camera", "v28", "底部悬浮“＋影像”让用户不用读说明也能从照片/视频开始一张切片。")}
+        ${readiness("P0 Daily Loop", "v34", "首页新增今日差异雷达与 90 天可讲述进度，把用户导向今日切片、周认领和季度回忆。")}
         ${readiness("Launch Readiness", "v33", "预检账本、导出包 checksum、删除回执、App Store 审核包和可复制上线报告。")}
         ${readiness("Native Handoff", "v33", "SwiftUI 壳、PhotosPicker、Keychain/E2EE、DeepSeek 网关、App Privacy Details、Privacy Manifest 和 TestFlight 包已拆成移交账本。")}
         ${readiness("Submission Packet", "v33 + v71", "产品页定位、截图/预览计划、隐私问卷、年龄分级、审核备注、支持/隐私 URL 和订阅说明已拆成提交材料包；v71 已补截图/App Preview 创意包。")}
@@ -4014,7 +4241,7 @@ function accountView() {
   return `
     <div class="topline"><div><div class="brand">账户权利</div><div class="micro">账号是钥匙，不是牢笼。</div></div></div>
     <section class="guide-card account-hero">
-      <div class="eyebrow">Account Rights Center · v33</div>
+      <div class="eyebrow">Account Rights Center · ${WEB_DEMO_VERSION}</div>
       <h1 class="hero-title">你的记忆，<br/>不该被账号或订阅扣住。</h1>
       <p class="hero-subtitle">TSD 的账户系统只应服务三件事：加密备份、多设备恢复、清楚的用户权利。不登录也能记录；退订后已有记忆仍可查看、编辑、导出和删除。</p>
       <div class="account-status-grid">
@@ -4078,7 +4305,7 @@ function settingsView() {
   return `
     <div class="topline"><div><div class="brand">设置</div><div class="micro">隐私、付费和叙述偏好，都应该说人话。</div></div></div>
     <section class="settings-card">
-      <h2 class="section-title">外部试用 <span class="micro">v33 · 公网导览</span></h2>
+      <h2 class="section-title">外部试用 <span class="micro">${WEB_DEMO_VERSION} · 公网导览</span></h2>
       <div class="chapter-list">
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
@@ -4129,7 +4356,7 @@ function settingsView() {
       <div class="action-row"><button class="secondary" data-quiet>${state.quietMode ? "关闭安静期" : "进入安静期"}</button><button class="secondary" data-copy-privacy>复制隐私摘要</button><button class="secondary" data-copy-qa>复制 QA 报告</button><button class="ghost" data-reset>重置 Demo</button></div>
     </section>
     <section class="settings-card">
-      <h2 class="section-title">同步控制台 <span class="micro">v33 · 多设备保险箱</span></h2>
+      <h2 class="section-title">同步控制台 <span class="micro">${WEB_DEMO_VERSION} · 多设备保险箱</span></h2>
       <div class="sync-console">
         ${syncStateCard("账户", accountModeLabel(), "不登录也能本地记录；登录只用于加密备份和多设备。")}
         ${syncStateCard("同步", syncModeLabel(), state.syncMode === "paused" ? "暂停后本机继续可用，云端不再接收新变化。" : "同步是可选增强，不是核心记录门槛。")}
