@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "66",
-        summary: String = "TimeSlowDown v66 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "67",
+        summary: String = "TimeSlowDown v67 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -76,6 +76,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v64 adds an App Privacy questionnaire packet that maps user content, photo/video anchors, account identifiers, purchases, diagnostics, minimal AI task payloads, and optional encrypted sync to App Store privacy answers, but keeps final App Store Connect/legal completion blocked.",
             "v65 adds an Age Rating review packet that maps private user memory/media content, no public social feed, no Kids Category claim, AI editing boundaries, external links, purchases, and support contact requirements while keeping final legal/release age-rating review blocked.",
             "v66 adds a signed-device media validation packet for PhotosPicker import and Files/share export evidence, while keeping actual Photos and Files release gates blocked until a real physical-device pass receipt exists.",
+            "v67 adds an archive/signing readiness packet for full Xcode, Apple Developer Team, Release archive, Transporter upload, and App Store Connect processing evidence, while keeping actual archive/TestFlight gates blocked until a real production receipt exists.",
             "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -152,10 +153,348 @@ public struct SigningReadinessPlan: Codable, Equatable, Sendable {
     }
 }
 
+public enum ArchiveSigningValidationStatus: String, Codable, Equatable, Sendable {
+    case pendingExternalXcode
+    case readyToArchive
+    case uploadedToTestFlight
+    case failed
+}
+
+public struct ArchiveSigningValidationEnvironment: Codable, Equatable, Sendable {
+    public var bundleIdentifier: String
+    public var teamID: String?
+    public var xcodeVersion: String?
+    public var macOSVersion: String
+    public var hasFullXcode: Bool
+    public var hasAppleDeveloperTeam: Bool
+    public var usesProductionBundleIdentifier: Bool
+    public var signingStyle: String
+    public var appStoreConnectAccessAvailable: Bool
+    public var transporterAvailable: Bool
+    public var networkRequiredForUpload: Bool
+
+    public init(
+        bundleIdentifier: String = "com.raingodprc.timeslowdown",
+        teamID: String? = nil,
+        xcodeVersion: String? = nil,
+        macOSVersion: String = "host-swiftpm",
+        hasFullXcode: Bool,
+        hasAppleDeveloperTeam: Bool,
+        usesProductionBundleIdentifier: Bool = true,
+        signingStyle: String = "Automatic",
+        appStoreConnectAccessAvailable: Bool,
+        transporterAvailable: Bool,
+        networkRequiredForUpload: Bool = true
+    ) {
+        self.bundleIdentifier = bundleIdentifier
+        self.teamID = teamID
+        self.xcodeVersion = xcodeVersion
+        self.macOSVersion = macOSVersion
+        self.hasFullXcode = hasFullXcode
+        self.hasAppleDeveloperTeam = hasAppleDeveloperTeam
+        self.usesProductionBundleIdentifier = usesProductionBundleIdentifier
+        self.signingStyle = signingStyle
+        self.appStoreConnectAccessAvailable = appStoreConnectAccessAvailable
+        self.transporterAvailable = transporterAvailable
+        self.networkRequiredForUpload = networkRequiredForUpload
+    }
+
+    public static func unsignedSwiftPMHost() -> ArchiveSigningValidationEnvironment {
+        ArchiveSigningValidationEnvironment(
+            hasFullXcode: false,
+            hasAppleDeveloperTeam: false,
+            appStoreConnectAccessAvailable: false,
+            transporterAvailable: false
+        )
+    }
+
+    public var canRunArchiveUploadValidation: Bool {
+        bundleIdentifier == "com.raingodprc.timeslowdown" &&
+        teamID?.isEmpty == false &&
+        xcodeVersion?.isEmpty == false &&
+        hasFullXcode &&
+        hasAppleDeveloperTeam &&
+        usesProductionBundleIdentifier &&
+        signingStyle == "Automatic" &&
+        appStoreConnectAccessAvailable &&
+        transporterAvailable &&
+        networkRequiredForUpload
+    }
+}
+
+public enum ArchiveSigningValidationStepKind: String, Codable, Equatable, Sendable {
+    case fullXcodeSelected
+    case appleDeveloperTeamResolved
+    case bundleIdentifierMatched
+    case releaseArchiveCreated
+    case archiveValidated
+    case appStoreExportOptionsCreated
+    case transporterUploadCompleted
+    case appStoreConnectProcessingVisible
+}
+
+public struct ArchiveSigningValidationStep: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var kind: ArchiveSigningValidationStepKind
+    public var title: String
+    public var requiresFullXcode: Bool
+    public var forbidsPrivateSigningMaterial: Bool
+    public var forbidsAppleSessionToken: Bool
+    public var expectedEvidence: String
+
+    public init(
+        id: String,
+        kind: ArchiveSigningValidationStepKind,
+        title: String,
+        requiresFullXcode: Bool = true,
+        forbidsPrivateSigningMaterial: Bool = true,
+        forbidsAppleSessionToken: Bool = true,
+        expectedEvidence: String
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.requiresFullXcode = requiresFullXcode
+        self.forbidsPrivateSigningMaterial = forbidsPrivateSigningMaterial
+        self.forbidsAppleSessionToken = forbidsAppleSessionToken
+        self.expectedEvidence = expectedEvidence
+    }
+
+    public var preservesTSDArchiveSigningBoundary: Bool {
+        id.hasPrefix("archive-signing-") &&
+        requiresFullXcode &&
+        forbidsPrivateSigningMaterial &&
+        forbidsAppleSessionToken &&
+        !expectedEvidence.isEmpty
+    }
+}
+
+public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var environment: ArchiveSigningValidationEnvironment
+    public var signingPlan: SigningReadinessPlan
+    public var buildNotes: TestFlightBuildNotes
+    public var steps: [ArchiveSigningValidationStep]
+    public var status: ArchiveSigningValidationStatus
+    public var productionValidationClaimed: Bool
+    public var generatedAt: Date
+
+    public init(
+        id: String,
+        environment: ArchiveSigningValidationEnvironment,
+        signingPlan: SigningReadinessPlan,
+        buildNotes: TestFlightBuildNotes,
+        steps: [ArchiveSigningValidationStep],
+        status: ArchiveSigningValidationStatus,
+        productionValidationClaimed: Bool = false,
+        generatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.environment = environment
+        self.signingPlan = signingPlan
+        self.buildNotes = buildNotes
+        self.steps = steps
+        self.status = status
+        self.productionValidationClaimed = productionValidationClaimed
+        self.generatedAt = generatedAt
+    }
+
+    public var isTSDArchiveSigningPacketSafe: Bool {
+        id.hasPrefix("archive-signing-plan-") &&
+        signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
+        signingPlan.requiresAppleDeveloperTeam &&
+        signingPlan.fakeTeamIDForbidden &&
+        buildNotes.buildNumber == "67" &&
+        steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
+        Set(steps.map(\.kind)).count == steps.count &&
+        steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
+        !productionValidationClaimed &&
+        (status == .pendingExternalXcode || status == .readyToArchive) &&
+        (status == .readyToArchive) == environment.canRunArchiveUploadValidation
+    }
+
+    public var requiresExternalXcodeWork: Bool {
+        status == .pendingExternalXcode &&
+        !environment.canRunArchiveUploadValidation &&
+        !productionValidationClaimed
+    }
+}
+
+public struct ArchiveSigningValidationStepReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var stepID: String
+    public var status: ArchiveSigningValidationStatus
+    public var evidenceDigest: String?
+    public var errorMessage: String?
+    public var containsPrivateSigningMaterial: Bool
+    public var containsAppleSessionToken: Bool
+
+    public init(
+        id: String,
+        stepID: String,
+        status: ArchiveSigningValidationStatus,
+        evidenceDigest: String? = nil,
+        errorMessage: String? = nil,
+        containsPrivateSigningMaterial: Bool = false,
+        containsAppleSessionToken: Bool = false
+    ) {
+        self.id = id
+        self.stepID = stepID
+        self.status = status
+        self.evidenceDigest = evidenceDigest
+        self.errorMessage = errorMessage
+        self.containsPrivateSigningMaterial = containsPrivateSigningMaterial
+        self.containsAppleSessionToken = containsAppleSessionToken
+    }
+
+    public var isHonestTSDArchiveSigningStepReceipt: Bool {
+        id.hasPrefix("archive-signing-step-receipt-") &&
+        !stepID.isEmpty &&
+        !containsPrivateSigningMaterial &&
+        !containsAppleSessionToken &&
+        (status != .uploadedToTestFlight || evidenceDigest != nil) &&
+        (status != .failed || errorMessage != nil)
+    }
+}
+
+public struct ArchiveSigningValidationReceipt: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var planID: String
+    public var status: ArchiveSigningValidationStatus
+    public var stepReceipts: [ArchiveSigningValidationStepReceipt]
+    public var productionValidationClaimed: Bool
+    public var canSatisfyFullXcodeGate: Bool
+    public var canSatisfyAppleDeveloperTeamGate: Bool
+    public var canSatisfyArchiveGate: Bool
+    public var canSatisfyTestFlightUploadGate: Bool
+    public var containsPrivateSigningMaterial: Bool
+    public var containsAppleSessionToken: Bool
+    public var createdAt: Date
+
+    public init(
+        id: String,
+        planID: String,
+        status: ArchiveSigningValidationStatus,
+        stepReceipts: [ArchiveSigningValidationStepReceipt],
+        productionValidationClaimed: Bool,
+        canSatisfyFullXcodeGate: Bool,
+        canSatisfyAppleDeveloperTeamGate: Bool,
+        canSatisfyArchiveGate: Bool,
+        canSatisfyTestFlightUploadGate: Bool,
+        containsPrivateSigningMaterial: Bool = false,
+        containsAppleSessionToken: Bool = false,
+        createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.planID = planID
+        self.status = status
+        self.stepReceipts = stepReceipts
+        self.productionValidationClaimed = productionValidationClaimed
+        self.canSatisfyFullXcodeGate = canSatisfyFullXcodeGate
+        self.canSatisfyAppleDeveloperTeamGate = canSatisfyAppleDeveloperTeamGate
+        self.canSatisfyArchiveGate = canSatisfyArchiveGate
+        self.canSatisfyTestFlightUploadGate = canSatisfyTestFlightUploadGate
+        self.containsPrivateSigningMaterial = containsPrivateSigningMaterial
+        self.containsAppleSessionToken = containsAppleSessionToken
+        self.createdAt = createdAt
+    }
+
+    public var isHonestPendingReceipt: Bool {
+        id.hasPrefix("archive-signing-receipt-") &&
+        status == .pendingExternalXcode &&
+        stepReceipts.allSatisfy { $0.status == .pendingExternalXcode && $0.isHonestTSDArchiveSigningStepReceipt } &&
+        !productionValidationClaimed &&
+        !canSatisfyFullXcodeGate &&
+        !canSatisfyAppleDeveloperTeamGate &&
+        !canSatisfyArchiveGate &&
+        !canSatisfyTestFlightUploadGate &&
+        !containsPrivateSigningMaterial &&
+        !containsAppleSessionToken
+    }
+
+    public var isProductionArchiveUploadReceipt: Bool {
+        id.hasPrefix("archive-signing-receipt-") &&
+        status == .uploadedToTestFlight &&
+        stepReceipts.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
+        stepReceipts.allSatisfy { $0.status == .uploadedToTestFlight && $0.isHonestTSDArchiveSigningStepReceipt } &&
+        productionValidationClaimed &&
+        canSatisfyFullXcodeGate &&
+        canSatisfyAppleDeveloperTeamGate &&
+        canSatisfyArchiveGate &&
+        canSatisfyTestFlightUploadGate &&
+        !containsPrivateSigningMaterial &&
+        !containsAppleSessionToken
+    }
+}
+
+public enum ArchiveSigningValidationScaffold {
+    public static func packet(
+        environment: ArchiveSigningValidationEnvironment,
+        signingPlan: SigningReadinessPlan,
+        buildNotes: TestFlightBuildNotes,
+        generatedAt: Date = Date()
+    ) -> ArchiveSigningValidationPacket {
+        let digest = TrustDigest.checksum([
+            environment.bundleIdentifier,
+            environment.teamID ?? "no-team",
+            signingPlan.bundleIdentifier,
+            buildNotes.buildNumber
+        ])
+        return ArchiveSigningValidationPacket(
+            id: "archive-signing-plan-\(digest.prefix(12))",
+            environment: environment,
+            signingPlan: signingPlan,
+            buildNotes: buildNotes,
+            steps: defaultSteps,
+            status: environment.canRunArchiveUploadValidation ? .readyToArchive : .pendingExternalXcode,
+            generatedAt: generatedAt
+        )
+    }
+
+    public static func pendingReceipt(
+        for packet: ArchiveSigningValidationPacket,
+        createdAt: Date = Date()
+    ) -> ArchiveSigningValidationReceipt {
+        let stepReceipts = packet.steps.map { step in
+            ArchiveSigningValidationStepReceipt(
+                id: "archive-signing-step-receipt-\(TrustDigest.checksum([packet.id, step.id]).prefix(12))",
+                stepID: step.id,
+                status: .pendingExternalXcode
+            )
+        }
+        let digest = TrustDigest.checksum([packet.id, "pending-archive-signing"])
+        return ArchiveSigningValidationReceipt(
+            id: "archive-signing-receipt-\(digest.prefix(12))",
+            planID: packet.id,
+            status: .pendingExternalXcode,
+            stepReceipts: stepReceipts,
+            productionValidationClaimed: false,
+            canSatisfyFullXcodeGate: false,
+            canSatisfyAppleDeveloperTeamGate: false,
+            canSatisfyArchiveGate: false,
+            canSatisfyTestFlightUploadGate: false,
+            createdAt: createdAt
+        )
+    }
+
+    public static var defaultSteps: [ArchiveSigningValidationStep] {
+        [
+            .init(id: "archive-signing-full-xcode-selected", kind: .fullXcodeSelected, title: "Select full Xcode toolchain", expectedEvidence: "xcodebuild -version digest and selected developer directory"),
+            .init(id: "archive-signing-apple-developer-team-resolved", kind: .appleDeveloperTeamResolved, title: "Resolve real Apple Developer Team ID", expectedEvidence: "Team ID digest and bundle capability check without exposing account session"),
+            .init(id: "archive-signing-bundle-identifier-matched", kind: .bundleIdentifierMatched, title: "Match production bundle identifier", expectedEvidence: "com.raingodprc.timeslowdown bundle ID in project and App Store Connect"),
+            .init(id: "archive-signing-release-archive-created", kind: .releaseArchiveCreated, title: "Create Release archive", expectedEvidence: "xcarchive path digest, build number, scheme, configuration, and archive timestamp"),
+            .init(id: "archive-signing-archive-validated", kind: .archiveValidated, title: "Validate archive for App Store distribution", expectedEvidence: "Xcode archive validation result digest with no development signing"),
+            .init(id: "archive-signing-app-store-export-options-created", kind: .appStoreExportOptionsCreated, title: "Create App Store export options", expectedEvidence: "method=app-store-connect/exportOptions digest without certificates or profiles"),
+            .init(id: "archive-signing-transporter-upload-completed", kind: .transporterUploadCompleted, title: "Upload archive through Transporter/App Store Connect", expectedEvidence: "upload receipt digest, bundle ID, build number, and processing ID"),
+            .init(id: "archive-signing-app-store-connect-processing-visible", kind: .appStoreConnectProcessingVisible, title: "Confirm build is visible in App Store Connect/TestFlight", expectedEvidence: "App Store Connect build processing receipt digest")
+        ]
+    }
+}
+
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v40 build notes name media capture, export/delete rights, AI boundary, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v67 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -718,7 +1057,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "66", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "67", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -759,6 +1098,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         publicURLPacket: AppStorePublicURLPacket = AppStorePublicURLPacket(),
         appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket = AppPrivacyQuestionnairePacket(),
         ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
+        archiveSigningReceipt: ArchiveSigningValidationReceipt? = nil,
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
         signedDeviceMediaReceipt: SignedDeviceMediaValidationReceipt? = nil,
@@ -776,6 +1116,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let finalLegalURLsReady = publicURLPacket.canSatisfyFinalLegalURLGate
         let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
         let ageRatingShapeReady = ageRatingReviewPacket.canSatisfyAgeRatingShapeGate
+        let archiveSigningPacketShapeReady = archiveSigningReceipt?.isHonestPendingReceipt == true || archiveSigningReceipt?.isProductionArchiveUploadReceipt == true
         let mediaValidationPacketShapeReady = signedDeviceMediaReceipt?.isHonestPendingReceipt == true || signedDeviceMediaReceipt?.isProductionPassReceipt == true
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
         nativeRows.map(\.id).contains("keychain-e2ee") &&
@@ -793,20 +1134,24 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let aiProviderPassed = deepSeekReceipt?.canBeUsedForAppStoreGate == true
         let deletionCompleted = deletionReceipt?.canSatisfyAppStoreDeletionGate == true
         let backendDeploymentPassed = backendReleaseEvidence.canSatisfyBackendDeploymentGate
+        let fullXcodePassed = hasFullXcode || archiveSigningReceipt?.canSatisfyFullXcodeGate == true
+        let appleDeveloperTeamPassed = teamIDPresent || archiveSigningReceipt?.canSatisfyAppleDeveloperTeamGate == true
+        let archivePassed = (hasFullXcode && archiveCreated) || archiveSigningReceipt?.canSatisfyArchiveGate == true
+        let testFlightUploadPassed = testFlightUploadReceiptPresent || archiveSigningReceipt?.canSatisfyTestFlightUploadGate == true
 
         return AppStoreSubmissionGate(rows: [
             .init(
                 id: "full-xcode",
                 title: "Full Xcode toolchain",
-                status: hasFullXcode ? .passed : .blocked,
-                evidence: hasFullXcode ? "Full Xcode is available for archive/signing." : "Current SwiftPM host can build contracts but cannot archive/sign the iOS app.",
+                status: fullXcodePassed ? .passed : .blocked,
+                evidence: fullXcodePassed ? "Full Xcode availability is proven for archive/signing." : "Current SwiftPM host can build contracts but cannot archive/sign the iOS app.",
                 unblockAction: "Install/select full Xcode and rerun archive checks."
             ),
             .init(
                 id: "apple-developer-team",
                 title: "Apple Developer Team ID",
-                status: teamIDPresent ? .passed : .blocked,
-                evidence: teamIDPresent ? "Signing plan includes a Team ID." : "Team ID is intentionally blank; fake signing is forbidden.",
+                status: appleDeveloperTeamPassed ? .passed : .blocked,
+                evidence: appleDeveloperTeamPassed ? "Real Apple Developer Team evidence is present." : "Team ID is intentionally blank; fake signing is forbidden.",
                 unblockAction: "Set the real Apple Developer Team ID in the Xcode project/signing plan."
             ),
             .init(
@@ -819,16 +1164,24 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
             .init(
                 id: "archive",
                 title: "Release archive",
-                status: hasFullXcode && archiveCreated ? .passed : .blocked,
-                evidence: archiveCreated ? "Release archive receipt is present." : signingPlan.archiveCommandWhenXcodeAvailable,
+                status: archivePassed ? .passed : .blocked,
+                evidence: archivePassed ? "Release archive receipt is present." : signingPlan.archiveCommandWhenXcodeAvailable,
                 unblockAction: "Create a Release archive with full Xcode."
             ),
             .init(
                 id: "testflight-upload",
                 title: "TestFlight upload receipt",
-                status: testFlightUploadReceiptPresent ? .passed : .blocked,
-                evidence: testFlightUploadReceiptPresent ? "Upload receipt exists." : "No Transporter/App Store Connect upload receipt exists yet.",
+                status: testFlightUploadPassed ? .passed : .blocked,
+                evidence: testFlightUploadPassed ? "Transporter/App Store Connect upload receipt exists." : "No Transporter/App Store Connect upload receipt exists yet.",
                 unblockAction: "Upload the signed archive to App Store Connect/TestFlight and capture the receipt."
+            ),
+            .init(
+                id: "archive-signing-readiness-packet",
+                title: "Archive/signing readiness packet",
+                status: archiveSigningPacketShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: archiveSigningPacketShapeReady ? "v67 defines honest pending/pass receipt shape for full Xcode, Team ID, Release archive, Transporter upload, and App Store Connect processing without exposing signing material or Apple session tokens." : "Archive/signing readiness packet is missing or malformed.",
+                unblockAction: "Create an honest pending packet here, then replace it only with a real production archive/upload receipt from full Xcode and App Store Connect."
             ),
             .init(
                 id: "support-privacy-urls",

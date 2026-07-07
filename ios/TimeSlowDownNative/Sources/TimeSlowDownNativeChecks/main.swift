@@ -274,7 +274,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>66</string>"), "Info.plist should carry v66 build number")
+check(infoPlistText.contains("<string>67</string>"), "Info.plist should carry v67 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -1497,7 +1497,7 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "66", "TestFlight build notes should match v66")
+check(buildNotes.buildNumber == "67", "TestFlight build notes should match v67")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1505,6 +1505,7 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("CryptoKit"), "TestFli
 check(buildNotes.summary.localizedCaseInsensitiveContains("Secure Enclave device-key"), "TestFlight build notes should mention Secure Enclave device-key contract")
 check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device validation scaffold"), "TestFlight build notes should mention signed-device validation scaffold")
 check(buildNotes.summary.localizedCaseInsensitiveContains("signed-device media validation packet"), "TestFlight build notes should mention signed-device media validation packet")
+check(buildNotes.summary.localizedCaseInsensitiveContains("archive/signing readiness packet"), "TestFlight build notes should mention archive/signing readiness packet")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Keychain"), "TestFlight build notes should mention Keychain adapter")
 check(buildNotes.summary.localizedCaseInsensitiveContains("export ZIP"), "TestFlight build notes should mention export ZIP builder")
 check(buildNotes.summary.localizedCaseInsensitiveContains("raw media export"), "TestFlight build notes should mention raw media export policy")
@@ -1538,6 +1539,7 @@ check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiv
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("App Privacy questionnaire packet"), "TestFlight build notes should disclose App Privacy questionnaire packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("Age Rating review packet"), "TestFlight build notes should disclose Age Rating review packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("signed-device media validation packet"), "TestFlight build notes should disclose signed-device media validation packet boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive/signing readiness packet"), "TestFlight build notes should disclose archive/signing readiness packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -1552,6 +1554,95 @@ let signingPlan = SigningReadinessPlan()
 check(signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown", "Signing plan should preserve bundle identifier")
 check(signingPlan.doesNotFakeSigning, "Signing plan should not fake a Team ID")
 check(signingPlan.archiveCommandWhenXcodeAvailable.contains("xcodebuild"), "Signing plan should name the future Xcode archive command")
+
+let archiveSigningEnvironment = ArchiveSigningValidationEnvironment.unsignedSwiftPMHost()
+check(!archiveSigningEnvironment.canRunArchiveUploadValidation, "Unsigned SwiftPM host should not claim archive/upload validation capability")
+check(archiveSigningEnvironment.bundleIdentifier == "com.raingodprc.timeslowdown", "Archive/signing environment should preserve production bundle identifier")
+check(archiveSigningEnvironment.teamID == nil, "Archive/signing environment should not fake an Apple Developer Team ID")
+check(!archiveSigningEnvironment.hasFullXcode, "Archive/signing environment should not pretend full Xcode exists")
+check(!archiveSigningEnvironment.hasAppleDeveloperTeam, "Archive/signing environment should not pretend Apple Developer access exists")
+check(!archiveSigningEnvironment.appStoreConnectAccessAvailable, "Archive/signing environment should not pretend App Store Connect access exists")
+check(!archiveSigningEnvironment.transporterAvailable, "Archive/signing environment should not pretend Transporter is available")
+let archiveSigningPacket = ArchiveSigningValidationScaffold.packet(
+    environment: archiveSigningEnvironment,
+    signingPlan: signingPlan,
+    buildNotes: buildNotes,
+    generatedAt: fixedDate
+)
+check(archiveSigningPacket.isTSDArchiveSigningPacketSafe, "Archive/signing packet should preserve TSD release boundaries")
+check(archiveSigningPacket.requiresExternalXcodeWork, "Archive/signing packet should honestly require external Xcode work here")
+check(archiveSigningPacket.status == .pendingExternalXcode, "Unsigned host archive/signing packet should stay pending external Xcode")
+check(!archiveSigningPacket.productionValidationClaimed, "Unsigned host archive/signing packet should not claim production validation")
+check(archiveSigningPacket.steps.count == 8, "Archive/signing packet should define eight required steps")
+check(archiveSigningPacket.steps.map(\.kind).contains(.fullXcodeSelected), "Archive/signing packet should require full Xcode evidence")
+check(archiveSigningPacket.steps.map(\.kind).contains(.appleDeveloperTeamResolved), "Archive/signing packet should require Apple Developer Team evidence")
+check(archiveSigningPacket.steps.map(\.kind).contains(.releaseArchiveCreated), "Archive/signing packet should require Release archive evidence")
+check(archiveSigningPacket.steps.map(\.kind).contains(.transporterUploadCompleted), "Archive/signing packet should require Transporter upload evidence")
+check(archiveSigningPacket.steps.map(\.kind).contains(.appStoreConnectProcessingVisible), "Archive/signing packet should require App Store Connect processing evidence")
+check(archiveSigningPacket.steps.allSatisfy(\.requiresFullXcode), "Archive/signing steps should require full Xcode")
+check(archiveSigningPacket.steps.allSatisfy(\.forbidsPrivateSigningMaterial), "Archive/signing steps should forbid private signing material")
+check(archiveSigningPacket.steps.allSatisfy(\.forbidsAppleSessionToken), "Archive/signing steps should forbid Apple session tokens")
+let archiveSigningPendingReceipt = ArchiveSigningValidationScaffold.pendingReceipt(
+    for: archiveSigningPacket,
+    createdAt: fixedDate
+)
+check(archiveSigningPendingReceipt.isHonestPendingReceipt, "Archive/signing pending receipt should be honest and non-production")
+check(!archiveSigningPendingReceipt.isProductionArchiveUploadReceipt, "Pending archive/signing receipt should not pass production gate")
+check(!archiveSigningPendingReceipt.canSatisfyFullXcodeGate, "Pending archive/signing receipt should not satisfy full Xcode gate")
+check(!archiveSigningPendingReceipt.canSatisfyAppleDeveloperTeamGate, "Pending archive/signing receipt should not satisfy Apple Developer Team gate")
+check(!archiveSigningPendingReceipt.canSatisfyArchiveGate, "Pending archive/signing receipt should not satisfy archive gate")
+check(!archiveSigningPendingReceipt.canSatisfyTestFlightUploadGate, "Pending archive/signing receipt should not satisfy TestFlight upload gate")
+
+let archiveSigningPassStepReceipts = archiveSigningPacket.steps.map { step in
+    ArchiveSigningValidationStepReceipt(
+        id: "archive-signing-step-receipt-\(TrustDigest.checksum([archiveSigningPacket.id, step.id, "pass"]).prefix(12))",
+        stepID: step.id,
+        status: .uploadedToTestFlight,
+        evidenceDigest: TrustDigest.checksum([step.id, "archive-signing-pass"])
+    )
+}
+let archiveSigningPassReceipt = ArchiveSigningValidationReceipt(
+    id: "archive-signing-receipt-\(TrustDigest.checksum([archiveSigningPacket.id, "pass"]).prefix(12))",
+    planID: archiveSigningPacket.id,
+    status: .uploadedToTestFlight,
+    stepReceipts: archiveSigningPassStepReceipts,
+    productionValidationClaimed: true,
+    canSatisfyFullXcodeGate: true,
+    canSatisfyAppleDeveloperTeamGate: true,
+    canSatisfyArchiveGate: true,
+    canSatisfyTestFlightUploadGate: true,
+    createdAt: fixedDate
+)
+check(archiveSigningPassReceipt.isProductionArchiveUploadReceipt, "Complete archive/signing receipt should satisfy production archive/upload gate")
+
+let secretBearingArchiveReceipt = ArchiveSigningValidationReceipt(
+    id: "archive-signing-receipt-\(TrustDigest.checksum([archiveSigningPacket.id, "secret-bearing"]).prefix(12))",
+    planID: archiveSigningPacket.id,
+    status: .uploadedToTestFlight,
+    stepReceipts: archiveSigningPassStepReceipts,
+    productionValidationClaimed: true,
+    canSatisfyFullXcodeGate: true,
+    canSatisfyAppleDeveloperTeamGate: true,
+    canSatisfyArchiveGate: true,
+    canSatisfyTestFlightUploadGate: true,
+    containsPrivateSigningMaterial: true,
+    createdAt: fixedDate
+)
+check(!secretBearingArchiveReceipt.isProductionArchiveUploadReceipt, "Archive/signing receipt should fail if evidence contains private signing material")
+
+let missingUploadArchiveReceipt = ArchiveSigningValidationReceipt(
+    id: "archive-signing-receipt-\(TrustDigest.checksum([archiveSigningPacket.id, "missing-upload"]).prefix(12))",
+    planID: archiveSigningPacket.id,
+    status: .uploadedToTestFlight,
+    stepReceipts: archiveSigningPassStepReceipts.filter { $0.stepID != "archive-signing-transporter-upload-completed" },
+    productionValidationClaimed: true,
+    canSatisfyFullXcodeGate: true,
+    canSatisfyAppleDeveloperTeamGate: true,
+    canSatisfyArchiveGate: true,
+    canSatisfyTestFlightUploadGate: true,
+    createdAt: fixedDate
+)
+check(!missingUploadArchiveReceipt.isProductionArchiveUploadReceipt, "Archive/signing receipt should fail if Transporter upload evidence is missing")
 
 let publicURLPacket = AppStorePublicURLPacket()
 check(publicURLPacket.urls.count == 6, "Public URL packet should expose six release URLs")
@@ -1653,20 +1744,22 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     publicURLPacket: publicURLPacket,
     appPrivacyQuestionnairePacket: appPrivacyPacket,
     ageRatingReviewPacket: ageRatingPacket,
+    archiveSigningReceipt: archiveSigningPendingReceipt,
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
     signedDeviceMediaReceipt: signedDeviceMediaPendingReceipt,
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "66", "App Store submission gate should track v66")
-check(appStoreSubmissionGate.rows.count == 21, "App Store submission gate should track twenty-one release gates after v66 signed-device media validation packet")
+check(appStoreSubmissionGate.buildNumber == "67", "App Store submission gate should track v67")
+check(appStoreSubmissionGate.rows.count == 22, "App Store submission gate should track twenty-two release gates after v67 archive/signing readiness packet")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
 check(appStoreSubmissionGate.blockerIDs.contains("apple-developer-team"), "Submission gate should block without Apple Developer Team ID")
 check(appStoreSubmissionGate.blockerIDs.contains("archive"), "Submission gate should block without a release archive")
 check(appStoreSubmissionGate.blockerIDs.contains("testflight-upload"), "Submission gate should block without TestFlight upload receipt")
+check(!appStoreSubmissionGate.blockerIDs.contains("archive-signing-readiness-packet"), "Archive/signing readiness packet shape should not block once honestly mapped")
 check(appStoreSubmissionGate.blockerIDs.contains("support-privacy-urls"), "Submission gate should block without support/privacy URLs")
 check(!appStoreSubmissionGate.blockerIDs.contains("public-url-packet"), "Public URL packet shape should not block once HTTPS deep links exist")
 check(appStoreSubmissionGate.blockerIDs.contains("app-privacy-questionnaire"), "Submission gate should block without App Privacy questionnaire")
@@ -1685,6 +1778,36 @@ check(appStoreSubmissionGate.rows.first { $0.id == "guest-review-route" }?.statu
 check(appStoreSubmissionGate.rows.first { $0.id == "privacy-safe-defaults" }?.status == .passed, "Submission gate should pass privacy-safe defaults")
 check(appStoreSubmissionGate.rows.first { $0.id == "launch-contracts" }?.status == .passed, "Submission gate should pass local launch-contract coverage")
 
+let archivePassedSubmissionGate = AppStoreSubmissionGate.current(
+    hasFullXcode: false,
+    archiveCreated: false,
+    testFlightUploadReceiptPresent: false,
+    supportPrivacyURLsPublished: false,
+    appPrivacyQuestionnaireCompleted: false,
+    ageRatingReviewedFor12Plus: false,
+    photosImportSignedDevicePassed: false,
+    filesExportSignedDevicePassed: false,
+    signingPlan: signingPlan,
+    buildNotes: buildNotes,
+    reviewRoute: reviewRoute,
+    privacyBoundary: boundary,
+    publicURLPacket: publicURLPacket,
+    appPrivacyQuestionnairePacket: appPrivacyPacket,
+    ageRatingReviewPacket: ageRatingPacket,
+    archiveSigningReceipt: archiveSigningPassReceipt,
+    backendReleaseEvidence: TSDBackendReleaseEvidence(),
+    signedDeviceReceipt: signedDevicePendingReceipt,
+    signedDeviceMediaReceipt: signedDeviceMediaPendingReceipt,
+    deepSeekReceipt: providerPassReceipt,
+    deletionReceipt: deletionLiveProbeReceipt
+)
+check(!archivePassedSubmissionGate.blockerIDs.contains("archive-signing-readiness-packet"), "Production archive/signing receipt should satisfy archive/signing packet shape gate")
+check(!archivePassedSubmissionGate.blockerIDs.contains("full-xcode"), "Production archive/signing receipt should satisfy full Xcode gate")
+check(!archivePassedSubmissionGate.blockerIDs.contains("apple-developer-team"), "Production archive/signing receipt should satisfy Apple Developer Team gate")
+check(!archivePassedSubmissionGate.blockerIDs.contains("archive"), "Production archive/signing receipt should satisfy archive gate")
+check(!archivePassedSubmissionGate.blockerIDs.contains("testflight-upload"), "Production archive/signing receipt should satisfy TestFlight upload gate")
+check(archivePassedSubmissionGate.blockerIDs.contains("support-privacy-urls"), "Production archive/signing receipt should not mask unrelated legal URL blockers")
+
 let mediaPassedSubmissionGate = AppStoreSubmissionGate.current(
     hasFullXcode: false,
     archiveCreated: false,
@@ -1701,6 +1824,7 @@ let mediaPassedSubmissionGate = AppStoreSubmissionGate.current(
     publicURLPacket: publicURLPacket,
     appPrivacyQuestionnairePacket: appPrivacyPacket,
     ageRatingReviewPacket: ageRatingPacket,
+    archiveSigningReceipt: archiveSigningPendingReceipt,
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
     signedDeviceMediaReceipt: signedDeviceMediaPassReceipt,
@@ -1728,6 +1852,7 @@ let backendProvenSubmissionGate = AppStoreSubmissionGate.current(
     publicURLPacket: publicURLPacket,
     appPrivacyQuestionnairePacket: appPrivacyPacket,
     ageRatingReviewPacket: ageRatingPacket,
+    archiveSigningReceipt: archiveSigningPendingReceipt,
     backendReleaseEvidence: reviewedBackendEvidence,
     signedDeviceReceipt: signedDevicePendingReceipt,
     signedDeviceMediaReceipt: signedDeviceMediaPendingReceipt,
@@ -1753,6 +1878,7 @@ let unprovenBackendSubmissionGate = AppStoreSubmissionGate.current(
     publicURLPacket: publicURLPacket,
     appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket(noTracking: false),
     ageRatingReviewPacket: AppAgeRatingReviewPacket(noPublicSocialFeed: false),
+    archiveSigningReceipt: secretBearingArchiveReceipt,
     backendReleaseEvidence: TSDBackendReleaseEvidence(),
     signedDeviceReceipt: signedDevicePendingReceipt,
     signedDeviceMediaReceipt: rawEvidenceMediaReceipt,
@@ -1764,10 +1890,11 @@ check(unprovenBackendSubmissionGate.blockerIDs.contains("deepseek-provider-pass"
 check(unprovenBackendSubmissionGate.blockerIDs.contains("deletion-completion-pass"), "Submission gate should block deletion without completion evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("app-privacy-questionnaire-packet"), "Submission gate should block malformed privacy questionnaire packet evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("age-rating-review-packet"), "Submission gate should block malformed Age Rating review packet evidence")
+check(unprovenBackendSubmissionGate.blockerIDs.contains("archive-signing-readiness-packet"), "Submission gate should block malformed archive/signing packet evidence")
 check(unprovenBackendSubmissionGate.blockerIDs.contains("signed-device-media-validation-packet"), "Submission gate should block malformed signed-device media packet evidence")
 
 check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist should track four v40 asset contracts")
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, and v66 signed-device media validation packet are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, and v67 archive/signing readiness packet are aligned.")
