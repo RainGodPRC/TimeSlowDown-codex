@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "64",
-        summary: String = "TimeSlowDown v64 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "65",
+        summary: String = "TimeSlowDown v65 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -74,6 +74,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v62 adds a public URL packet with HTTPS support/privacy/export/delete/subscription/review deep links on the public GitHub Pages demo, while keeping formal legal review and final company support/privacy URLs as release blockers.",
             "v63 adds a backend release manifest gate that remains blocked until a real HTTPS TSD backend, server-side DeepSeek secret manager, weekly chapter endpoint, deletion jobs endpoint, audit/deletion worker, live provider receipt, completed deletion receipt, and deployment review exist.",
             "v64 adds an App Privacy questionnaire packet that maps user content, photo/video anchors, account identifiers, purchases, diagnostics, minimal AI task payloads, and optional encrypted sync to App Store privacy answers, but keeps final App Store Connect/legal completion blocked.",
+            "v65 adds an Age Rating review packet that maps private user memory/media content, no public social feed, no Kids Category claim, AI editing boundaries, external links, purchases, and support contact requirements while keeping final legal/release age-rating review blocked.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -465,6 +466,212 @@ public struct AppPrivacyQuestionnairePacket: Codable, Equatable, Sendable {
     }
 }
 
+public enum AgeRatingFrequency: String, Codable, Equatable, Sendable {
+    case none
+    case infrequent
+    case frequent
+}
+
+public struct AppAgeRatingQuestionAnswer: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var appStoreConnectCategory: String
+    public var frequency: AgeRatingFrequency
+    public var included: Bool
+    public var evidence: String
+
+    public init(
+        id: String,
+        appStoreConnectCategory: String,
+        frequency: AgeRatingFrequency,
+        included: Bool,
+        evidence: String
+    ) {
+        self.id = id
+        self.appStoreConnectCategory = appStoreConnectCategory
+        self.frequency = frequency
+        self.included = included
+        self.evidence = evidence
+    }
+}
+
+public struct AppAgeRatingReviewPacket: Codable, Equatable, Sendable {
+    public var sourceReferences: [String]
+    public var targetMinimumAge: Int
+    public var targetRatingLabel: String
+    public var answers: [AppAgeRatingQuestionAnswer]
+    public var notKidsCategory: Bool
+    public var noPublicSocialFeed: Bool
+    public var noRandomChatOrAnonymousMatching: Bool
+    public var noGamblingLootBoxesOrContests: Bool
+    public var noMedicalDiagnosisOrTreatment: Bool
+    public var noPhysicalHarmInstructions: Bool
+    public var externalLinksReviewed: Bool
+    public var purchasesReviewed: Bool
+    public var aiBoundedToFaithfulEditing: Bool
+    public var userReportAndSupportPathRequiredForUGC: Bool
+    public var ageSuitabilityURLIncluded: Bool
+    public var completedInAppStoreConnect: Bool
+    public var legalReviewCompleted: Bool
+
+    public init(
+        sourceReferences: [String] = [
+            "App Store Connect Help: Set an app age rating",
+            "App Store Connect Help: Age ratings values and definitions",
+            "App Review Guidelines 1.2 User-Generated Content",
+            "App Review Guidelines 1.3 Kids Category"
+        ],
+        targetMinimumAge: Int = 12,
+        targetRatingLabel: String = "12+ direction, final rating to be calculated in App Store Connect",
+        answers: [AppAgeRatingQuestionAnswer] = AppAgeRatingReviewPacket.defaultAnswers,
+        notKidsCategory: Bool = true,
+        noPublicSocialFeed: Bool = true,
+        noRandomChatOrAnonymousMatching: Bool = true,
+        noGamblingLootBoxesOrContests: Bool = true,
+        noMedicalDiagnosisOrTreatment: Bool = true,
+        noPhysicalHarmInstructions: Bool = true,
+        externalLinksReviewed: Bool = true,
+        purchasesReviewed: Bool = true,
+        aiBoundedToFaithfulEditing: Bool = true,
+        userReportAndSupportPathRequiredForUGC: Bool = true,
+        ageSuitabilityURLIncluded: Bool = true,
+        completedInAppStoreConnect: Bool = false,
+        legalReviewCompleted: Bool = false
+    ) {
+        self.sourceReferences = sourceReferences
+        self.targetMinimumAge = targetMinimumAge
+        self.targetRatingLabel = targetRatingLabel
+        self.answers = answers
+        self.notKidsCategory = notKidsCategory
+        self.noPublicSocialFeed = noPublicSocialFeed
+        self.noRandomChatOrAnonymousMatching = noRandomChatOrAnonymousMatching
+        self.noGamblingLootBoxesOrContests = noGamblingLootBoxesOrContests
+        self.noMedicalDiagnosisOrTreatment = noMedicalDiagnosisOrTreatment
+        self.noPhysicalHarmInstructions = noPhysicalHarmInstructions
+        self.externalLinksReviewed = externalLinksReviewed
+        self.purchasesReviewed = purchasesReviewed
+        self.aiBoundedToFaithfulEditing = aiBoundedToFaithfulEditing
+        self.userReportAndSupportPathRequiredForUGC = userReportAndSupportPathRequiredForUGC
+        self.ageSuitabilityURLIncluded = ageSuitabilityURLIncluded
+        self.completedInAppStoreConnect = completedInAppStoreConnect
+        self.legalReviewCompleted = legalReviewCompleted
+    }
+
+    public static let defaultAnswers: [AppAgeRatingQuestionAnswer] = [
+        .init(
+            id: "private-user-memory-content",
+            appStoreConnectCategory: "User-Generated Content",
+            frequency: .infrequent,
+            included: true,
+            evidence: "TSD stores user-authored private memory slices, notes, tags, and user-selected family/media anchors; it is not a public posting network."
+        ),
+        .init(
+            id: "photo-video-family-media",
+            appStoreConnectCategory: "User-Generated Photos or Videos",
+            frequency: .infrequent,
+            included: true,
+            evidence: "Photos/videos are user-selected memory anchors; family/child media has a caution path, no public feed, and export/delete rights."
+        ),
+        .init(
+            id: "ai-edited-memory-drafts",
+            appStoreConnectCategory: "Generative AI / creator tools",
+            frequency: .infrequent,
+            included: true,
+            evidence: "AI is bounded to faithful weekly-chapter editing from user-selected slices and cannot generate open-ended social, sexual, violent, medical, or harmful content."
+        ),
+        .init(
+            id: "external-links",
+            appStoreConnectCategory: "Unrestricted Web Access / External Links",
+            frequency: .infrequent,
+            included: true,
+            evidence: "The release packet includes support, privacy, export, deletion, subscription, and App Review route URLs; TSD is not claiming Kids Category."
+        ),
+        .init(
+            id: "in-app-purchases",
+            appStoreConnectCategory: "Purchases / Subscriptions",
+            frequency: .infrequent,
+            included: true,
+            evidence: "Subscription copy is limited to sync, AI, and storage enhancements; memories, export, and deletion are never held hostage."
+        ),
+        .init(
+            id: "medical-or-health-claims",
+            appStoreConnectCategory: "Medical or Treatment Information",
+            frequency: .none,
+            included: false,
+            evidence: "TSD is not a medical, mental-health, memory-loss, diagnosis, therapy, or cognitive assessment app."
+        ),
+        .init(
+            id: "gambling-contests-loot-boxes",
+            appStoreConnectCategory: "Gambling, Contests, Loot Boxes",
+            frequency: .none,
+            included: false,
+            evidence: "TSD has no gambling, simulated gambling, loot boxes, contests, or chance-based rewards."
+        ),
+        .init(
+            id: "random-chat-social-network",
+            appStoreConnectCategory: "Random Chat / Social Networking",
+            frequency: .none,
+            included: false,
+            evidence: "TSD has no random chat, anonymous matching, public follower graph, hot-or-not ranking, or public social feed."
+        )
+    ]
+
+    public var requiredAnswerIDs: [String] {
+        [
+            "private-user-memory-content",
+            "photo-video-family-media",
+            "ai-edited-memory-drafts",
+            "external-links",
+            "in-app-purchases",
+            "medical-or-health-claims",
+            "gambling-contests-loot-boxes",
+            "random-chat-social-network"
+        ]
+    }
+
+    public var coversRequiredAgeRatingTopics: Bool {
+        let ids = Set(answers.map(\.id))
+        return Set(requiredAnswerIDs).isSubset(of: ids)
+    }
+
+    public var disallowsAdultOrRegulatedContentByDefault: Bool {
+        noGamblingLootBoxesOrContests &&
+        noMedicalDiagnosisOrTreatment &&
+        noPhysicalHarmInstructions &&
+        answers.first { $0.id == "medical-or-health-claims" }?.included == false &&
+        answers.first { $0.id == "gambling-contests-loot-boxes" }?.included == false
+    }
+
+    public var preservesChildSafetyPositioning: Bool {
+        targetMinimumAge >= 12 &&
+        notKidsCategory &&
+        externalLinksReviewed &&
+        purchasesReviewed
+    }
+
+    public var preservesUGCAndAISafetyBoundaries: Bool {
+        noPublicSocialFeed &&
+        noRandomChatOrAnonymousMatching &&
+        aiBoundedToFaithfulEditing &&
+        userReportAndSupportPathRequiredForUGC &&
+        answers.first { $0.id == "random-chat-social-network" }?.included == false
+    }
+
+    public var canSatisfyAgeRatingShapeGate: Bool {
+        sourceReferences.count >= 4 &&
+        ageSuitabilityURLIncluded &&
+        coversRequiredAgeRatingTopics &&
+        disallowsAdultOrRegulatedContentByDefault &&
+        preservesChildSafetyPositioning &&
+        preservesUGCAndAISafetyBoundaries
+    }
+
+    public var canSatisfyFinalAgeRatingGate: Bool {
+        canSatisfyAgeRatingShapeGate &&
+        completedInAppStoreConnect &&
+        legalReviewCompleted
+    }
+}
+
 public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
     case passed
     case blocked
@@ -510,7 +717,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "64", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "65", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -550,6 +757,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
         publicURLPacket: AppStorePublicURLPacket = AppStorePublicURLPacket(),
         appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket = AppPrivacyQuestionnairePacket(),
+        ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
         deepSeekReceipt: DeepSeekGatewayIntegrationReceipt? = nil,
@@ -565,12 +773,14 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let publicURLShapeReady = publicURLPacket.canSatisfyPublicURLShapeGate
         let finalLegalURLsReady = publicURLPacket.canSatisfyFinalLegalURLGate
         let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
+        let ageRatingShapeReady = ageRatingReviewPacket.canSatisfyAgeRatingShapeGate
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
         nativeRows.map(\.id).contains("keychain-e2ee") &&
         nativeRows.map(\.id).contains("deepseek-gateway")
         let submissionContractCovered = submissionRows.map(\.id).contains("privacy-questionnaire") &&
         submissionRows.map(\.id).contains("privacy-questionnaire-packet") &&
         submissionRows.map(\.id).contains("age-rating") &&
+        submissionRows.map(\.id).contains("age-rating-review-packet") &&
         submissionRows.map(\.id).contains("support-privacy-urls")
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
         let productionContractsCovered = productionRows.count >= 7 && productionRows.allSatisfy { $0.status == .poc }
@@ -653,6 +863,14 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 requiredForTestFlight: false,
                 evidence: ageRatingReviewedFor12Plus ? "12+ age rating assumptions reviewed." : "12+ direction still requires legal/release review.",
                 unblockAction: "Review UGC, family media, AI, links, and account flows against App Store age-rating rules."
+            ),
+            .init(
+                id: "age-rating-review-packet",
+                title: "Age Rating review packet",
+                status: ageRatingShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: ageRatingShapeReady ? "v65 maps private user memory/media content, no public social feed, no Kids Category claim, AI faithful-editing boundary, external links, purchases, and support/contact requirements into age-rating evidence." : "Age Rating review packet is incomplete.",
+                unblockAction: "Repair the machine-checkable age-rating answer packet before legal/release review."
             ),
             .init(
                 id: "guest-review-route",
