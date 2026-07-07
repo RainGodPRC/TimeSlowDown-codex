@@ -4,6 +4,17 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const STORAGE_KEY = "tsd-codex-demo-state-v1";
 const VAULT_SCHEMA_VERSION = "tsd-codex-vault-v1";
 const PUBLIC_DEMO_URL = "https://raingodprc.github.io/TimeSlowDown-codex/";
+const PUBLIC_RESOURCE_LABEL = "styles.css?v=33 / app.js?v=62";
+const PUBLIC_URL_PACKET_VERSION = "v62";
+const PUBLIC_URL_ROUTES = ["support", "privacy", "export", "delete", "subscription", "review", "legal"];
+const PUBLIC_URL_PACKET = [
+  ["Support URL", "support", `${PUBLIC_DEMO_URL}#support`, "Help, review route, contact placeholder, and production boundary notes."],
+  ["Privacy URL", "privacy", `${PUBLIC_DEMO_URL}#privacy`, "Plain-language privacy center, data lifecycle, permissions, AI/sync boundaries, and legal-review caveat."],
+  ["Export Rights URL", "export", `${PUBLIC_DEMO_URL}#export`, "User memory export rights, ZIP/JSON/media package boundaries, and post-subscription access."],
+  ["Deletion Rights URL", "delete", `${PUBLIC_DEMO_URL}#delete`, "Account/data deletion rights, deletion receipt expectations, and backend completion caveat."],
+  ["Subscription Rights URL", "subscription", `${PUBLIC_DEMO_URL}#subscription`, "Non-hostage subscription promise: sync/AI/storage are enhancements, memories remain exportable."],
+  ["App Review Route URL", "review", `${PUBLIC_DEMO_URL}#review`, "Guest review route through Memory Camera, slice, media wall, Account Rights, and privacy center."]
+];
 let deferredInstallPrompt = null;
 
 const seedMoments = [
@@ -134,10 +145,17 @@ const defaultState = {
   screenshotPlanAt: "",
   privacyQuestionnaireAt: "",
   ageRatingReviewAt: "",
-  submissionPacketCopiedAt: ""
+  submissionPacketCopiedAt: "",
+  publicURLPacketCopiedAt: "",
+  publicURLPacketReviewAt: ""
 };
 
 let state = loadState();
+
+const initialPublicRoute = publicRouteFromLocation();
+if (initialPublicRoute) {
+  state = { ...state, onboarded: true, view: "legal" };
+}
 
 window.addEventListener("beforeinstallprompt", event => {
   event.preventDefault();
@@ -148,6 +166,11 @@ window.addEventListener("beforeinstallprompt", event => {
 window.addEventListener("appinstalled", () => {
   deferredInstallPrompt = null;
   setState({ appInstalledAt: new Date().toLocaleString("zh-CN"), toast: "已收到浏览器安装完成事件。现在 TSD 更像一个主屏 App 了。" });
+});
+
+window.addEventListener("hashchange", () => {
+  const route = publicRouteFromLocation();
+  if (route) setState({ onboarded: true, view: "legal" });
 });
 
 const evalCategories = [
@@ -254,6 +277,12 @@ function loadState() {
   }
 }
 
+function publicRouteFromLocation() {
+  const hash = window.location.hash.replace(/^#/, "").toLowerCase();
+  if (!hash) return "";
+  return PUBLIC_URL_ROUTES.includes(hash) ? hash : "";
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -262,6 +291,13 @@ function setState(patch) {
   state = { ...state, ...patch };
   saveState();
   render();
+}
+
+function navigateToView(view) {
+  if (view === "legal") {
+    window.location.hash = "legal";
+  }
+  setState({ view });
 }
 
 function addMoment() {
@@ -1210,6 +1246,7 @@ function launchReadinessRows() {
     ["Export checksum", state.launchChecksumAt ? "ready" : "poc", state.launchChecksumAt ? `最近校验：${state.launchChecksumAt}` : "可生成导出包 checksum，真实签名待做。"],
     ["Deletion receipt", state.launchDeletionReceiptAt ? "ready" : "poc", state.launchDeletionReceiptAt ? `最近回执：${state.launchDeletionReceiptAt}` : "可模拟删除原文、原图、缩略图、云副本和模型缓存回执。"],
     ["App shell", state.appShellCheckedAt ? "ready" : "poc", "inline manifest、iOS meta、touch icon 与安装说明已可试用；离线缓存待做。"],
+    ["Public URL packet", state.publicURLPacketCopiedAt || state.publicURLPacketReviewAt ? "poc" : "todo", "v62 提供 support/privacy/export/delete/subscription/review 公网 deep links；正式法务仍待复核。"],
     ["Store review", state.launchStoreReviewAt ? "ready" : "todo", "正式隐私政策、DPA、原生权限弹窗和 App Store 审核仍需生产完成。"]
   ];
 }
@@ -1244,7 +1281,7 @@ function submissionPacketRows() {
     ["隐私问卷", state.privacyQuestionnaireAt ? "poc" : "todo", "App Privacy Details", "用户内容、照片/视频、账号、购买、诊断、AI 处理和可选同步需要逐项映射；当前 demo 不上传真实数据。"],
     ["年龄分级", state.ageRatingReviewAt ? "poc" : "todo", "Age Rating", "产品允许 12+ 方向，但正式上架需按用户生成内容、家庭影像、AI 处理和外部链接复核分级。"],
     ["审核备注", state.launchStoreReviewAt ? "poc" : "todo", "Review Notes", "提供 demo 路线：照片入口→生成切片→媒体墙→账户权利→隐私中心→删除/导出；说明 AI/API 均为 PoC 或生产受控。"],
-    ["支持与隐私 URL", state.productPageReviewAt ? "poc" : "todo", "Support URL / Privacy URL", "正式上架必须提供可访问的支持页、隐私政策和删除/导出说明；当前只在 demo 内可复制摘要。"],
+    ["支持与隐私 URL", state.publicURLPacketCopiedAt || state.publicURLPacketReviewAt ? "poc" : "todo", "Support URL / Privacy URL", "v62 已提供公网 deep links：support/privacy/export/delete/subscription/review；正式法务 URL 仍需复核。"],
     ["订阅说明", state.accountReportCopiedAt || state.subscriptionState !== "free" ? "poc" : "todo", "IAP / subscription", "若进入 Plus，必须明确同步/AI/存储是增强，不得扣留已有记忆；退订后导出/查看/删除继续可用。"],
     ["提交前证据包", state.submissionPacketCopiedAt ? "poc" : "todo", "Submission Packet", "把产品页、截图、隐私问卷、年龄分级、审核备注和权利说明复制成给 release/legal 的交接材料。"]
   ];
@@ -1265,6 +1302,24 @@ function launchStats() {
     ready: rows.filter(row => row[1] === "ready").length,
     poc: rows.filter(row => row[1] === "poc").length,
     todo: rows.filter(row => row[1] === "todo").length,
+    total: rows.length
+  };
+}
+
+function publicURLPacketRows() {
+  return PUBLIC_URL_PACKET.map(([label, route, url, copy]) => {
+    const https = url.startsWith("https://");
+    const publicHost = url.startsWith(PUBLIC_DEMO_URL);
+    const hasHash = url.includes(`#${route}`);
+    return [label, route, url, https && publicHost && hasHash ? "poc" : "todo", copy];
+  });
+}
+
+function publicURLPacketStats() {
+  const rows = publicURLPacketRows();
+  return {
+    poc: rows.filter(row => row[3] === "poc").length,
+    todo: rows.filter(row => row[3] === "todo").length,
     total: rows.length
   };
 }
@@ -1340,12 +1395,42 @@ function markAgeRatingReview() {
   });
 }
 
+function markPublicURLPacketReview() {
+  setState({
+    publicURLPacketReviewAt: new Date().toLocaleString("zh-CN"),
+    toast: "已标记 Public URL Packet 复核：support/privacy/export/delete/subscription/review 公网链接已进入上架材料，但正式法务 URL 仍需确认。"
+  });
+}
+
+async function copyPublicURLPacket() {
+  const stats = publicURLPacketStats();
+  const text = [
+    `TimeSlowDown Public URL Packet（${PUBLIC_URL_PACKET_VERSION}）：`,
+    `公网：${PUBLIC_DEMO_URL}`,
+    `资源：${PUBLIC_RESOURCE_LABEL}`,
+    `状态：poc=${stats.poc} / todo=${stats.todo} / total=${stats.total}`,
+    `URL 复核：${state.publicURLPacketReviewAt || "尚未标记"}`,
+    "",
+    ...publicURLPacketRows().map(([label, route, url, status, copy], index) => `${index + 1}. [${status.toUpperCase()}] ${label} · #${route}\n   ${url}\n   ${copy}`),
+    "",
+    "边界：这些 URL 是公网 demo 的可访问 deep links，用于 App Store Connect/support/privacy 材料占位和审核路线说明；正式上架前仍需要正式法务文本、公司联系渠道、隐私政策版本号和删除/导出 SLA。"
+  ].join("\n");
+  const stamp = new Date().toLocaleString("zh-CN");
+  try {
+    if (!navigator.clipboard) throw new Error("clipboard unavailable");
+    await navigator.clipboard.writeText(text);
+    setState({ publicURLPacketCopiedAt: stamp, toast: "Public URL Packet 已复制，可交给 release/legal/App Store Connect 继续复核。" });
+  } catch {
+    setState({ publicURLPacketCopiedAt: stamp, toast: "浏览器不允许自动复制；已在公开链接页展示 Public URL Packet。" });
+  }
+}
+
 async function copyNativeHandoffReport() {
   const stats = nativeHandoffStats();
   const text = [
     "TimeSlowDown Native Handoff Ledger（Demo v33）：",
     `公网：${PUBLIC_DEMO_URL}`,
-    `资源：styles.css?v=33 / app.js?v=33`,
+    `资源：${PUBLIC_RESOURCE_LABEL}`,
     `原生迁移复核：${state.nativeMigrationReviewAt || "尚未标记"}`,
     `Privacy Manifest 审计：${state.privacyManifestAuditAt || "尚未标记"}`,
     `状态：poc=${stats.poc} / todo=${stats.todo} / total=${stats.total}`,
@@ -1369,7 +1454,8 @@ async function copySubmissionPacketReport() {
   const text = [
     "TimeSlowDown App Store Submission Packet（Demo v33）：",
     `公网：${PUBLIC_DEMO_URL}`,
-    `资源：styles.css?v=33 / app.js?v=33`,
+    `资源：${PUBLIC_RESOURCE_LABEL}`,
+    `Public URL Packet：${state.publicURLPacketCopiedAt || state.publicURLPacketReviewAt || "尚未复制/复核"}`,
     `产品页复核：${state.productPageReviewAt || "尚未标记"}`,
     `截图计划：${state.screenshotPlanAt || "尚未标记"}`,
     `隐私问卷：${state.privacyQuestionnaireAt || "尚未标记"}`,
@@ -1398,7 +1484,8 @@ async function copyLaunchReport() {
   const text = [
     "TimeSlowDown Launch Readiness Report（Demo v33）：",
     `公网：${PUBLIC_DEMO_URL}`,
-    `资源：styles.css?v=33 / app.js?v=33`,
+    `资源：${PUBLIC_RESOURCE_LABEL}`,
+    `Public URL Packet：${state.publicURLPacketCopiedAt || state.publicURLPacketReviewAt || "尚未复制/复核"}`,
     `预检：${state.launchPreflightAt || "尚未运行"}`,
     `导出校验：${state.launchChecksumAt ? launchChecksum() : "尚未生成"}`,
     `删除回执：${state.launchDeletionReceiptAt || "尚未生成"}`,
@@ -1495,7 +1582,7 @@ function qaSnapshot() {
   return {
     version: "v33",
     publicUrl: PUBLIC_DEMO_URL,
-    resources: "styles.css?v=33 / app.js?v=33",
+    resources: PUBLIC_RESOURCE_LABEL,
     moments: state.moments.length,
     mediaCount,
     claimedCount,
@@ -1975,7 +2062,7 @@ function render() {
 }
 
 function bindEvents() {
-  $$("[data-view]").forEach(btn => btn.addEventListener("click", () => setState({ view: btn.dataset.view })));
+  $$("[data-view]").forEach(btn => btn.addEventListener("click", () => navigateToView(btn.dataset.view)));
   $("[data-onboard]")?.addEventListener("click", () => setState({ onboarded: true }));
   $("[data-reset]")?.addEventListener("click", () => {
     localStorage.removeItem(STORAGE_KEY);
@@ -2024,6 +2111,8 @@ function bindEvents() {
   $$("[data-privacy-questionnaire]").forEach(btn => btn.addEventListener("click", markPrivacyQuestionnaire));
   $$("[data-age-rating-review]").forEach(btn => btn.addEventListener("click", markAgeRatingReview));
   $$("[data-copy-submission-packet]").forEach(btn => btn.addEventListener("click", copySubmissionPacketReport));
+  $$("[data-copy-public-urls]").forEach(btn => btn.addEventListener("click", copyPublicURLPacket));
+  $$("[data-public-url-review]").forEach(btn => btn.addEventListener("click", markPublicURLPacketReview));
   $$("[data-create-pass]").forEach(btn => btn.addEventListener("click", createGuestPassDemo));
   $$("[data-generate-recovery]").forEach(btn => btn.addEventListener("click", generateRecoveryKeyDemo));
   $$("[data-review-devices]").forEach(btn => btn.addEventListener("click", reviewDevicesDemo));
@@ -2142,7 +2231,7 @@ function mediaDock() {
 }
 
 function memoryCameraFab() {
-  if (["slice", "media", "library", "launch", "qa", "review", "install", "account", "ai", "settings"].includes(state.view)) return "";
+  if (["slice", "media", "library", "launch", "qa", "review", "legal", "install", "account", "ai", "settings"].includes(state.view)) return "";
   return `<label class="memory-camera-fab" aria-label="添加照片或视频到今日切片">
     <span class="camera-mark">＋</span>
     <span class="camera-copy"><strong>影像</strong><em>先占位</em></span>
@@ -2151,7 +2240,7 @@ function memoryCameraFab() {
 }
 
 function mainTemplate() {
-  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, lens: lensView, library: mediaLibraryView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, qa: qaView, install: installView, launch: launchView, account: accountView, ai: aiView, settings: settingsView };
+  const views = { now: nowView, slice: sliceView, meadow: meadowView, media: mediaView, lens: lensView, library: mediaLibraryView, chapter: chapterView, ritual: ritualView, guide: guideView, studio: studioView, review: reviewView, legal: legalView, qa: qaView, install: installView, launch: launchView, account: accountView, ai: aiView, settings: settingsView };
   return shell((views[state.view] || nowView)());
 }
 
@@ -3050,6 +3139,7 @@ function launchView() {
   const stats = launchStats();
   const nativeStats = nativeHandoffStats();
   const submissionStats = submissionPacketStats();
+  const publicURLStats = publicURLPacketStats();
   const checksum = launchChecksum();
   return `
     <div class="topline"><div><div class="brand">上架就绪</div><div class="micro">把商品级 App 上线前的证据、缺口和回执摊开。</div></div></div>
@@ -3063,8 +3153,9 @@ function launchView() {
         ${launchMetric("Todo", stats.todo, "生产硬缺口")}
         ${launchMetric("Native", nativeStats.total, "原生移交项")}
         ${launchMetric("Store", submissionStats.total, "提交材料项")}
+        ${launchMetric("URLs", publicURLStats.total, "公网深链")}
       </div>
-      <div class="action-row"><button class="primary" data-launch-preflight>运行上架预检</button><button class="secondary" data-copy-launch>复制上线报告</button><button class="secondary" data-copy-native-handoff>复制原生移交账本</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button><button class="secondary" data-view="qa">QA Console</button></div>
+      <div class="action-row"><button class="primary" data-launch-preflight>运行上架预检</button><button class="secondary" data-copy-launch>复制上线报告</button><button class="secondary" data-copy-native-handoff>复制原生移交账本</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button><button class="secondary" data-copy-public-urls>复制公开 URL 包</button><button class="secondary" data-view="legal">公开链接页</button><button class="secondary" data-view="qa">QA Console</button></div>
       <p class="source-line">上次预检：${escapeHtml(state.launchPreflightAt || "尚未运行")}；上次报告：${escapeHtml(state.launchReportCopiedAt || "尚未复制")}。</p>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
@@ -3122,6 +3213,20 @@ function launchView() {
       </div>
       <div class="action-row"><button class="secondary" data-product-page-review>标记产品页复核</button><button class="secondary" data-screenshot-plan>标记截图计划</button><button class="secondary" data-privacy-questionnaire>标记隐私问卷</button><button class="secondary" data-age-rating-review>标记年龄分级</button><button class="secondary" data-copy-submission-packet>复制提交材料包</button></div>
       <p class="source-line">产品页：${escapeHtml(state.productPageReviewAt || "尚未标记")}；截图：${escapeHtml(state.screenshotPlanAt || "尚未标记")}；隐私问卷：${escapeHtml(state.privacyQuestionnaireAt || "尚未标记")}；年龄分级：${escapeHtml(state.ageRatingReviewAt || "尚未标记")}；提交包：${escapeHtml(state.submissionPacketCopiedAt || "尚未复制")}。</p>
+    </section>
+    <section class="guide-card submission-packet-card" id="public-url-packet">
+      <h2 class="section-title">公开 URL 包 <span class="micro">Public URL Packet · v62</span></h2>
+      <p class="hero-subtitle">App Store Connect 至少需要 Support URL 和 Privacy URL。v62 先把 support/privacy/export/delete/subscription/review 六类公网 deep links 固化出来，让 release/legal 可以直接复核；这仍不是最终法务文本。</p>
+      <div class="submission-score-grid">
+        ${launchMetric("PoC", publicURLStats.poc, "公网形状")}
+        ${launchMetric("Todo", publicURLStats.todo, "待法务")}
+        ${launchMetric("Rows", publicURLStats.total, "URL 条目")}
+      </div>
+      <div class="submission-ledger">
+        ${publicURLPacketRows().map(([label, route, url, status, copy]) => publicURLRow(label, route, url, status, copy)).join("")}
+      </div>
+      <div class="action-row"><button class="secondary" data-copy-public-urls>复制公开 URL 包</button><button class="secondary" data-public-url-review>标记 URL 包复核</button><button class="secondary" data-view="legal">打开公开链接页</button></div>
+      <p class="source-line">URL 包复制：${escapeHtml(state.publicURLPacketCopiedAt || "尚未复制")}；URL 包复核：${escapeHtml(state.publicURLPacketReviewAt || "尚未标记")}。</p>
     </section>
     <section class="guide-card">
       <h2 class="section-title">导出包校验 <span class="micro">portable memory</span></h2>
@@ -3194,12 +3299,91 @@ function submissionRow(name, status, artifact, copy) {
   </div>`;
 }
 
+function publicURLRow(label, route, url, status, copy) {
+  return `<div class="submission-row ${status}" id="${escapeHtml(route)}">
+    <span>${escapeHtml(status)}</span>
+    <strong>${escapeHtml(label)}</strong>
+    <small>${escapeHtml(url)}</small>
+    <em>${escapeHtml(copy)}</em>
+  </div>`;
+}
+
 function deleteReceiptItem(title, value) {
   return `<div class="delete-receipt-item"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(value)}</span></div>`;
 }
 
 function reviewPackItem(title, status, copy) {
   return `<div class="review-pack-item"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(status)}</span><em>${escapeHtml(copy)}</em></div>`;
+}
+
+function legalView() {
+  const route = publicRouteFromLocation() || "legal";
+  const stats = publicURLPacketStats();
+  return `
+    <div class="topline"><div><div class="brand">公开链接</div><div class="micro">Support / Privacy / Export / Delete / Subscription / Review</div></div></div>
+    <section class="guide-card review-hero">
+      <div class="eyebrow">Public URL Packet · ${PUBLIC_URL_PACKET_VERSION}</div>
+      <h1 class="hero-title">App Store 要的链接，<br/>必须能直接打开。</h1>
+      <p class="hero-subtitle">这是 TSD 的公开 support/privacy URL 包：支持、隐私、导出、删除、订阅权利和审核路线都落到同一公网页面。它用于 release/legal/App Store Connect 复核，不冒充最终法务文本。</p>
+      <div class="submission-score-grid">
+        ${launchMetric("PoC", stats.poc, "公网深链")}
+        ${launchMetric("Todo", stats.todo, "待法务")}
+        ${launchMetric("Route", route, "当前入口")}
+      </div>
+      <div class="action-row"><button class="primary" data-copy-public-urls>复制公开 URL 包</button><button class="secondary" data-public-url-review>标记 URL 包复核</button><button class="secondary" data-view="launch">上架就绪</button><button class="secondary" data-view="review">生产隐私中心</button><button class="secondary" data-view="account">账户权利</button></div>
+      <p class="source-line">URL 包复制：${escapeHtml(state.publicURLPacketCopiedAt || "尚未复制")}；URL 包复核：${escapeHtml(state.publicURLPacketReviewAt || "尚未标记")}；资源：${escapeHtml(PUBLIC_RESOURCE_LABEL)}。</p>
+      ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
+    </section>
+    <section class="guide-card">
+      <h2 class="section-title">公开 URL 清单 <span class="micro">${stats.total} links</span></h2>
+      <div class="submission-ledger">
+        ${publicURLPacketRows().map(([label, itemRoute, url, status, copy]) => publicURLRow(label, itemRoute, url, status, copy)).join("")}
+      </div>
+      <p class="source-line">这些 deep links 均指向公网 GitHub Pages，并由 hash 路由直接进入本页；正式上架前仍需替换或确认公司级支持渠道、隐私政策版本号、删除/导出 SLA 与法律主体。</p>
+    </section>
+    <section class="guide-card" id="support">
+      <h2 class="section-title">Support URL <span class="micro">支持与审核路线</span></h2>
+      <div class="faq-list">
+        ${faqItem("用户如何获得帮助？", "首发前需要正式支持邮箱或工单入口。当前 PoC 提供公开说明、试用路线和审核路线。")}
+        ${faqItem("审核员如何试用？", "无需登录：Memory Camera → 创建切片 → 媒体墙 → 账户权利 → 生产隐私中心 → 导出/删除路径。")}
+        ${faqItem("当前边界是什么？", "这是 Web/PWA + native contract PoC；真实后端、TestFlight、正式法务和 Apple Review 尚未完成。")}
+      </div>
+    </section>
+    <section class="guide-card" id="privacy">
+      <h2 class="section-title">Privacy URL <span class="micro">隐私原则</span></h2>
+      <div class="processing-ledger">
+        ${processingBoundary("本地优先", "默认", "用户内容先保存在设备/浏览器；同步和 AI 是可选增强。", "safe")}
+        ${processingBoundary("照片/视频", "用户主动选择", "不扫描整个相册，不做人脸识别，不读 GPS，不读通讯录。", "safe")}
+        ${processingBoundary("AI", "最小任务单", "DeepSeek PoC 目标只接收用户认领的最小字段，且必须可撤销、可降级。", "poc")}
+        ${processingBoundary("正式法务", "待完成", "本页是公开 PoC URL 包；正式隐私政策、数据处理协议和供应商审查仍需完成。", "warn")}
+      </div>
+    </section>
+    <section class="guide-card" id="export">
+      <h2 class="section-title">Export Rights URL <span class="micro">可带走</span></h2>
+      <p class="hero-subtitle">TSD 的商业底线：同步、AI、存储和订阅都不能扣留用户已有记忆。用户必须能导出文字切片、章节、媒体索引和用户选择的原始媒体包。</p>
+      <div class="action-row"><button class="secondary" data-export-vault>导出 JSON</button><button class="secondary" data-view="library">媒体保险箱</button><button class="secondary" data-view="account">账户权利</button></div>
+    </section>
+    <section class="guide-card" id="delete">
+      <h2 class="section-title">Deletion Rights URL <span class="micro">可删除</span></h2>
+      <p class="hero-subtitle">账号删除必须给用户导出机会，冻结后续写入，并擦除 encrypted backup、AI draft cache、thumbnail cache 等远端系统；v60/v61 已把真实 deletion completion receipt 写入 native gate。</p>
+      <div class="action-row"><button class="ghost danger" data-launch-delete-receipt>生成删除回执演示</button><button class="secondary" data-view="launch">查看 release gate</button></div>
+    </section>
+    <section class="guide-card" id="subscription">
+      <h2 class="section-title">Subscription Rights URL <span class="micro">不扣押</span></h2>
+      <p class="hero-subtitle">Plus 只应增强同步、AI、存储和恢复，不应控制用户对已有记忆的查看、编辑、导出和删除。退订后仍应保留取回窗口。</p>
+      <div class="action-row"><button class="secondary" data-view="account">账户权利中心</button><button class="ghost danger" data-cancel-subscription>模拟退订</button></div>
+    </section>
+    <section class="guide-card" id="review">
+      <h2 class="section-title">App Review Route URL <span class="micro">审核路线</span></h2>
+      <div class="qa-route">
+        ${qaRouteStep("01", "Memory Camera", "选择照片或视频作为记忆锚点。", "slice")}
+        ${qaRouteStep("02", "今日切片", "确认影像是记忆入口，文字可后补。", "slice")}
+        ${qaRouteStep("03", "媒体墙", "查看影像时间线、照片墙/地图切换。", "media")}
+        ${qaRouteStep("04", "账户权利", "确认导出/删除/退订取回不是付费 hostage。", "account")}
+        ${qaRouteStep("05", "生产隐私中心", "查看权限、AI、同步、分享和数据生命周期边界。", "review")}
+      </div>
+    </section>
+  `;
 }
 
 function guideView() {
@@ -3880,7 +4064,7 @@ function settingsView() {
         <div class="chapter-line"><strong>公网地址</strong><span>${PUBLIC_DEMO_URL}</span></div>
         <div class="chapter-line"><strong>给新用户的说明</strong><span>如果你要推荐给朋友，建议让 TA 先走“试用指南”，再做 Quick Mark。</span></div>
       </div>
-      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="qa">QA Console</button><button class="secondary" data-view="launch">上架就绪</button><button class="secondary" data-view="account">账户权利</button><button class="secondary" data-view="install">安装中心</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
+      <div class="action-row"><button class="primary" data-view="guide">打开试用指南</button><button class="secondary" data-view="qa">QA Console</button><button class="secondary" data-view="launch">上架就绪</button><button class="secondary" data-view="legal">公开链接</button><button class="secondary" data-view="account">账户权利</button><button class="secondary" data-view="install">安装中心</button><button class="secondary" data-view="media">媒体记忆墙</button><button class="secondary" data-view="lens">人物地点镜头</button><button class="secondary" data-view="library">媒体库生产</button><button class="secondary" data-view="studio">分享工作室</button><button class="secondary" data-view="review">审核中心</button><button class="secondary" data-copy-demo-link>复制链接</button></div>
       ${state.toast ? `<p class="toast">${state.toast}</p>` : ""}
     </section>
     <section class="settings-card">
@@ -4009,7 +4193,7 @@ function bottomNav() {
     ["ai", "AI", "◇"],
     ["settings", "我的", "◎"]
   ];
-  const activeView = state.view === "ritual" ? "chapter" : state.view === "lens" ? "meadow" : ["guide", "studio", "review", "library", "qa", "install", "launch", "account"].includes(state.view) ? "settings" : state.view;
+  const activeView = state.view === "ritual" ? "chapter" : state.view === "lens" ? "meadow" : ["guide", "studio", "review", "legal", "library", "qa", "install", "launch", "account"].includes(state.view) ? "settings" : state.view;
   return `<nav class="bottom-nav">${items.map(([id, label, icon]) => `<button class="nav-btn ${activeView === id ? "active" : ""}" data-view="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>`;
 }
 
@@ -4037,7 +4221,7 @@ function sidePanel() {
     </section>
     <section class="desktop-card">
       <h2>当前状态</h2>
-      <p>当前 v33 已把媒体优先入口、移动端视觉质感、Bento 首页、Journal 时间轴、照片墙/地图切换、上架就绪路径、原生移交账本和 App Store 提交材料包串起来：用户可以从顶部 Memory Camera、底部“＋影像”、首次进入、Quick Mark 或媒体墙直接选择影像；也可以进入 Launch Readiness 看到预检、导出校验、删除回执、App Store 审核包、Native Handoff Ledger 和 Submission Packet。</p>
+      <p>当前 v62 以 v33 的媒体优先入口、Bento 首页、Journal 时间轴、照片墙/地图切换和上架就绪中心为基础，补上 App Store Public URL Packet：Support、Privacy、Export、Delete、Subscription、Review 六个公网 deep links 已可直接复核；正式法务 URL、TestFlight、签名设备和后端仍是 release blockers。</p>
     </section>
   </aside>`;
 }

@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "61",
-        summary: String = "TimeSlowDown v61 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "62",
+        summary: String = "TimeSlowDown v62 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -71,6 +71,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "No production backend, account sync, or bundled DeepSeek provider key is included in this build; v55 separates pending backend, mock gateway, and future provider-passed validation receipts, v56 defines the redacted backend integration test request/result contract, v57 defines the backend endpoint contract plus provider proxy boundary, v58 adds a local endpoint execution harness that can pass only stub gates, v59 adds an optional live backend probe that requires TSD backend URL/token environment variables plus real provider evidence before any production AI/App Store AI gate can pass, and v60 adds an optional deletion live probe that requires TSD deletion backend URL/token plus real job/audit/tombstone/per-system evidence before deletion gates can pass.",
             "Secure Enclave generation request, reference receipt, and signed-device validation scaffold are now Swift-verifiable contracts, but no signed-device Secure Enclave/Keychain pass receipt, signed-device Photos import validation, or production E2EE media vault validation is claimed yet.",
             "v61 adds an App Store submission gate that remains blocked until full Xcode, Team ID, archive, TestFlight upload, App Store Connect metadata, support/privacy URLs, App Privacy questionnaire, age rating, DeepSeek provider pass, deletion completion, and signed-device privacy receipts exist.",
+            "v62 adds a public URL packet with HTTPS support/privacy/export/delete/subscription/review deep links on the public GitHub Pages demo, while keeping formal legal review and final company support/privacy URLs as release blockers.",
             "Archive, signing, signed-device Files export validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode and Apple Developer access."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -156,6 +157,75 @@ public enum AppStoreLaunchAssetChecklist {
     ]
 }
 
+public struct AppStorePublicURLPacket: Codable, Equatable, Sendable {
+    public var baseURL: String
+    public var supportURL: String
+    public var privacyURL: String
+    public var exportRightsURL: String
+    public var deletionRightsURL: String
+    public var subscriptionRightsURL: String
+    public var appReviewRouteURL: String
+    public var legalReviewCompleted: Bool
+
+    public init(
+        baseURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/",
+        supportURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#support",
+        privacyURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#privacy",
+        exportRightsURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#export",
+        deletionRightsURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#delete",
+        subscriptionRightsURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#subscription",
+        appReviewRouteURL: String = "https://raingodprc.github.io/TimeSlowDown-codex/#review",
+        legalReviewCompleted: Bool = false
+    ) {
+        self.baseURL = baseURL
+        self.supportURL = supportURL
+        self.privacyURL = privacyURL
+        self.exportRightsURL = exportRightsURL
+        self.deletionRightsURL = deletionRightsURL
+        self.subscriptionRightsURL = subscriptionRightsURL
+        self.appReviewRouteURL = appReviewRouteURL
+        self.legalReviewCompleted = legalReviewCompleted
+    }
+
+    public var urls: [String] {
+        [
+            supportURL,
+            privacyURL,
+            exportRightsURL,
+            deletionRightsURL,
+            subscriptionRightsURL,
+            appReviewRouteURL
+        ]
+    }
+
+    public var requiredFragments: [String] {
+        ["#support", "#privacy", "#export", "#delete", "#subscription", "#review"]
+    }
+
+    public var isPublicDemoURLPacket: Bool {
+        baseURL == "https://raingodprc.github.io/TimeSlowDown-codex/" &&
+        urls.count == 6 &&
+        urls.allSatisfy { url in
+            url.hasPrefix(baseURL) &&
+            url.hasPrefix("https://") &&
+            !url.contains("localhost") &&
+            !url.localizedCaseInsensitiveContains("todo") &&
+            !url.localizedCaseInsensitiveContains("required")
+        } &&
+        zip(urls, requiredFragments).allSatisfy { url, fragment in
+            url.hasSuffix(fragment)
+        }
+    }
+
+    public var canSatisfyPublicURLShapeGate: Bool {
+        isPublicDemoURLPacket
+    }
+
+    public var canSatisfyFinalLegalURLGate: Bool {
+        isPublicDemoURLPacket && legalReviewCompleted
+    }
+}
+
 public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
     case passed
     case blocked
@@ -201,7 +271,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "61", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "62", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -239,6 +309,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         buildNotes: TestFlightBuildNotes = TestFlightBuildNotes(),
         reviewRoute: AppReviewRoute = AppReviewRoute(),
         privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
+        publicURLPacket: AppStorePublicURLPacket = AppStorePublicURLPacket(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
         deepSeekReceipt: DeepSeekGatewayIntegrationReceipt? = nil,
         deletionReceipt: DeletionServiceLiveProbeReceipt? = nil,
@@ -250,6 +321,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let teamIDPresent = signingPlan.teamID?.isEmpty == false
         let bundleIDMatches = signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown"
         let supportContactPresent = !buildNotes.supportContact.localizedCaseInsensitiveContains("required")
+        let publicURLShapeReady = publicURLPacket.canSatisfyPublicURLShapeGate
+        let finalLegalURLsReady = publicURLPacket.canSatisfyFinalLegalURLGate
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
         nativeRows.map(\.id).contains("keychain-e2ee") &&
         nativeRows.map(\.id).contains("deepseek-gateway")
@@ -301,9 +374,17 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
             .init(
                 id: "support-privacy-urls",
                 title: "Support and privacy URLs",
-                status: supportPrivacyURLsPublished && supportContactPresent ? .passed : .blocked,
-                evidence: supportPrivacyURLsPublished ? buildNotes.supportContact : "Public support/privacy/export/delete URLs are not published.",
-                unblockAction: "Publish support, privacy, export, deletion, and subscription-rights pages."
+                status: supportPrivacyURLsPublished && supportContactPresent && finalLegalURLsReady ? .passed : .blocked,
+                evidence: publicURLShapeReady ? "Public demo URL packet exists, but final legal/company support URLs are not reviewed." : "Public support/privacy/export/delete URLs are not published.",
+                unblockAction: "Publish and legal-review support, privacy, export, deletion, subscription, and App Review route URLs."
+            ),
+            .init(
+                id: "public-url-packet",
+                title: "Public URL packet shape",
+                status: publicURLShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: publicURLShapeReady ? publicURLPacket.privacyURL : "Public URL packet is incomplete or not HTTPS.",
+                unblockAction: "Keep HTTPS public support/privacy/export/delete/subscription/review deep links reachable from the launch packet."
             ),
             .init(
                 id: "app-privacy-questionnaire",

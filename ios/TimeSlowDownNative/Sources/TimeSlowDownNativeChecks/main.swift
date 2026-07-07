@@ -274,7 +274,7 @@ check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>61</string>"), "Info.plist should carry v61 build number")
+check(infoPlistText.contains("<string>62</string>"), "Info.plist should carry v62 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -1334,7 +1334,7 @@ check(ProductionImplementationChecklist.rows.count == 6, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "61", "TestFlight build notes should match v61")
+check(buildNotes.buildNumber == "62", "TestFlight build notes should match v62")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1358,6 +1358,7 @@ check(buildNotes.summary.localizedCaseInsensitiveContains("live backend probe"),
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion service"), "TestFlight build notes should mention deletion service boundary")
 check(buildNotes.summary.localizedCaseInsensitiveContains("deletion live probe"), "TestFlight build notes should mention deletion live probe")
 check(buildNotes.summary.localizedCaseInsensitiveContains("App Store submission gate"), "TestFlight build notes should mention App Store submission gate")
+check(buildNotes.summary.localizedCaseInsensitiveContains("public URL packet"), "TestFlight build notes should mention public URL packet")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("mock gateway"), "TestFlight build notes should disclose mock/provider validation split")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("redacted backend integration test"), "TestFlight build notes should disclose redacted backend integration test boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("backend endpoint contract"), "TestFlight build notes should disclose backend endpoint contract boundary")
@@ -1365,6 +1366,7 @@ check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiv
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("optional live backend probe"), "TestFlight build notes should disclose optional live backend probe boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("optional deletion live probe"), "TestFlight build notes should disclose optional deletion live probe boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("App Store submission gate"), "TestFlight build notes should disclose submission gate boundary")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("public URL packet"), "TestFlight build notes should disclose public URL packet boundary")
 check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("archive"), "TestFlight build notes should disclose archive/upload limitation")
 check(buildNotes.namesAIPrivacyBoundary, "TestFlight build notes should name AI and DeepSeek boundary")
 check(buildNotes.supportContact.localizedCaseInsensitiveContains("required"), "TestFlight build notes should not fake a support contact")
@@ -1380,6 +1382,19 @@ check(signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown", "Signing pl
 check(signingPlan.doesNotFakeSigning, "Signing plan should not fake a Team ID")
 check(signingPlan.archiveCommandWhenXcodeAvailable.contains("xcodebuild"), "Signing plan should name the future Xcode archive command")
 
+let publicURLPacket = AppStorePublicURLPacket()
+check(publicURLPacket.urls.count == 6, "Public URL packet should expose six release URLs")
+check(publicURLPacket.urls.allSatisfy { $0.hasPrefix("https://") }, "Public URL packet should use HTTPS URLs")
+check(publicURLPacket.urls.allSatisfy { $0.hasPrefix(publicURLPacket.baseURL) }, "Public URL packet should stay on the public demo origin")
+check(publicURLPacket.urls.contains(publicURLPacket.supportURL), "Public URL packet should include support URL")
+check(publicURLPacket.urls.contains(publicURLPacket.privacyURL), "Public URL packet should include privacy URL")
+check(publicURLPacket.urls.contains(publicURLPacket.exportRightsURL), "Public URL packet should include export rights URL")
+check(publicURLPacket.urls.contains(publicURLPacket.deletionRightsURL), "Public URL packet should include deletion rights URL")
+check(publicURLPacket.urls.contains(publicURLPacket.subscriptionRightsURL), "Public URL packet should include subscription rights URL")
+check(publicURLPacket.urls.contains(publicURLPacket.appReviewRouteURL), "Public URL packet should include App Review route URL")
+check(publicURLPacket.canSatisfyPublicURLShapeGate, "Public URL packet should satisfy the public URL shape gate")
+check(!publicURLPacket.canSatisfyFinalLegalURLGate, "Public URL packet should not satisfy final legal URL gate before legal review")
+
 let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     hasFullXcode: unsignedHostEnvironment.hasFullXcode,
     archiveCreated: false,
@@ -1393,12 +1408,13 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     buildNotes: buildNotes,
     reviewRoute: reviewRoute,
     privacyBoundary: boundary,
+    publicURLPacket: publicURLPacket,
     signedDeviceReceipt: signedDevicePendingReceipt,
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "61", "App Store submission gate should track v61")
-check(appStoreSubmissionGate.rows.count == 16, "App Store submission gate should track sixteen release gates")
+check(appStoreSubmissionGate.buildNumber == "62", "App Store submission gate should track v62")
+check(appStoreSubmissionGate.rows.count == 17, "App Store submission gate should track seventeen release gates after v62 public URL packet")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -1406,6 +1422,7 @@ check(appStoreSubmissionGate.blockerIDs.contains("apple-developer-team"), "Submi
 check(appStoreSubmissionGate.blockerIDs.contains("archive"), "Submission gate should block without a release archive")
 check(appStoreSubmissionGate.blockerIDs.contains("testflight-upload"), "Submission gate should block without TestFlight upload receipt")
 check(appStoreSubmissionGate.blockerIDs.contains("support-privacy-urls"), "Submission gate should block without support/privacy URLs")
+check(!appStoreSubmissionGate.blockerIDs.contains("public-url-packet"), "Public URL packet shape should not block once HTTPS deep links exist")
 check(appStoreSubmissionGate.blockerIDs.contains("app-privacy-questionnaire"), "Submission gate should block without App Privacy questionnaire")
 check(appStoreSubmissionGate.blockerIDs.contains("age-rating-12-plus"), "Submission gate should block without age-rating review")
 check(appStoreSubmissionGate.blockerIDs.contains("signed-device-keychain"), "Submission gate should block without signed-device Keychain/Secure Enclave pass")
@@ -1431,6 +1448,7 @@ let unprovenBackendSubmissionGate = AppStoreSubmissionGate.current(
     buildNotes: buildNotes,
     reviewRoute: reviewRoute,
     privacyBoundary: boundary,
+    publicURLPacket: publicURLPacket,
     signedDeviceReceipt: signedDevicePendingReceipt,
     deepSeekReceipt: nil,
     deletionReceipt: nil
@@ -1442,4 +1460,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, and v61 App Store submission gate are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, and v62 public URL packet are aligned.")
