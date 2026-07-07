@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "68",
-        summary: String = "TimeSlowDown v68 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "69",
+        summary: String = "TimeSlowDown v69 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -78,7 +78,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v66 adds a signed-device media validation packet for PhotosPicker import and Files/share export evidence, while keeping actual Photos and Files release gates blocked until a real physical-device pass receipt exists.",
             "v67 adds an archive/signing readiness packet for full Xcode, Apple Developer Team, Release archive, Transporter upload, and App Store Connect processing evidence, while keeping actual archive/TestFlight gates blocked until a real production receipt exists.",
             "v68 adds an App Store metadata/legal review packet for product page copy, screenshot/app preview plan, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist while keeping final App Store Connect entry and legal review blocked.",
-            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, and legal review require full Xcode, Apple Developer access, and release/legal approval."
+            "v69 adds a Privacy Manifest required reason API audit packet that keeps the current no-tracking/no-collected-data/no-accessed-API manifest shape honest for the local shipping path while keeping dependency manifest review, Xcode privacy report generation, and release review blocked.",
+            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, full Xcode privacy report, dependency privacy manifest review, and legal review require full Xcode, Apple Developer access, and release/legal approval."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
     ) {
@@ -305,7 +306,7 @@ public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, 
         signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
         signingPlan.requiresAppleDeveloperTeam &&
         signingPlan.fakeTeamIDForbidden &&
-        buildNotes.buildNumber == "68" &&
+        buildNotes.buildNumber == "69" &&
         steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
         Set(steps.map(\.kind)).count == steps.count &&
         steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
@@ -495,7 +496,7 @@ public enum ArchiveSigningValidationScaffold {
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v68 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v69 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -1238,6 +1239,206 @@ public struct AppStoreMetadataLegalReviewPacket: Codable, Equatable, Sendable {
     }
 }
 
+public enum PrivacyManifestRequiredReasonAPIKind: String, Codable, Equatable, CaseIterable, Sendable {
+    case fileTimestamp = "NSPrivacyAccessedAPICategoryFileTimestamp"
+    case systemBootTime = "NSPrivacyAccessedAPICategorySystemBootTime"
+    case diskSpace = "NSPrivacyAccessedAPICategoryDiskSpace"
+    case activeKeyboard = "NSPrivacyAccessedAPICategoryActiveKeyboards"
+    case userDefaults = "NSPrivacyAccessedAPICategoryUserDefaults"
+}
+
+public struct PrivacyManifestRequiredReasonAPIAuditItem: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var kind: PrivacyManifestRequiredReasonAPIKind
+    public var title: String
+    public var usedByShippingTarget: Bool
+    public var observedSymbols: [String]
+    public var approvedReasonIDs: [String]
+    public var evidence: String
+    public var notes: String
+
+    public init(
+        id: String,
+        kind: PrivacyManifestRequiredReasonAPIKind,
+        title: String,
+        usedByShippingTarget: Bool,
+        observedSymbols: [String],
+        approvedReasonIDs: [String] = [],
+        evidence: String,
+        notes: String
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.usedByShippingTarget = usedByShippingTarget
+        self.observedSymbols = observedSymbols
+        self.approvedReasonIDs = approvedReasonIDs
+        self.evidence = evidence
+        self.notes = notes
+    }
+
+    public var isKnownRequiredReasonCategory: Bool {
+        PrivacyManifestRequiredReasonAPIKind.allCases.contains(kind)
+    }
+
+    public var hasApprovedReasonsWhenUsed: Bool {
+        !usedByShippingTarget || !approvedReasonIDs.isEmpty
+    }
+
+    public var isHonestAuditItem: Bool {
+        id.hasPrefix("privacy-manifest-required-reason-") &&
+        !title.isEmpty &&
+        !observedSymbols.isEmpty &&
+        !evidence.isEmpty &&
+        !notes.isEmpty &&
+        isKnownRequiredReasonCategory &&
+        hasApprovedReasonsWhenUsed
+    }
+}
+
+public struct PrivacyManifestRequiredReasonAPIAuditPacket: Codable, Equatable, Sendable {
+    public var sourceReferences: [String]
+    public var privacyManifestPath: String
+    public var manifestTrackingDisabled: Bool
+    public var manifestHasNoTrackingDomains: Bool
+    public var manifestHasNoCollectedDataTypes: Bool
+    public var manifestHasNoAccessedAPITypes: Bool
+    public var requiredReasonItems: [PrivacyManifestRequiredReasonAPIAuditItem]
+    public var dependencyManifestReviewRequired: Bool
+    public var dependencyManifestReviewCompleted: Bool
+    public var xcodePrivacyReportRequired: Bool
+    public var xcodePrivacyReportGenerated: Bool
+    public var completedInFullXcodeArchive: Bool
+    public var releaseReviewCompleted: Bool
+
+    public init(
+        sourceReferences: [String] = [
+            "Apple Developer Documentation: Privacy manifest files",
+            "Apple Developer Documentation: Describing use of required reason API",
+            "Apple Technote TN3183: Adding required reason API entries to your privacy manifest",
+            "WWDC23: Get started with privacy manifests",
+            "TSD local scan: shipping app/library sources versus checks-only target"
+        ],
+        privacyManifestPath: String = XcodeProjectContract.privacyManifestPath,
+        manifestTrackingDisabled: Bool = true,
+        manifestHasNoTrackingDomains: Bool = true,
+        manifestHasNoCollectedDataTypes: Bool = true,
+        manifestHasNoAccessedAPITypes: Bool = true,
+        requiredReasonItems: [PrivacyManifestRequiredReasonAPIAuditItem] = PrivacyManifestRequiredReasonAPIAuditPacket.defaultItems,
+        dependencyManifestReviewRequired: Bool = true,
+        dependencyManifestReviewCompleted: Bool = false,
+        xcodePrivacyReportRequired: Bool = true,
+        xcodePrivacyReportGenerated: Bool = false,
+        completedInFullXcodeArchive: Bool = false,
+        releaseReviewCompleted: Bool = false
+    ) {
+        self.sourceReferences = sourceReferences
+        self.privacyManifestPath = privacyManifestPath
+        self.manifestTrackingDisabled = manifestTrackingDisabled
+        self.manifestHasNoTrackingDomains = manifestHasNoTrackingDomains
+        self.manifestHasNoCollectedDataTypes = manifestHasNoCollectedDataTypes
+        self.manifestHasNoAccessedAPITypes = manifestHasNoAccessedAPITypes
+        self.requiredReasonItems = requiredReasonItems
+        self.dependencyManifestReviewRequired = dependencyManifestReviewRequired
+        self.dependencyManifestReviewCompleted = dependencyManifestReviewCompleted
+        self.xcodePrivacyReportRequired = xcodePrivacyReportRequired
+        self.xcodePrivacyReportGenerated = xcodePrivacyReportGenerated
+        self.completedInFullXcodeArchive = completedInFullXcodeArchive
+        self.releaseReviewCompleted = releaseReviewCompleted
+    }
+
+    public static let defaultItems: [PrivacyManifestRequiredReasonAPIAuditItem] = [
+        .init(
+            id: "privacy-manifest-required-reason-file-timestamp",
+            kind: .fileTimestamp,
+            title: "File timestamp APIs",
+            usedByShippingTarget: false,
+            observedSymbols: ["No production use of file creation/modification timestamp APIs found in Sources/TimeSlowDownKit or TimeSlowDownApp."],
+            evidence: "Checks target reads local project files for verification only; the shipping app path writes user-requested export bytes without inspecting file timestamps.",
+            notes: "If production code later reads file timestamps, add the Apple-approved reason IDs to PrivacyInfo.xcprivacy and this packet."
+        ),
+        .init(
+            id: "privacy-manifest-required-reason-system-boot-time",
+            kind: .systemBootTime,
+            title: "System boot time APIs",
+            usedByShippingTarget: false,
+            observedSymbols: ["No production use of ProcessInfo.systemUptime, mach_absolute_time, or boot-time APIs found."],
+            evidence: "ProcessInfo.environment appears only in TimeSlowDownNativeChecks for optional backend probes and is not part of the app target.",
+            notes: "If runtime performance or anti-abuse code later reads uptime, it must be justified with Apple-approved reason IDs."
+        ),
+        .init(
+            id: "privacy-manifest-required-reason-disk-space",
+            kind: .diskSpace,
+            title: "Disk space APIs",
+            usedByShippingTarget: false,
+            observedSymbols: ["No production use of volumeAvailableCapacity, volumeTotalCapacity, statfs, or disk-capacity APIs found."],
+            evidence: "Current export code builds an in-memory ZIP package and does not read device capacity for fingerprinting-prone signals.",
+            notes: "If media vault storage management later reads disk capacity, use only app-storage reasons and update the manifest."
+        ),
+        .init(
+            id: "privacy-manifest-required-reason-active-keyboards",
+            kind: .activeKeyboard,
+            title: "Active keyboard APIs",
+            usedByShippingTarget: false,
+            observedSymbols: ["No production use of activeInputModes or keyboard inventory APIs found."],
+            evidence: "TSD text capture uses ordinary SwiftUI input and does not inspect installed or active keyboards.",
+            notes: "Keyboard inventory is not needed for memory capture; keep this absent unless a reviewed accessibility feature requires it."
+        ),
+        .init(
+            id: "privacy-manifest-required-reason-user-defaults",
+            kind: .userDefaults,
+            title: "UserDefaults APIs",
+            usedByShippingTarget: false,
+            observedSymbols: ["No production use of UserDefaults found in Sources/TimeSlowDownKit or TimeSlowDownApp."],
+            evidence: "Current PoC state is in-memory/native-shell contract state; persisted user settings have not been added to the shipping target.",
+            notes: "If onboarding/preferences later use UserDefaults, add the app-specific storage reason ID and keep it scoped to TSD data."
+        )
+    ]
+
+    public var requiredKindsCovered: Bool {
+        let covered = Set(requiredReasonItems.map(\.kind))
+        return Set(PrivacyManifestRequiredReasonAPIKind.allCases).isSubset(of: covered)
+    }
+
+    public var shippingTargetUsesRequiredReasonAPIs: Bool {
+        requiredReasonItems.contains(where: \.usedByShippingTarget)
+    }
+
+    public var requiredAPIUsagesHaveApprovedReasons: Bool {
+        requiredReasonItems.allSatisfy(\.hasApprovedReasonsWhenUsed)
+    }
+
+    public var canKeepAccessedAPITypesEmpty: Bool {
+        !shippingTargetUsesRequiredReasonAPIs &&
+        manifestTrackingDisabled &&
+        manifestHasNoTrackingDomains &&
+        manifestHasNoCollectedDataTypes &&
+        manifestHasNoAccessedAPITypes
+    }
+
+    public var canSatisfyRequiredReasonShapeGate: Bool {
+        sourceReferences.count >= 5 &&
+        privacyManifestPath == XcodeProjectContract.privacyManifestPath &&
+        manifestTrackingDisabled &&
+        manifestHasNoTrackingDomains &&
+        manifestHasNoCollectedDataTypes &&
+        requiredKindsCovered &&
+        requiredReasonItems.allSatisfy(\.isHonestAuditItem) &&
+        requiredAPIUsagesHaveApprovedReasons &&
+        (canKeepAccessedAPITypesEmpty || !manifestHasNoAccessedAPITypes) &&
+        dependencyManifestReviewRequired &&
+        xcodePrivacyReportRequired
+    }
+
+    public var canSatisfyFinalPrivacyManifestGate: Bool {
+        canSatisfyRequiredReasonShapeGate &&
+        completedInFullXcodeArchive &&
+        xcodePrivacyReportGenerated &&
+        (!dependencyManifestReviewRequired || dependencyManifestReviewCompleted) &&
+        releaseReviewCompleted
+    }
+}
+
 public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
     case passed
     case blocked
@@ -1283,7 +1484,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "68", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "69", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -1325,6 +1526,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         appPrivacyQuestionnairePacket: AppPrivacyQuestionnairePacket = AppPrivacyQuestionnairePacket(),
         ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
         metadataLegalReviewPacket: AppStoreMetadataLegalReviewPacket = AppStoreMetadataLegalReviewPacket(),
+        privacyManifestRequiredReasonAuditPacket: PrivacyManifestRequiredReasonAPIAuditPacket = PrivacyManifestRequiredReasonAPIAuditPacket(),
         archiveSigningReceipt: ArchiveSigningValidationReceipt? = nil,
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
@@ -1344,6 +1546,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let privacyQuestionnaireShapeReady = appPrivacyQuestionnairePacket.canSatisfyQuestionnaireShapeGate
         let ageRatingShapeReady = ageRatingReviewPacket.canSatisfyAgeRatingShapeGate
         let metadataLegalShapeReady = metadataLegalReviewPacket.canSatisfyMetadataLegalShapeGate
+        let privacyManifestRequiredReasonShapeReady = privacyManifestRequiredReasonAuditPacket.canSatisfyRequiredReasonShapeGate
+        let privacyManifestRequiredReasonFinalReady = privacyManifestRequiredReasonAuditPacket.canSatisfyFinalPrivacyManifestGate
         let archiveSigningPacketShapeReady = archiveSigningReceipt?.isHonestPendingReceipt == true || archiveSigningReceipt?.isProductionArchiveUploadReceipt == true
         let mediaValidationPacketShapeReady = signedDeviceMediaReceipt?.isHonestPendingReceipt == true || signedDeviceMediaReceipt?.isProductionPassReceipt == true
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
@@ -1458,6 +1662,22 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 requiredForTestFlight: false,
                 evidence: privacyQuestionnaireShapeReady ? "v64 maps TSD user content, photos/videos, account identifiers, purchases, diagnostics, AI task payloads, and optional encrypted sync to privacy-answer evidence without tracking or raw-media AI upload." : "Privacy questionnaire packet is incomplete.",
                 unblockAction: "Repair the machine-checkable privacy data mapping before release/legal handoff."
+            ),
+            .init(
+                id: "privacy-manifest-required-reason-api",
+                title: "Privacy Manifest required reason API final review",
+                status: privacyManifestRequiredReasonFinalReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: privacyManifestRequiredReasonFinalReady ? "Full Xcode archive privacy report, dependency manifests, required reason API audit, and release review are complete." : "Privacy manifest required reason API audit exists only as a local packet until full-Xcode privacy report, dependency manifest review, and release review are complete.",
+                unblockAction: "Generate the Xcode privacy report from the archive, review all app and dependency manifests, update PrivacyInfo.xcprivacy for any required reason API use, and capture release approval."
+            ),
+            .init(
+                id: "privacy-manifest-required-reason-audit-packet",
+                title: "Privacy Manifest required reason API audit packet",
+                status: privacyManifestRequiredReasonShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: privacyManifestRequiredReasonShapeReady ? "v69 audits Apple required reason API categories, keeps the current no-tracking/no-collected-data/no-accessed-API manifest honest for the local shipping path, and names the remaining Xcode privacy report/dependency review gates." : "Privacy Manifest required reason API audit packet is missing or malformed.",
+                unblockAction: "Repair the required reason API audit before Xcode archive and App Store Connect privacy handoff."
             ),
             .init(
                 id: "age-rating-12-plus",
