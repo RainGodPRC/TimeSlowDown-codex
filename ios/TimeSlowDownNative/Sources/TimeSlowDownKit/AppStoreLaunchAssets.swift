@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "69",
-        summary: String = "TimeSlowDown v69 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "70",
+        summary: String = "TimeSlowDown v70 tests the native Memory Camera shell, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Memory Camera and choose a photo or video as a memory anchor.",
             "Confirm the generated slice keeps media as the memory key, not a text attachment.",
@@ -79,7 +79,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v67 adds an archive/signing readiness packet for full Xcode, Apple Developer Team, Release archive, Transporter upload, and App Store Connect processing evidence, while keeping actual archive/TestFlight gates blocked until a real production receipt exists.",
             "v68 adds an App Store metadata/legal review packet for product page copy, screenshot/app preview plan, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist while keeping final App Store Connect entry and legal review blocked.",
             "v69 adds a Privacy Manifest required reason API audit packet that keeps the current no-tracking/no-collected-data/no-accessed-API manifest shape honest for the local shipping path while keeping dependency manifest review, Xcode privacy report generation, and release review blocked.",
-            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, full Xcode privacy report, dependency privacy manifest review, and legal review require full Xcode, Apple Developer access, and release/legal approval."
+            "v70 adds an encryption export compliance review packet and a conservative Info.plist encryption declaration, while keeping final App Store Connect export-compliance answers, legal review, and release review blocked.",
+            "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, full Xcode privacy report, dependency privacy manifest review, encryption export compliance, and legal review require full Xcode, Apple Developer access, and release/legal approval."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
     ) {
@@ -306,7 +307,7 @@ public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, 
         signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
         signingPlan.requiresAppleDeveloperTeam &&
         signingPlan.fakeTeamIDForbidden &&
-        buildNotes.buildNumber == "69" &&
+        buildNotes.buildNumber == "70" &&
         steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
         Set(steps.map(\.kind)).count == steps.count &&
         steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
@@ -496,7 +497,7 @@ public enum ArchiveSigningValidationScaffold {
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v69 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v70 build notes name media capture, export/delete rights, AI boundary, archive/signing readiness, App Store metadata/legal review packet, Privacy Manifest required reason API audit packet, encryption export compliance packet, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -1439,6 +1440,177 @@ public struct PrivacyManifestRequiredReasonAPIAuditPacket: Codable, Equatable, S
     }
 }
 
+public enum EncryptionExportComplianceUseKind: String, Codable, Equatable, CaseIterable, Sendable {
+    case cryptoKitAESGCM = "cryptokit-aes-gcm"
+    case secureEnclaveKeyAgreement = "secure-enclave-key-agreement"
+    case keychainProtectedMetadata = "keychain-protected-metadata"
+    case deviceKeyEncryptedMediaVault = "device-key-encrypted-media-vault"
+    case tlsBackendTransport = "tls-backend-transport"
+}
+
+public struct EncryptionExportComplianceReviewItem: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var kind: EncryptionExportComplianceUseKind
+    public var title: String
+    public var usesEncryption: Bool
+    public var evidence: String
+    public var appStoreConnectAnswerRequired: Bool
+    public var legalReviewRequired: Bool
+    public var finalClassificationCompleted: Bool
+    public var notes: String
+
+    public init(
+        id: String,
+        kind: EncryptionExportComplianceUseKind,
+        title: String,
+        usesEncryption: Bool = true,
+        evidence: String,
+        appStoreConnectAnswerRequired: Bool = true,
+        legalReviewRequired: Bool = true,
+        finalClassificationCompleted: Bool = false,
+        notes: String
+    ) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.usesEncryption = usesEncryption
+        self.evidence = evidence
+        self.appStoreConnectAnswerRequired = appStoreConnectAnswerRequired
+        self.legalReviewRequired = legalReviewRequired
+        self.finalClassificationCompleted = finalClassificationCompleted
+        self.notes = notes
+    }
+
+    public var isHonestEncryptionItem: Bool {
+        id.hasPrefix("encryption-export-compliance-") &&
+        !title.isEmpty &&
+        !evidence.isEmpty &&
+        !notes.isEmpty &&
+        usesEncryption &&
+        appStoreConnectAnswerRequired &&
+        legalReviewRequired
+    }
+}
+
+public struct EncryptionExportComplianceReviewPacket: Codable, Equatable, Sendable {
+    public var sourceReferences: [String]
+    public var infoPlistKey: String
+    public var infoPlistDeclaresNonExemptEncryption: Bool
+    public var productUsesEncryption: Bool
+    public var usesAppleStandardCrypto: Bool
+    public var usesCustomCryptography: Bool
+    public var usesEndToEndEncryptedUserContent: Bool
+    public var items: [EncryptionExportComplianceReviewItem]
+    public var appStoreConnectExportComplianceAnswered: Bool
+    public var legalReviewCompleted: Bool
+    public var exportDocumentationAttachedIfRequired: Bool
+    public var releaseReviewCompleted: Bool
+
+    public init(
+        sourceReferences: [String] = [
+            "Apple Developer: Complying with Encryption Export Regulations",
+            "App Store Connect Help: Overview of export compliance",
+            "Info.plist: ITSAppUsesNonExemptEncryption",
+            "TSD native trust layer: CryptoKit AES.GCM media vault envelope",
+            "TSD native trust layer: Secure Enclave device-key contract"
+        ],
+        infoPlistKey: String = "ITSAppUsesNonExemptEncryption",
+        infoPlistDeclaresNonExemptEncryption: Bool = true,
+        productUsesEncryption: Bool = true,
+        usesAppleStandardCrypto: Bool = true,
+        usesCustomCryptography: Bool = false,
+        usesEndToEndEncryptedUserContent: Bool = true,
+        items: [EncryptionExportComplianceReviewItem] = EncryptionExportComplianceReviewPacket.defaultItems,
+        appStoreConnectExportComplianceAnswered: Bool = false,
+        legalReviewCompleted: Bool = false,
+        exportDocumentationAttachedIfRequired: Bool = false,
+        releaseReviewCompleted: Bool = false
+    ) {
+        self.sourceReferences = sourceReferences
+        self.infoPlistKey = infoPlistKey
+        self.infoPlistDeclaresNonExemptEncryption = infoPlistDeclaresNonExemptEncryption
+        self.productUsesEncryption = productUsesEncryption
+        self.usesAppleStandardCrypto = usesAppleStandardCrypto
+        self.usesCustomCryptography = usesCustomCryptography
+        self.usesEndToEndEncryptedUserContent = usesEndToEndEncryptedUserContent
+        self.items = items
+        self.appStoreConnectExportComplianceAnswered = appStoreConnectExportComplianceAnswered
+        self.legalReviewCompleted = legalReviewCompleted
+        self.exportDocumentationAttachedIfRequired = exportDocumentationAttachedIfRequired
+        self.releaseReviewCompleted = releaseReviewCompleted
+    }
+
+    public static let defaultItems: [EncryptionExportComplianceReviewItem] = [
+        .init(
+            id: "encryption-export-compliance-cryptokit-aes-gcm",
+            kind: .cryptoKitAESGCM,
+            title: "CryptoKit AES.GCM media vault envelope",
+            evidence: "v52 defines CryptoKit.AES.GCM content encryption, HKDF-SHA256 per-record derivation, random nonce, AAD, and no plaintext/CEK persistence.",
+            notes: "Do not hide this as no-encryption; App Store Connect export compliance answers must account for the media vault path."
+        ),
+        .init(
+            id: "encryption-export-compliance-secure-enclave-key-agreement",
+            kind: .secureEnclaveKeyAgreement,
+            title: "Secure Enclave P256 key agreement",
+            evidence: "v53 defines non-extractable SecureEnclave.P256.KeyAgreement.PrivateKey references for device-local media vault keys.",
+            notes: "Final classification must be reviewed with the signed-device implementation, not inferred from the SwiftPM host."
+        ),
+        .init(
+            id: "encryption-export-compliance-keychain-metadata",
+            kind: .keychainProtectedMetadata,
+            title: "Keychain-protected key metadata",
+            evidence: "v41/v53 keep device-key metadata in Keychain-shaped records with this-device-only and user-presence boundaries.",
+            notes: "Keychain storage is part of the encryption/security posture and should remain visible to release review."
+        ),
+        .init(
+            id: "encryption-export-compliance-media-vault",
+            kind: .deviceKeyEncryptedMediaVault,
+            title: "Device-key encrypted media vault",
+            evidence: "v51/v52 seal user-selected photo/video payloads into encrypted media vault records before consented export/delete.",
+            notes: "This protects private memory media; it is a product trust feature and an export-compliance disclosure topic."
+        ),
+        .init(
+            id: "encryption-export-compliance-tls-backend-transport",
+            kind: .tlsBackendTransport,
+            title: "HTTPS/TLS backend transport",
+            evidence: "v57/v59/v63 require HTTPS TSD backend endpoints and server-side DeepSeek/deletion service boundaries.",
+            notes: "Even transport-only encryption must be represented in App Store Connect export compliance answers if applicable."
+        )
+    ]
+
+    public var requiredUseKindsCovered: Bool {
+        let covered = Set(items.map(\.kind))
+        return Set(EncryptionExportComplianceUseKind.allCases).isSubset(of: covered)
+    }
+
+    public var doesNotFalselyDenyEncryption: Bool {
+        productUsesEncryption &&
+        infoPlistDeclaresNonExemptEncryption &&
+        items.contains(where: { $0.kind == .cryptoKitAESGCM && $0.usesEncryption }) &&
+        items.contains(where: { $0.kind == .secureEnclaveKeyAgreement && $0.usesEncryption }) &&
+        usesEndToEndEncryptedUserContent
+    }
+
+    public var canSatisfyEncryptionExportShapeGate: Bool {
+        sourceReferences.count >= 5 &&
+        infoPlistKey == "ITSAppUsesNonExemptEncryption" &&
+        doesNotFalselyDenyEncryption &&
+        usesAppleStandardCrypto &&
+        !usesCustomCryptography &&
+        requiredUseKindsCovered &&
+        items.allSatisfy(\.isHonestEncryptionItem)
+    }
+
+    public var canSatisfyFinalEncryptionExportComplianceGate: Bool {
+        canSatisfyEncryptionExportShapeGate &&
+        appStoreConnectExportComplianceAnswered &&
+        legalReviewCompleted &&
+        exportDocumentationAttachedIfRequired &&
+        releaseReviewCompleted &&
+        items.allSatisfy(\.finalClassificationCompleted)
+    }
+}
+
 public enum AppStoreSubmissionGateStatus: String, Codable, Equatable, Sendable {
     case passed
     case blocked
@@ -1484,7 +1656,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "69", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "70", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }
@@ -1527,6 +1699,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         ageRatingReviewPacket: AppAgeRatingReviewPacket = AppAgeRatingReviewPacket(),
         metadataLegalReviewPacket: AppStoreMetadataLegalReviewPacket = AppStoreMetadataLegalReviewPacket(),
         privacyManifestRequiredReasonAuditPacket: PrivacyManifestRequiredReasonAPIAuditPacket = PrivacyManifestRequiredReasonAPIAuditPacket(),
+        encryptionExportComplianceReviewPacket: EncryptionExportComplianceReviewPacket = EncryptionExportComplianceReviewPacket(),
         archiveSigningReceipt: ArchiveSigningValidationReceipt? = nil,
         backendReleaseEvidence: TSDBackendReleaseEvidence = TSDBackendReleaseEvidence(),
         signedDeviceReceipt: SignedDeviceKeychainValidationReceipt? = nil,
@@ -1548,6 +1721,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         let metadataLegalShapeReady = metadataLegalReviewPacket.canSatisfyMetadataLegalShapeGate
         let privacyManifestRequiredReasonShapeReady = privacyManifestRequiredReasonAuditPacket.canSatisfyRequiredReasonShapeGate
         let privacyManifestRequiredReasonFinalReady = privacyManifestRequiredReasonAuditPacket.canSatisfyFinalPrivacyManifestGate
+        let encryptionExportShapeReady = encryptionExportComplianceReviewPacket.canSatisfyEncryptionExportShapeGate
+        let encryptionExportFinalReady = encryptionExportComplianceReviewPacket.canSatisfyFinalEncryptionExportComplianceGate
         let archiveSigningPacketShapeReady = archiveSigningReceipt?.isHonestPendingReceipt == true || archiveSigningReceipt?.isProductionArchiveUploadReceipt == true
         let mediaValidationPacketShapeReady = signedDeviceMediaReceipt?.isHonestPendingReceipt == true || signedDeviceMediaReceipt?.isProductionPassReceipt == true
         let nativeContractCovered = nativeRows.map(\.id).contains("photos-picker") &&
@@ -1558,7 +1733,8 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
         submissionRows.map(\.id).contains("age-rating") &&
         submissionRows.map(\.id).contains("age-rating-review-packet") &&
         submissionRows.map(\.id).contains("support-privacy-urls") &&
-        submissionRows.map(\.id).contains("metadata-legal-review-packet")
+        submissionRows.map(\.id).contains("metadata-legal-review-packet") &&
+        submissionRows.map(\.id).contains("encryption-export-compliance-packet")
         let launchContractsCovered = launchRows.count == 4 && launchRows.allSatisfy { $0.status == .poc }
         let productionContractsCovered = productionRows.count >= 7 && productionRows.allSatisfy { $0.status == .poc }
         let signedDevicePassed = signedDeviceReceipt?.isProductionPassReceipt == true
@@ -1646,6 +1822,22 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
                 requiredForTestFlight: false,
                 evidence: metadataLegalShapeReady ? "v68 maps product page positioning, screenshots/app preview, review notes, support/privacy/data-rights URLs, subscription wording, AI disclosure, and legal/release checklist without death/fear/shame marketing or subscription-hostage claims." : "Metadata/legal review packet is missing or malformed.",
                 unblockAction: "Repair the machine-checkable metadata/legal review packet before App Store Connect and legal handoff."
+            ),
+            .init(
+                id: "encryption-export-compliance",
+                title: "Encryption export compliance final review",
+                status: encryptionExportFinalReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: encryptionExportFinalReady ? "App Store Connect export-compliance answers, legal classification, required documentation, and release review are complete." : "Encryption export compliance remains blocked until App Store Connect answers, legal classification, required documentation, and release review are complete.",
+                unblockAction: "Answer App Store Connect export-compliance questions for CryptoKit, Secure Enclave, Keychain, media vault, and HTTPS transport; attach required documentation if legal review requires it."
+            ),
+            .init(
+                id: "encryption-export-compliance-packet",
+                title: "Encryption export compliance review packet",
+                status: encryptionExportShapeReady ? .passed : .blocked,
+                requiredForTestFlight: false,
+                evidence: encryptionExportShapeReady ? "v70 conservatively declares encryption use, maps CryptoKit AES.GCM, Secure Enclave, Keychain metadata, encrypted media vault, and HTTPS transport without falsely claiming no encryption or final legal classification." : "Encryption export compliance review packet is missing or malformed.",
+                unblockAction: "Repair the machine-checkable encryption export-compliance packet before App Store Connect and legal handoff."
             ),
             .init(
                 id: "app-privacy-questionnaire",
