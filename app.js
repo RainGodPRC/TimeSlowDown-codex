@@ -4,10 +4,10 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 const STORAGE_KEY = "tsd-codex-demo-state-v1";
 const VAULT_SCHEMA_VERSION = "tsd-codex-vault-v1";
 const PUBLIC_DEMO_URL = "https://raingodprc.github.io/TimeSlowDown-codex/";
-const WEB_DEMO_VERSION = "v34";
-const RELEASE_CONTRACT_VERSION = "v72";
-const RELEASE_CONTRACT_LABEL = "Release Contract v72 · P0 Daily Loop";
-const PUBLIC_RESOURCE_LABEL = "styles.css?v=34 / app.js?v=72";
+const WEB_DEMO_VERSION = "v35";
+const RELEASE_CONTRACT_VERSION = "v73";
+const RELEASE_CONTRACT_LABEL = "Release Contract v73 · First-Week Return Loop";
+const PUBLIC_RESOURCE_LABEL = "styles.css?v=35 / app.js?v=73";
 const PUBLIC_URL_PACKET_VERSION = "v62";
 const PUBLIC_URL_ROUTES = ["support", "privacy", "export", "delete", "subscription", "review", "legal"];
 const PUBLIC_URL_PACKET = [
@@ -78,6 +78,11 @@ const defaultState = {
   selectedGolden: "G001",
   homeGuide: "",
   weeklyClaimed: ["m1", "m2", "m3"],
+  revisits: [],
+  echoDraft: "",
+  echoDismissedDate: "",
+  weekendFocusId: "",
+  weekendFocusField: "",
   chapterTitle: "",
   chapterStory: "",
   shareMode: "private",
@@ -275,7 +280,14 @@ const goldenSamples = [
 
 function loadState() {
   try {
-    return { ...defaultState, ...(JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}) };
+    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
+    return {
+      ...defaultState,
+      ...stored,
+      moments: Array.isArray(stored.moments) ? stored.moments : defaultState.moments,
+      weeklyClaimed: Array.isArray(stored.weeklyClaimed) ? stored.weeklyClaimed : defaultState.weeklyClaimed,
+      revisits: Array.isArray(stored.revisits) ? stored.revisits : []
+    };
   } catch {
     return { ...defaultState };
   }
@@ -528,6 +540,8 @@ function vaultPayload() {
     data: {
       moments: state.moments,
       weeklyClaimed: state.weeklyClaimed,
+      revisits: state.revisits,
+      echoDismissedDate: state.echoDismissedDate,
       chapterTitle: state.chapterTitle,
       chapterStory: state.chapterStory,
       shareMode: state.shareMode,
@@ -752,6 +766,162 @@ function ninetyDayTellableProgress() {
     weeklyMissing,
     nextAction
   };
+}
+
+function localDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function todayDisplayLabel(date = new Date()) {
+  const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+  return `${date.getMonth() + 1}月${date.getDate()}日 · ${weekdays[date.getDay()]}`;
+}
+
+function momentPerson(moment) {
+  const explicit = Array.isArray(moment.people) ? moment.people.join("、") : String(moment.people || "").trim();
+  if (explicit) return explicit;
+  const text = momentSearchText(moment);
+  if (/爸爸|父亲|老爸/.test(text)) return "爸爸";
+  if (/妈妈|母亲|老妈/.test(text)) return "妈妈";
+  if (/孩子|女儿|儿子|宝宝/.test(text)) return "孩子";
+  if (/朋友|同学|故知/.test(text)) return "朋友";
+  if (/同事|开会|工作/.test(text)) return "工作里的自己和他人";
+  if (/我|自己|第一次|完成|跑完/.test(text)) return "当时的我";
+  return "";
+}
+
+function momentMeaning(moment) {
+  if (String(moment.why || "").trim()) return String(moment.why).trim();
+  const text = moment.text || "";
+  if (/想记|值得|发现|第一次|还是跑完|算人生|不想说话|带回|记一下/.test(text)) return "已在原话里留下为什么";
+  return "";
+}
+
+function momentCompletion(moment) {
+  const fields = {
+    media: Boolean(moment.media),
+    people: Boolean(momentPerson(moment)),
+    why: Boolean(momentMeaning(moment))
+  };
+  const missing = Object.entries(fields).filter(([, ready]) => !ready).map(([field]) => field);
+  return { fields, missing, ready: missing.length === 0 };
+}
+
+function weeklyStoryProgress() {
+  const claimed = state.weeklyClaimed
+    .map(id => state.moments.find(moment => moment.id === id))
+    .filter(Boolean);
+  const candidates = [...claimed];
+  state.moments.forEach(moment => {
+    if (candidates.length < 3 && !candidates.some(item => item.id === moment.id)) candidates.push(moment);
+  });
+  const entries = candidates.slice(0, 3).map(moment => ({ moment, ...momentCompletion(moment) }));
+  const claimedCount = claimed.length;
+  const readyCount = entries.filter(entry => entry.ready).length;
+  const totalFields = entries.length * 3;
+  const completeFields = entries.reduce((sum, entry) => sum + Object.values(entry.fields).filter(Boolean).length, 0);
+  const nextGap = entries.find(entry => entry.missing.length)?.missing[0] || "";
+  const nextMoment = entries.find(entry => entry.missing.length)?.moment || null;
+  const nextAction = claimedCount < 3
+    ? `再认领 ${3 - claimedCount} 个瞬间，这一周就有故事骨架。`
+    : nextGap
+      ? `${nextMoment.title}还可以补${weekendFieldLabel(nextGap)}。`
+      : "三个瞬间都已有影像、人物或意义线索，可以编译本周章节。";
+  return {
+    entries,
+    claimedCount,
+    readyCount,
+    target: 3,
+    completeFields,
+    totalFields,
+    percent: totalFields ? Math.round((completeFields / totalFields) * 100) : 0,
+    nextGap,
+    nextMoment,
+    nextAction
+  };
+}
+
+function weekendFieldLabel(field) {
+  if (field === "media") return "一张影像";
+  if (field === "people") return "一个人物";
+  return "一句为什么";
+}
+
+function yesterdayEchoCandidate() {
+  const older = state.moments.filter(moment => moment.date !== "今天");
+  const moment = older.find(item => item.date === "昨天") || older[0];
+  if (!moment) return null;
+  const today = localDateKey();
+  const revisits = state.revisits.filter(item => item.momentId === moment.id);
+  const revisitedToday = revisits.find(item => item.dateKey === today);
+  return { moment, revisits, revisitedToday };
+}
+
+function saveYesterdayEcho() {
+  const echo = yesterdayEchoCandidate();
+  if (!echo) return;
+  const input = $("[data-echo-draft]");
+  const reflection = String(input?.value || state.echoDraft || "").trim();
+  const today = localDateKey();
+  const revisits = state.revisits.filter(item => !(item.momentId === echo.moment.id && item.dateKey === today));
+  revisits.push({
+    id: `revisit-${Date.now()}`,
+    momentId: echo.moment.id,
+    dateKey: today,
+    at: new Date().toISOString(),
+    reflection,
+    source: "昨日回声"
+  });
+  setState({
+    revisits,
+    echoDraft: "",
+    echoDismissedDate: "",
+    toast: reflection ? "已把“现在再看”叠回这段记忆。" : "已轻轻带回这一刻；不写新内容也算一次回访。"
+  });
+}
+
+function dismissYesterdayEcho() {
+  setState({ echoDismissedDate: localDateKey(), echoDraft: "", toast: "昨日回声已收起。它不会形成任务债。" });
+}
+
+function focusWeekendGap(momentId, field) {
+  setState({ weekendFocusId: momentId, weekendFocusField: field });
+}
+
+function saveWeekendGap() {
+  const momentId = state.weekendFocusId;
+  const field = state.weekendFocusField;
+  const input = $("[data-weekend-input]");
+  const value = String(input?.value || "").trim();
+  if (!momentId || !field || !value) {
+    setState({ toast: "先留下一点具体内容；一句话就够。" });
+    return;
+  }
+  const moments = state.moments.map(moment => {
+    if (moment.id !== momentId) return moment;
+    if (field === "people") {
+      return {
+        ...moment,
+        people: value,
+        tags: [...new Set([...(moment.tags || []), "人"])],
+        sources: [...new Set([...(moment.sources || []), "周末补全：人物"])]
+      };
+    }
+    return {
+      ...moment,
+      why: value,
+      sources: [...new Set([...(moment.sources || []), "周末补全：为什么重要"])]
+    };
+  });
+  setState({
+    moments,
+    weekendFocusId: "",
+    weekendFocusField: "",
+    toast: field === "people" ? "人物线索已补回切片。" : "“为什么重要”已补回切片。"
+  });
 }
 
 function filteredMediaMoments() {
@@ -1067,7 +1237,9 @@ function buildChapterStory(moments) {
   const lines = moments.map((moment, index) => {
     const plain = moment.text.replace(/^这条记忆的时间有些不确定，TSD 先原样保存：/, "").replace(/^“|”$/g, "");
     const mediaTrace = moment.media ? `；影像锚点：${mediaKindLabel(moment.media.kind)}《${moment.media.label || "未命名"}》` : "";
-    return `${index + 1}. ${plain}${mediaTrace}（source: ${moment.id}）`;
+    const peopleTrace = moment.people ? `；人物：${Array.isArray(moment.people) ? moment.people.join("、") : moment.people}` : "";
+    const whyTrace = moment.why ? `；为什么还想记得：${moment.why}` : "";
+    return `${index + 1}. ${plain}${peopleTrace}${whyTrace}${mediaTrace}（source: ${moment.id}）`;
   });
   return [
     `这一周，我认领了 ${moments.length} 个瞬间。`,
@@ -1402,8 +1574,10 @@ function launchReadinessRows() {
   const mediaCount = mediaMoments().length;
   const stats = vaultStats();
   const progress = ninetyDayTellableProgress();
+  const weekly = weeklyStoryProgress();
   return [
-    ["P0 daily loop", "ready", `首页已展示 3 个今日差异候选与 ${progress.tellable.length}/${progress.minimumTarget} 个 90 天可讲述进度。`],
+    ["P0 daily loop", "ready", `首页已展示 3 个今日差异候选、${progress.tellable.length}/${progress.minimumTarget} 个 90 天可讲述进度，以及 ${weekly.readyCount}/${weekly.target} 个可成章瞬间。`],
+    ["First-week return", "ready", `昨日回声、回访层叠和周末补全工作台已可点击；当前有 ${state.revisits.length} 次回访。`],
     ["Memory capture", "ready", "照片/视频可从 onboarding、顶部 Dock、底部“＋影像”、此刻页和媒体墙进入。"],
     ["Local vault", "ready", `${stats.moments} 条切片、${stats.media} 个影像锚点可导出为 JSON。`],
     ["Media vault", state.mediaVaultSealedAt || state.mediaPackageExportAt ? "ready" : "poc", mediaCount ? `${mediaCount} 个影像锚点；E2EE/导出包/删除审计为 PoC。` : "等待用户绑定第一张真实影像。"],
@@ -1444,7 +1618,8 @@ function submissionPacketRows() {
   return [
     ["产品页定位", state.productPageReviewAt ? "poc" : "todo", "App name / subtitle / description / keywords", "TimeSlowDown 的商店页应避免夸大医疗、心理诊断或生产完成度；主张聚焦“留住可讲述瞬间”。"],
     ["截图与预览", state.screenshotPlanAt ? "poc" : "todo", "screenshots / app preview", "截图组覆盖 Memory Camera、今日切片、周章节、人生旷野、媒体墙、账户权利、隐私中心；公开版不展示真实隐私内容。"],
-    ["P0 Daily Loop", "poc", RELEASE_CONTRACT_VERSION, "v72 已把今日差异雷达和 90 天可讲述进度写进首页与 native core，让产品回到“今天留下一个差异，90 天后能讲起 5–10 个瞬间”的北极星。"],
+    ["P0 Daily Loop", "poc", "v72", "v72 已把今日差异雷达和 90 天可讲述进度写进首页与 native core，让产品回到“今天留下一个差异，90 天后能讲起 5–10 个瞬间”的北极星。"],
+    ["首周复访闭环", "poc", RELEASE_CONTRACT_VERSION, "v73 新增昨日回声、现在再看、本周故事进度和周末补全工作台；Quick Mark 可以先占位，再一次补一个故事缺口。"],
     ["截图/App Preview 创意包", "poc", "v71", "v71 已把 6 张核心截图场景、Apple 数量/格式边界、真实 UI 截取、合成/授权素材、隐私遮罩和反恐惧营销写成 native release contract。"],
     ["最终截图资产", "todo", "App Store Connect assets", "仍需从真实 App UI 渲染最终截图/App Preview、选择 poster frame、复核本地化、上传 App Store Connect，并完成 legal/release review。"],
     ["隐私问卷", state.privacyQuestionnaireAt ? "poc" : "todo", "App Privacy Details", "用户内容、照片/视频、账号、购买、诊断、AI 处理和可选同步需要逐项映射；当前 demo 不上传真实数据。"],
@@ -1772,6 +1947,12 @@ function qaChecks(mediaCount = mediaMoments().length, claimedCount = state.weekl
       status: "pass",
       route: "此刻",
       evidence: `今日差异雷达提供 ${dailyDifferenceCandidates().length} 个可操作候选；90 天可讲述进度显示 ${ninetyDayTellableProgress().tellable.length}/5 个北极星瞬间，并导向周认领、回忆仪式和媒体锚点。`
+    },
+    {
+      area: "首周复访闭环",
+      status: "pass",
+      route: "此刻 → 昨日回声 / 本周故事 → 周末补全",
+      evidence: `昨日回声可追加“现在再看”并形成时间层叠；本周工作台显示 ${weeklyStoryProgress().readyCount}/${weeklyStoryProgress().target} 个可成章瞬间，一次只补影像、人物或为什么。`
     },
     {
       area: "首次体验",
@@ -2315,13 +2496,23 @@ function bindEvents() {
   $("[data-wipe-vault]")?.addEventListener("click", wipeLocalVault);
   $("[data-device-only]")?.addEventListener("click", () => setState({ deviceOnlyMode: !state.deviceOnlyMode, toast: state.deviceOnlyMode ? "已切换为可同步演示模式。" : "已切回仅设备优先模式。" }));
   $("[data-ai-mode]")?.addEventListener("click", () => setState({ aiMode: state.aiMode === "rules" ? "deepseek" : "rules" }));
-  $("[data-quiet]")?.addEventListener("click", () => setState({ quietMode: !state.quietMode }));
+  $("[data-quiet]")?.addEventListener("click", () => {
+    const quietMode = !state.quietMode;
+    setState({
+      quietMode,
+      toast: quietMode ? "已进入安静期：不推回访、进度和主动提示，记录入口仍然可用。" : "安静期已结束，温和回访与本周进度重新出现。"
+    });
+  });
   $$("[data-scale]").forEach(btn => btn.addEventListener("click", () => setState({ meadowScale: btn.dataset.scale })));
   $$("[data-media-filter]").forEach(btn => btn.addEventListener("click", () => setState({ mediaFilter: btn.dataset.mediaFilter })));
   $$("[data-media-layout]").forEach(btn => btn.addEventListener("click", () => setState({ mediaLayout: btn.dataset.mediaLayout })));
   $$("[data-attach-media-link]").forEach(btn => btn.addEventListener("click", () => attachMediaLinkToMoment(btn.dataset.attachMediaLink)));
   $$("[data-home-guide]").forEach(btn => btn.addEventListener("click", () => setState({ homeGuide: btn.dataset.homeGuide })));
   $$("[data-radar-mark]").forEach(btn => btn.addEventListener("click", () => markDailyDifference(btn.dataset.radarMark)));
+  $("[data-save-echo]")?.addEventListener("click", saveYesterdayEcho);
+  $("[data-dismiss-echo]")?.addEventListener("click", dismissYesterdayEcho);
+  $$("[data-weekend-focus]").forEach(btn => btn.addEventListener("click", () => focusWeekendGap(btn.dataset.weekendFocus, btn.dataset.weekendField)));
+  $("[data-save-weekend-gap]")?.addEventListener("click", saveWeekendGap);
   $$("[data-claim]").forEach(btn => btn.addEventListener("click", () => toggleClaim(btn.dataset.claim)));
   $$("[data-share-mode]").forEach(btn => btn.addEventListener("click", () => setState({ shareMode: btn.dataset.shareMode })));
   $("[data-age]")?.addEventListener("input", (e) => setState({ age: Number(e.target.value || 36) }));
@@ -2338,6 +2529,11 @@ function bindEvents() {
   const input = $("[data-draft]");
   input?.addEventListener("input", e => {
     state.draft = e.target.value;
+    saveState();
+  });
+  const echoInput = $("[data-echo-draft]");
+  echoInput?.addEventListener("input", e => {
+    state.echoDraft = e.target.value;
     saveState();
   });
   $$("[data-media-file]").forEach(input => input.addEventListener("change", handleMediaFile));
@@ -2469,12 +2665,13 @@ function onboardingTemplate() {
 function nowView() {
   const radar = dailyDifferenceCandidates();
   const progress = ninetyDayTellableProgress();
+  const weekly = weeklyStoryProgress();
   const activeGuide = state.homeGuide || "";
   const selectedRadar = radar.find(item => item.id === activeGuide);
   return `
     <div class="topline">
       <div><div class="brand">此刻</div><div class="micro">今天不像昨天的地方，会在这里变成一张切片。</div></div>
-      <div class="date-pill">7月5日 · 周日</div>
+      <div class="date-pill">${todayDisplayLabel()}</div>
     </div>
     <section class="hero-card">
       <div class="eyebrow">Difference Radar</div>
@@ -2488,7 +2685,8 @@ function nowView() {
         <button class="secondary" data-view="slice">写一句</button>
       </div>
     </section>
-    <section class="home-radar-panel" aria-label="今日差异雷达">
+    ${state.quietMode ? quietModeBanner() : `${yesterdayEchoCard()}${weeklyProgressCard(weekly)}`}
+    ${state.quietMode ? "" : `<section class="home-radar-panel" aria-label="今日差异雷达">
       <div class="mini-section-head">
         <span>今日差异雷达</span>
         <em>点一个就好</em>
@@ -2497,8 +2695,8 @@ function nowView() {
         ${radar.map(candidate => radarChoice(candidate, activeGuide === candidate.id)).join("")}
       </div>
       ${selectedRadar ? radarGuidePanel(selectedRadar) : `<p class="home-hint">不用判断重不重要。TSD 先帮你把“可能值得留下”的入口摆出来。</p>`}
-    </section>
-    <section class="tellable-progress-card compact">
+    </section>`}
+    ${state.quietMode ? "" : `<section class="tellable-progress-card compact">
       <button class="progress-summary" data-home-guide="${activeGuide === "progress" ? "" : "progress"}">
         <span>90 天可讲述</span>
         <strong>${progress.tellable.length}/${progress.minimumTarget}</strong>
@@ -2506,7 +2704,7 @@ function nowView() {
       </button>
       <div class="meter tellable-meter"><i style="width:${progress.progress}%"></i></div>
       ${activeGuide === "progress" ? progressGuidePanel(progress) : ""}
-    </section>
+    </section>`}
     <section class="home-shortcuts" aria-label="其他入口">
       <button data-view="chapter"><strong>周章节</strong><span>认领 3 个</span></button>
       <button data-view="media"><strong>影像墙</strong><span>${mediaMoments().length} 个锚点</span></button>
@@ -2525,6 +2723,53 @@ function nowView() {
       ` : ""}
     </section>
   `;
+}
+
+function quietModeBanner() {
+  return `<section class="quiet-mode-banner">
+    <span>安静期</span>
+    <strong>今天只保留你主动打开的记录入口。</strong>
+    <p>回访、进度和主动提示暂时收起；过去没有欠债，想回来时随时继续。</p>
+    <button class="ghost small" data-quiet>结束安静期</button>
+  </section>`;
+}
+
+function yesterdayEchoCard() {
+  const echo = yesterdayEchoCandidate();
+  if (!echo || state.echoDismissedDate === localDateKey()) return "";
+  const { moment, revisits, revisitedToday } = echo;
+  const layerCount = revisits.length;
+  return `<section class="yesterday-echo-card ${revisitedToday ? "complete" : ""}" aria-label="昨日回声">
+    <div class="echo-mark">${moment.media ? (moment.media.kind === "video" ? "▶" : "▧") : "↶"}</div>
+    <div class="echo-copy">
+      <span>${revisitedToday ? "今天已经带回" : "昨日回声"}${layerCount ? ` · 第 ${layerCount + (revisitedToday ? 0 : 1)} 层` : ""}</span>
+      <strong>${escapeHtml(moment.title)}</strong>
+      <p>${escapeHtml(revisitedToday?.reflection || moment.text)}</p>
+      ${revisitedToday ? `<small>这一刻没有睡在档案里，它今天又厚了一层。</small>` : `<input data-echo-draft value="${escapeHtml(state.echoDraft)}" placeholder="现在再看，我想补一句……（可空）" maxlength="80" />`}
+    </div>
+    <div class="echo-actions">
+      ${revisitedToday
+        ? `<button class="secondary small" data-view="chapter">放进本周</button>`
+        : `<button class="primary small" data-save-echo>带回这一刻</button><button class="ghost small" data-dismiss-echo>今天先收起</button>`}
+    </div>
+  </section>`;
+}
+
+function weeklyProgressCard(progress) {
+  return `<section class="weekly-loop-card" aria-label="本周故事进度">
+    <button class="weekly-loop-summary" data-view="chapter">
+      <span><em>本周故事</em><strong>${progress.claimedCount}/${progress.target}</strong></span>
+      <div class="weekly-slots">
+        ${Array.from({ length: progress.target }, (_, index) => {
+          const entry = progress.entries[index];
+          const cls = !entry ? "" : entry.ready ? "ready" : "partial";
+          return `<i class="${cls}">${entry ? (entry.ready ? "✓" : "·") : "+"}</i>`;
+        }).join("")}
+      </div>
+      <p>${escapeHtml(progress.nextAction)}</p>
+      <small>${progress.readyCount}/${progress.target} 个已具备影像、人物与意义线索 · 去周末补全 ›</small>
+    </button>
+  </section>`;
 }
 
 function bentoCard(kind, label, title, copy, action, view) {
@@ -3182,11 +3427,13 @@ function mediaTimeline(items) {
 
 function chapterView() {
   const claimed = getClaimedMoments().slice(0, 3);
+  const weekly = weeklyStoryProgress();
   const title = state.chapterTitle || deriveChapterTitle(claimed);
   const story = state.chapterStory || buildChapterStory(claimed);
   const shareText = makeShareText();
   return `
     <div class="topline"><div><div class="brand">本周章节</div><div class="micro">先由你认领三个瞬间，TSD 再编译成可讲述故事。</div></div></div>
+    ${weekendWorkbench(weekly)}
     <section class="chapter-card">
       <div class="eyebrow">Claim 3 Moments</div>
       <h2 class="slice-title">先认领，再编译</h2>
@@ -3220,6 +3467,57 @@ function chapterView() {
       <div class="action-row"><button class="primary" data-view="ritual">开始季度回忆仪式</button><button class="secondary" data-scale="month" data-view="meadow">先看月度风景</button></div>
     </section>
   `;
+}
+
+function weekendWorkbench(progress) {
+  return `<section class="chapter-card weekend-workbench">
+    <div class="workbench-head">
+      <div>
+        <div class="eyebrow">Weekend Workbench</div>
+        <h2 class="slice-title">先占位，周末再补全</h2>
+      </div>
+      <strong>${progress.percent}%</strong>
+    </div>
+    <p class="hero-subtitle">一次只补一个最有价值的缺口。没有红字、没有欠债，Quick Mark 本身就是合法完成态。</p>
+    <div class="workbench-meter"><i style="width:${progress.percent}%"></i></div>
+    <div class="workbench-list">
+      ${progress.entries.map(weekendWorkbenchItem).join("")}
+      ${progress.entries.length < 3 ? `<button class="workbench-empty" data-view="slice">＋ 再留一个瞬间，让本周故事有骨架</button>` : ""}
+    </div>
+    <div class="workbench-footer">
+      <span>${progress.readyCount}/${progress.target} 个瞬间已经“能讲起来”</span>
+      <button class="secondary small" data-compile-chapter>直接编译也可以</button>
+    </div>
+  </section>`;
+}
+
+function weekendWorkbenchItem(entry) {
+  const { moment, missing, ready } = entry;
+  const nextField = missing[0] || "";
+  const focused = state.weekendFocusId === moment.id && state.weekendFocusField === nextField;
+  const status = ready ? "可成章" : `可补${weekendFieldLabel(nextField)}`;
+  const fieldValue = nextField === "people" ? momentPerson(moment) : String(moment.why || "");
+  return `<article class="workbench-item ${ready ? "ready" : ""}">
+    <div class="workbench-item-main">
+      <span class="workbench-status">${ready ? "✓" : "·"}</span>
+      <div>
+        <strong>${escapeHtml(moment.title)}</strong>
+        <small>${escapeHtml(status)} · ${moment.media ? "有影像" : "无影像"} · ${momentPerson(moment) || "人物待补"}</small>
+      </div>
+      ${ready ? `<span class="workbench-done">可成章</span>` : weekendGapAction(moment, nextField)}
+    </div>
+    ${focused ? `<div class="workbench-inline">
+      <input data-weekend-input value="${escapeHtml(fieldValue)}" placeholder="${nextField === "people" ? "和谁有关？例如：爸爸、朋友、当时的我" : "以后讲起它时，为什么还想记得？"}" maxlength="100" />
+      <button class="primary small" data-save-weekend-gap>保存这一句</button>
+    </div>` : ""}
+  </article>`;
+}
+
+function weekendGapAction(moment, field) {
+  if (field === "media") {
+    return `<label class="secondary small workbench-file">补影像<input data-media-file data-attach-moment="${escapeHtml(moment.id)}" type="file" accept="image/*,video/*" /></label>`;
+  }
+  return `<button class="secondary small" data-weekend-focus="${escapeHtml(moment.id)}" data-weekend-field="${escapeHtml(field)}">补${weekendFieldLabel(field)}</button>`;
 }
 
 function ritualView() {

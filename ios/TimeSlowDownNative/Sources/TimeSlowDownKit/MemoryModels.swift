@@ -38,6 +38,8 @@ public struct MemorySlice: Codable, Equatable, Identifiable, Sendable {
     public var tags: [String]
     public var capturedAt: Date
     public var media: MediaAnchor?
+    public var people: [String]?
+    public var meaning: String?
     public var sources: [String]
 
     public init(
@@ -47,6 +49,8 @@ public struct MemorySlice: Codable, Equatable, Identifiable, Sendable {
         tags: [String] = [],
         capturedAt: Date = Date(),
         media: MediaAnchor? = nil,
+        people: [String]? = nil,
+        meaning: String? = nil,
         sources: [String] = []
     ) {
         self.id = id
@@ -55,6 +59,8 @@ public struct MemorySlice: Codable, Equatable, Identifiable, Sendable {
         self.tags = tags
         self.capturedAt = capturedAt
         self.media = media
+        self.people = people
+        self.meaning = meaning
         self.sources = sources
     }
 
@@ -169,6 +175,127 @@ public struct NinetyDayTellableProgress: Codable, Equatable, Sendable {
         aspirationalTarget == 10 &&
         weeklyClaimMissing >= 0 &&
         !nextAction.localizedCaseInsensitiveContains("fail") &&
+        !nextAction.contains("失败")
+    }
+}
+
+public struct MemoryRevisit: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public var sliceID: UUID
+    public var revisitedAt: Date
+    public var reflection: String
+    public var source: String
+
+    public init(
+        id: UUID = UUID(),
+        sliceID: UUID,
+        revisitedAt: Date = Date(),
+        reflection: String = "",
+        source: String = "昨日回声"
+    ) {
+        self.id = id
+        self.sliceID = sliceID
+        self.revisitedAt = revisitedAt
+        self.reflection = reflection
+        self.source = source
+    }
+}
+
+public struct YesterdayEcho: Codable, Equatable, Sendable {
+    public var sliceID: UUID
+    public var title: String
+    public var body: String
+    public var media: MediaAnchor?
+    public var previousRevisitCount: Int
+    public var prompt: String
+
+    public init(
+        sliceID: UUID,
+        title: String,
+        body: String,
+        media: MediaAnchor?,
+        previousRevisitCount: Int,
+        prompt: String = "现在再看，我想补一句……"
+    ) {
+        self.sliceID = sliceID
+        self.title = title
+        self.body = body
+        self.media = media
+        self.previousRevisitCount = previousRevisitCount
+        self.prompt = prompt
+    }
+
+    public var isGentleReturnReady: Bool {
+        !title.isEmpty && !body.isEmpty && prompt.contains("现在再看")
+    }
+}
+
+public enum WeeklyStoryGapKind: String, Codable, CaseIterable, Equatable, Sendable {
+    case media
+    case people
+    case meaning
+
+    public var title: String {
+        switch self {
+        case .media: "一张影像"
+        case .people: "一个人物"
+        case .meaning: "一句为什么"
+        }
+    }
+}
+
+public struct WeeklyStoryCandidate: Codable, Equatable, Identifiable, Sendable {
+    public var id: UUID { sliceID }
+    public var sliceID: UUID
+    public var title: String
+    public var missing: [WeeklyStoryGapKind]
+
+    public init(sliceID: UUID, title: String, missing: [WeeklyStoryGapKind]) {
+        self.sliceID = sliceID
+        self.title = title
+        self.missing = missing
+    }
+
+    public var isReady: Bool { missing.isEmpty }
+}
+
+public struct WeeklyStoryProgress: Codable, Equatable, Sendable {
+    public var claimedCount: Int
+    public var target: Int
+    public var readyCount: Int
+    public var completeFieldCount: Int
+    public var totalFieldCount: Int
+    public var candidates: [WeeklyStoryCandidate]
+    public var nextAction: String
+
+    public init(
+        claimedCount: Int,
+        target: Int = 3,
+        readyCount: Int,
+        completeFieldCount: Int,
+        totalFieldCount: Int,
+        candidates: [WeeklyStoryCandidate],
+        nextAction: String
+    ) {
+        self.claimedCount = claimedCount
+        self.target = target
+        self.readyCount = readyCount
+        self.completeFieldCount = completeFieldCount
+        self.totalFieldCount = totalFieldCount
+        self.candidates = candidates
+        self.nextAction = nextAction
+    }
+
+    public var percent: Int {
+        guard totalFieldCount > 0 else { return 0 }
+        return Int((Double(completeFieldCount) / Double(totalFieldCount)) * 100)
+    }
+
+    public var isNonPunitive: Bool {
+        target == 3 &&
+        readyCount <= candidates.count &&
+        !nextAction.contains("欠") &&
+        !nextAction.contains("断签") &&
         !nextAction.contains("失败")
     }
 }
@@ -309,6 +436,103 @@ public enum SliceFactory {
         )
     }
 
+    public static func yesterdayEcho(
+        from slices: [MemorySlice],
+        revisits: [MemoryRevisit] = [],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> YesterdayEcho? {
+        let startOfToday = calendar.startOfDay(for: now)
+        guard let slice = slices
+            .filter({ $0.capturedAt < startOfToday })
+            .sorted(by: { $0.capturedAt > $1.capturedAt })
+            .first else { return nil }
+        return YesterdayEcho(
+            sliceID: slice.id,
+            title: slice.title,
+            body: slice.body,
+            media: slice.media,
+            previousRevisitCount: revisits.filter { $0.sliceID == slice.id }.count
+        )
+    }
+
+    public static func revisit(
+        _ echo: YesterdayEcho,
+        reflection: String = "",
+        now: Date = Date()
+    ) -> MemoryRevisit {
+        MemoryRevisit(
+            sliceID: echo.sliceID,
+            revisitedAt: now,
+            reflection: reflection,
+            source: "昨日回声"
+        )
+    }
+
+    public static func weeklyStoryProgress(
+        from slices: [MemorySlice],
+        claimedSliceIDs: [UUID]
+    ) -> WeeklyStoryProgress {
+        var selected = claimedSliceIDs.compactMap { id in slices.first(where: { $0.id == id }) }
+        for slice in slices where selected.count < 3 && !selected.contains(where: { $0.id == slice.id }) {
+            selected.append(slice)
+        }
+        selected = Array(selected.prefix(3))
+        let candidates = selected.map { slice -> WeeklyStoryCandidate in
+            var missing: [WeeklyStoryGapKind] = []
+            if !slice.hasMediaAnchor { missing.append(.media) }
+            if !hasPersonSignal(slice) { missing.append(.people) }
+            if !hasMeaningSignal(slice) { missing.append(.meaning) }
+            return WeeklyStoryCandidate(sliceID: slice.id, title: slice.title, missing: missing)
+        }
+        let claimedCount = claimedSliceIDs.filter { id in slices.contains(where: { $0.id == id }) }.count
+        let readyCount = candidates.filter(\.isReady).count
+        let totalFields = candidates.count * WeeklyStoryGapKind.allCases.count
+        let missingFields = candidates.reduce(0) { $0 + $1.missing.count }
+        let nextCandidate = candidates.first(where: { !$0.missing.isEmpty })
+        let nextAction: String
+        if claimedCount < 3 {
+            nextAction = "再认领 \(3 - claimedCount) 个瞬间，这一周就有故事骨架。"
+        } else if let nextCandidate, let gap = nextCandidate.missing.first {
+            nextAction = "\(nextCandidate.title)还可以补\(gap.title)。"
+        } else {
+            nextAction = "三个瞬间都已有影像、人物与意义线索，可以编译本周章节。"
+        }
+        return WeeklyStoryProgress(
+            claimedCount: claimedCount,
+            readyCount: readyCount,
+            completeFieldCount: max(0, totalFields - missingFields),
+            totalFieldCount: totalFields,
+            candidates: candidates,
+            nextAction: nextAction
+        )
+    }
+
+    public static func completeWeekendGap(
+        _ kind: WeeklyStoryGapKind,
+        value: String,
+        in slice: MemorySlice
+    ) -> MemorySlice {
+        var next = slice
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch kind {
+        case .media:
+            break
+        case .people:
+            if !trimmed.isEmpty {
+                next.people = [trimmed]
+                if !next.tags.contains("人") { next.tags.append("人") }
+                if !next.sources.contains("周末补全：人物") { next.sources.append("周末补全：人物") }
+            }
+        case .meaning:
+            if !trimmed.isEmpty {
+                next.meaning = trimmed
+                if !next.sources.contains("周末补全：为什么重要") { next.sources.append("周末补全：为什么重要") }
+            }
+        }
+        return next
+    }
+
     private static func defaultBody(for title: String, media: MediaAnchor?) -> String {
         if let media {
             let medium = media.kind == .video ? "这段视频" : "这张照片"
@@ -320,6 +544,20 @@ public enum SliceFactory {
     private static func matches(_ slice: MemorySlice, tokens: [String]) -> Bool {
         let haystack = ([slice.title, slice.body] + slice.tags + slice.sources).joined(separator: " ")
         return tokens.contains { haystack.contains($0) }
+    }
+
+    private static func hasPersonSignal(_ slice: MemorySlice) -> Bool {
+        if let people = slice.people, people.contains(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+            return true
+        }
+        return matches(slice, tokens: ["我", "自己", "爸爸", "妈妈", "家人", "孩子", "朋友", "同事", "同学", "第一次", "工作"])
+    }
+
+    private static func hasMeaningSignal(_ slice: MemorySlice) -> Bool {
+        if let meaning = slice.meaning, !meaning.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+        return matches(slice, tokens: ["想记", "值得", "发现", "第一次", "还是跑完", "算人生", "不想说话", "记一下"])
     }
 
     private static func tellableScore(_ slice: MemorySlice) -> Int {

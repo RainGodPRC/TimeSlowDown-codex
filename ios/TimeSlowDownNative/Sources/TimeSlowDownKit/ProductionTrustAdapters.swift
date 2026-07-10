@@ -1687,6 +1687,7 @@ public enum ExportArchiveEntryKind: String, Codable, Equatable, Sendable {
     case manifest
     case slices
     case chapters
+    case revisits
     case mediaIndex
     case deletionRights
 }
@@ -1745,6 +1746,7 @@ public struct ExportArchivePlan: Codable, Equatable, Identifiable, Sendable {
             .init(id: "manifest", kind: .manifest, path: "manifest.json"),
             .init(id: "slices", kind: .slices, path: "memories/slices.json"),
             .init(id: "chapters", kind: .chapters, path: "memories/chapters.json"),
+            .init(id: "revisits", kind: .revisits, path: "memories/revisits.json"),
             .init(id: "media-index", kind: .mediaIndex, path: "media/index.json"),
             .init(id: "deletion-rights", kind: .deletionRights, path: "rights/deletion-receipt-template.json")
         ]
@@ -2990,6 +2992,7 @@ public enum OnDeviceExportZIPBuilder {
         for plan: ExportArchivePlan,
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
+        revisits: [MemoryRevisit] = [],
         deletionReceipt: DeletionReceipt
     ) throws -> ExportZIPPackage {
         try validate(plan)
@@ -2998,6 +3001,7 @@ public enum OnDeviceExportZIPBuilder {
             plan: plan,
             slices: slices,
             chapters: chapters,
+            revisits: revisits,
             deletionReceipt: deletionReceipt
         )
         let zipData = try buildZIP(files: files)
@@ -3038,6 +3042,7 @@ public enum OnDeviceExportZIPBuilder {
         plan: ExportArchivePlan,
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
+        revisits: [MemoryRevisit],
         deletionReceipt: DeletionReceipt
     ) throws -> [ExportFile] {
         let encoder = JSONEncoder()
@@ -3077,6 +3082,7 @@ public enum OnDeviceExportZIPBuilder {
             ExportFile(path: "manifest.json", data: encode(plan.manifest, label: "manifest")),
             ExportFile(path: "memories/slices.json", data: encode(slices, label: "slices")),
             ExportFile(path: "memories/chapters.json", data: encode(chapters, label: "chapters")),
+            ExportFile(path: "memories/revisits.json", data: encode(revisits, label: "revisits")),
             ExportFile(path: "media/index.json", data: encode(mediaIndex, label: "media-index")),
             ExportFile(path: "rights/deletion-receipt-template.json", data: encode(deletionRights, label: "deletion-rights"))
         ].sorted { $0.path < $1.path }

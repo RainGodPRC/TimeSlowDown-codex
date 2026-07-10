@@ -203,7 +203,7 @@ check(ninetyDayProgress.weeklyClaimMissing == 0, "90-day tellable progress shoul
 check(ninetyDayProgress.isTSDNorthStarAligned, "90-day tellable progress should avoid shame/failure language")
 
 check(NativeHandoffLedger.rows.count == 8, "Native Handoff Ledger should keep the v32 eight-row contract")
-check(SubmissionPacket.rows.count == 13, "Submission Packet should keep the thirteen-row contract after v72 P0 daily loop")
+check(SubmissionPacket.rows.count == 13, "Submission Packet should keep the thirteen-row contract after v73 first-week return loop")
 check(NativeHandoffLedger.rows.map(\.id).contains("photos-picker"), "Native Handoff should include PhotosPicker")
 check(NativeHandoffLedger.rows.map(\.id).contains("keychain-e2ee"), "Native Handoff should include Keychain/E2EE")
 check(SubmissionPacket.rows.map(\.id).contains("privacy-questionnaire"), "Submission Packet should include privacy questionnaire")
@@ -239,6 +239,58 @@ check(firstSnapshot.lastExportEntryCount == 0, "Native shell should start with n
 check(firstSnapshot.dailyDifferenceCandidateCount == 3, "Native shell snapshot should expose three Daily Difference Radar candidates")
 check(firstSnapshot.ninetyDayTellableCount >= 3, "Native shell snapshot should expose 90-day tellable progress")
 check(firstSnapshot.ninetyDayMinimumTarget == 5, "Native shell snapshot should expose the 90-day minimum tellable target")
+check(firstSnapshot.yesterdayEchoAvailable, "Native shell snapshot should expose a yesterday echo when an older slice exists")
+check(firstSnapshot.weeklyStoryClaimedCount == 3, "Native shell snapshot should expose three claimed weekly story slots")
+check(firstSnapshot.weeklyStoryReadyCount >= 1, "Native shell snapshot should expose at least one story-ready seeded slice")
+check(firstSnapshot.revisitCount == 0, "Native shell should start without fabricated revisits")
+
+let seededIDs = Array(shell.slices.prefix(3)).map(\.id)
+let weeklyProgress = SliceFactory.weeklyStoryProgress(from: shell.slices, claimedSliceIDs: seededIDs)
+check(weeklyProgress.claimedCount == 3, "Weekly story progress should preserve three user-claimed slices")
+check(weeklyProgress.candidates.count == 3, "Weekend workbench should expose three candidate slots")
+check(weeklyProgress.isNonPunitive, "Weekend workbench copy should avoid debt, streak, and failure language")
+check(weeklyProgress.percent > 0 && weeklyProgress.percent <= 100, "Weekly story progress should expose bounded field completeness")
+
+var productInteractionShell = NativeShellStore.seeded()
+check(productInteractionShell.captureQuickMark(title: "   ") == nil, "Quick Mark should reject an empty title")
+let nativeQuickMark = productInteractionShell.captureQuickMark(title: "雨停后的十分钟", body: "路面有一点亮。")
+check(nativeQuickMark?.tags.contains("快速记录") == true, "Quick Mark should preserve its lightweight source identity")
+check(productInteractionShell.selectedRoute == .now, "Quick Mark should keep the user in the Today loop")
+
+let productClaimedIDs = Array(productInteractionShell.slices.dropFirst().prefix(3)).map(\.id)
+let productProgress = SliceFactory.weeklyStoryProgress(from: productInteractionShell.slices, claimedSliceIDs: productClaimedIDs)
+if let mediaCandidate = productProgress.candidates.first(where: { $0.missing.contains(.media) }) {
+    let mediaCompleted = productInteractionShell.completeWeekendGap(
+        sliceID: mediaCandidate.sliceID,
+        kind: .media,
+        media: MediaAnchor(kind: .image, label: "weekend-memory.jpg")
+    )
+    check(mediaCompleted, "Weekend Workbench should attach a selected media anchor")
+    check(productInteractionShell.slices.first(where: { $0.id == mediaCandidate.sliceID })?.sources.contains("周末补全：影像") == true, "Weekend media completion should preserve source lineage")
+} else {
+    check(false, "Seeded product interaction should expose a media gap")
+}
+
+var peopleGapShell = NativeShellStore(slices: [SliceFactory.quickMark(title: "远处的雨", body: "路灯下有一小片水光。")])
+let peopleSliceID = peopleGapShell.slices[0].id
+check(peopleGapShell.completeWeekendGap(sliceID: peopleSliceID, kind: .people, value: "老朋友"), "Weekend Workbench should save a person clue")
+check(peopleGapShell.slices[0].people == ["老朋友"], "Weekend person completion should update the memory slice")
+check(peopleGapShell.completeWeekendGap(sliceID: peopleSliceID, kind: .meaning, value: "那天终于把误会说开了。"), "Weekend Workbench should save a meaning clue")
+check(peopleGapShell.slices[0].meaning == "那天终于把误会说开了。", "Weekend meaning completion should update the memory slice")
+
+let yesterdayEcho = SliceFactory.yesterdayEcho(from: shell.slices)
+check(yesterdayEcho?.isGentleReturnReady == true, "Yesterday echo should be a gentle, source-backed return prompt")
+let nativeRevisit = shell.revisitYesterdayEcho(reflection: "现在再看，还是记得那碗面的热气。")
+check(nativeRevisit?.source == "昨日回声", "Yesterday echo revisit should keep its source")
+check(nativeRevisit?.reflection.contains("现在再看") == true, "Yesterday echo should preserve the user's current reflection")
+check(shell.snapshot.revisitCount == 1, "Native shell snapshot should expose the new revisit layer")
+
+let encodedShell = try JSONEncoder().encode(NativeShellStore())
+var legacyShellObject = try JSONSerialization.jsonObject(with: encodedShell) as! [String: Any]
+legacyShellObject.removeValue(forKey: "revisits")
+let legacyShellData = try JSONSerialization.data(withJSONObject: legacyShellObject)
+let migratedShell = try JSONDecoder().decode(NativeShellStore.self, from: legacyShellData)
+check(migratedShell.revisits.isEmpty, "Native shell migration should default legacy stores to an empty revisit list")
 
 let captured = shell.captureFromMemoryCamera(
     MediaAnchor(kind: .image, label: "native-memory-camera.jpg", note: "SwiftUI Memory Camera")
@@ -254,22 +306,22 @@ check(shell.selectedRoute == .account, "Exporting memory vault should keep users
 check(shellExport.hasZIPMagic, "Native shell export should generate a real ZIP package")
 check(shellExport.isMemorySafeDefault, "Native shell export should preserve TSD memory rights")
 check(shell.latestExportSummary?.fileName == shellExport.fileName, "Native shell should retain the latest export file name")
-check(shell.latestExportSummary?.entryCount == 5, "Native shell export summary should expose the five default documents")
+check(shell.latestExportSummary?.entryCount == 6, "Native shell export summary should expose the six default documents including revisits")
 check(shell.latestExportSummary?.isTSDMemoryRightsSafe == true, "Native shell export summary should be memory-rights safe")
 check(shell.snapshot.hasExportPackage, "Native shell snapshot should show that an export package exists after export")
-check(shell.snapshot.lastExportEntryCount == 5, "Native shell snapshot should expose latest export entry count")
+check(shell.snapshot.lastExportEntryCount == 6, "Native shell snapshot should expose latest export entry count")
 check(shell.latestExportError == nil, "Native shell should clear export errors after a successful export")
 #if canImport(SwiftUI)
 let shellDocument = TSDExportZIPDocument(package: shellExport)
 check(shellDocument.fileName == shellExport.fileName, "System exporter document should preserve export file name")
 check(shellDocument.byteCount == shellExport.data.count, "System exporter document should preserve ZIP bytes")
-check(shellDocument.entryCount == 5, "System exporter document should expose the five default documents")
+check(shellDocument.entryCount == 6, "System exporter document should expose the six default documents")
 check(shellDocument.isMemoryRightsSafe, "System exporter document should preserve memory-rights boundary")
 check(shellDocument.isReadyForSystemExporter, "System exporter document should be ready for SwiftUI fileExporter")
 check(TSDExportZIPDocument.exportedFilenameExtension == "zip", "System exporter document should use zip extension")
 #endif
 
-let requiredRoutes = ["此刻", "切片", "旷野", "上架", "我的"]
+let requiredRoutes = ["此刻", "切片", "旷野", "印记", "我的"]
 check(NativeShellRoute.allCases.map(\.title) == requiredRoutes, "Native shell route titles should match the App Store shell")
 
 let packageRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -293,13 +345,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
+check(projectText.contains("CURRENT_PROJECT_VERSION = 74;"), "Xcode project build settings should carry v74 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>72</string>"), "Info.plist should carry v72 build number")
+check(infoPlistText.contains("<string>74</string>"), "Info.plist should carry v74 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -1019,6 +1072,7 @@ check(archivePlan.fileName.hasSuffix(".zip"), "Export archive should use a zip f
 check(archivePlan.generatedOnDevice, "Export archive should be generated on device by default")
 check(archivePlan.canBeGeneratedAfterSubscriptionEnds, "Export archive should remain available after subscription ends")
 check(archivePlan.entries.map(\.kind).contains(.manifest), "Export archive should include manifest")
+check(archivePlan.entries.map(\.kind).contains(.revisits), "Export archive should include revisit layers")
 check(archivePlan.entries.map(\.kind).contains(.mediaIndex), "Export archive should include media index")
 check(archivePlan.entries.map(\.kind).contains(.deletionRights), "Export archive should include deletion rights")
 check(archivePlan.entries.allSatisfy { !$0.containsRawMedia }, "Export archive plan should not include raw media by default")
@@ -1034,6 +1088,7 @@ check(zipPackage.hasZIPMagic, "Export ZIP package should start with local file h
 check(zipPackage.hasEndOfCentralDirectory, "Export ZIP package should include end-of-central-directory record")
 check(zipPackage.centralDirectoryRecordCount == archivePlan.entries.count, "Export ZIP package should include one central-directory record per export entry")
 check(zipPackage.entries.map(\.path).contains("manifest.json"), "Export ZIP package should include manifest.json")
+check(zipPackage.entries.map(\.path).contains("memories/revisits.json"), "Export ZIP package should include revisit layers")
 check(zipPackage.entries.map(\.path).contains("media/index.json"), "Export ZIP package should include media index")
 check(zipPackage.entries.map(\.path).contains("rights/deletion-receipt-template.json"), "Export ZIP package should include deletion rights")
 check(zipPackage.entries.allSatisfy { $0.uncompressedSize > 0 }, "Export ZIP entries should contain encoded JSON documents")
@@ -1532,7 +1587,12 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "72", "TestFlight build notes should match v72")
+check(buildNotes.buildNumber == "74", "TestFlight build notes should match v74")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Memory Camera home"), "TestFlight build notes should mention the native product home")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Life Marks"), "TestFlight build notes should mention the private achievement gallery")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Yesterday Echo"), "TestFlight build notes should mention Yesterday Echo")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Weekend Workbench"), "TestFlight build notes should mention the weekend workbench")
+check(buildNotes.summary.localizedCaseInsensitiveContains("revisit export"), "TestFlight build notes should mention revisit export")
 check(buildNotes.summary.localizedCaseInsensitiveContains("media"), "TestFlight build notes should mention media capture")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Photos-library"), "TestFlight build notes should mention Photos-library byte import")
 check(buildNotes.summary.localizedCaseInsensitiveContains("E2EE media vault"), "TestFlight build notes should mention E2EE media vault adapter")
@@ -1965,8 +2025,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "72", "App Store submission gate should track v72")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v72 P0 daily loop")
+check(appStoreSubmissionGate.buildNumber == "74", "App Store submission gate should track v74")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v74 native product home")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2242,4 +2302,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, and v72 P0 daily loop are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, and v74 native product home are aligned.")

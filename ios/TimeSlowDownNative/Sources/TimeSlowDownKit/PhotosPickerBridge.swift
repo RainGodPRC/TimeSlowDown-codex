@@ -570,10 +570,20 @@ public struct MemoryCameraPicker: View {
             matching: .any(of: [.images, .videos]),
             photoLibrary: .shared()
         ) {
-            Label("添加照片/视频", systemImage: "camera.fill")
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 10) {
+                Image(systemName: "camera.fill")
+                Text("照片或视频")
+                    .fontWeight(.semibold)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundStyle(Color(red: 0.12, green: 0.18, blue: 0.14))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 16)
+            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.plain)
         .onChange(of: selectedItem) { _, newItem in
             guard let newItem else { return }
             onPicked(MediaAnchor(
@@ -639,10 +649,20 @@ public struct MemoryCameraPicker: View {
                 source: "PhotosPicker fallback"
             ))
         } label: {
-            Label("添加照片/视频", systemImage: "camera.fill")
-                .frame(maxWidth: .infinity)
+            HStack(spacing: 10) {
+                Image(systemName: "camera.fill")
+                Text("照片或视频")
+                    .fontWeight(.semibold)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.up.right")
+                    .font(.caption.weight(.bold))
+            }
+            .foregroundStyle(Color(red: 0.12, green: 0.18, blue: 0.14))
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .padding(.horizontal, 16)
+            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.plain)
     }
 }
 #endif

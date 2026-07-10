@@ -63,46 +63,545 @@ public struct TSDNativeShellView: View {
                 .tabItem { Label(NativeShellRoute.meadow.title, systemImage: "leaf") }
                 .tag(NativeShellRoute.meadow)
 
-            NativeLaunchView()
-                .tabItem { Label(NativeShellRoute.launch.title, systemImage: "checklist") }
+            NativeAchievementView(store: $store)
+                .tabItem { Label(NativeShellRoute.launch.title, systemImage: "seal") }
                 .tag(NativeShellRoute.launch)
 
             NativeAccountView(store: $store)
                 .tabItem { Label(NativeShellRoute.account.title, systemImage: "person.crop.circle") }
                 .tag(NativeShellRoute.account)
         }
+        .tint(TSDPalette.moss)
     }
 }
 
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeNowView: View {
     @Binding var store: NativeShellStore
+    @State private var activeSheet: NativeNowSheet?
+
+    private var echo: YesterdayEcho? {
+        SliceFactory.yesterdayEcho(from: store.slices, revisits: store.revisits)
+    }
+
+    private var weeklyProgress: WeeklyStoryProgress {
+        SliceFactory.weeklyStoryProgress(
+            from: store.slices,
+            claimedSliceIDs: Array(store.slices.prefix(3)).map(\.id)
+        )
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("不是活一辈子，而是活几个瞬间。")
-                        .font(.largeTitle.weight(.bold))
-                    Text("先用照片或视频钉住现场，文字可以以后再补。")
-                        .foregroundStyle(.secondary)
+            ZStack {
+                TSDPalette.canvas.ignoresSafeArea()
 
-                    MemoryCameraPicker { anchor in
-                        _ = store.captureFromMemoryCamera(anchor)
-                    }
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        NativeNowHeader()
 
-                    Button("用示例照片先占位") {
-                        _ = store.captureFromMemoryCamera(
-                            MediaAnchor(kind: .image, label: "memory-camera-demo.jpg", note: "来自 Memory Camera 主入口")
+                        NativeMemoryCameraCard(
+                            onPicked: { anchor in
+                                _ = store.captureFromMemoryCamera(anchor)
+                            },
+                            onWrite: { activeSheet = .quickMark }
                         )
-                    }
-                    .buttonStyle(.borderedProminent)
 
-                    NativeMetricGrid(snapshot: store.snapshot)
+                        if let echo {
+                            NativeYesterdayEchoCard(
+                                echo: echo,
+                                latestRevisit: store.revisits
+                                    .filter { $0.sliceID == echo.sliceID }
+                                    .sorted { $0.revisitedAt > $1.revisitedAt }
+                                    .first,
+                                onRevisit: { activeSheet = .revisit }
+                            )
+                        }
+
+                        NativeWeeklyStoryCard(
+                            progress: weeklyProgress,
+                            onOpen: { activeSheet = .weekend }
+                        )
+
+                        HStack(spacing: 8) {
+                            Image(systemName: "lock.shield")
+                            Text("原始影像留在你的照片图库；TSD 只保存记忆线索。")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(TSDPalette.inkSoft)
+                        .padding(.horizontal, 4)
+                    }
+                    .padding(.horizontal, 18)
+                    .padding(.top, 10)
+                    .padding(.bottom, 28)
                 }
-                .padding()
+                .scrollIndicators(.hidden)
             }
-            .navigationTitle("TimeSlowDown")
+            .navigationTitle("")
+            .tsdHideNavigationChrome()
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .quickMark:
+                    NativeQuickMarkComposer(store: $store)
+                case .revisit:
+                    if let echo {
+                        NativeRevisitComposer(store: $store, echo: echo)
+                    }
+                case .weekend:
+                    NativeWeekendWorkbench(store: $store)
+                }
+            }
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func tsdHideNavigationChrome() -> some View {
+#if os(iOS)
+        self.toolbar(.hidden, for: .navigationBar)
+#else
+        self
+#endif
+    }
+}
+
+private enum NativeNowSheet: String, Identifiable {
+    case quickMark
+    case revisit
+    case weekend
+
+    var id: String { rawValue }
+}
+
+private enum TSDPalette {
+    static let canvas = Color(red: 0.96, green: 0.95, blue: 0.91)
+    static let paper = Color(red: 1.00, green: 0.99, blue: 0.96)
+    static let moss = Color(red: 0.19, green: 0.36, blue: 0.25)
+    static let mossDeep = Color(red: 0.11, green: 0.25, blue: 0.17)
+    static let sage = Color(red: 0.72, green: 0.79, blue: 0.66)
+    static let amber = Color(red: 0.82, green: 0.57, blue: 0.27)
+    static let rose = Color(red: 0.72, green: 0.39, blue: 0.36)
+    static let ink = Color(red: 0.12, green: 0.15, blue: 0.12)
+    static let inkSoft = Color(red: 0.34, green: 0.38, blue: 0.33)
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeNowHeader: View {
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "M月d日 · EEEE"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(Self.formatter.string(from: Date()))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(TSDPalette.moss)
+                Text("把今天留在这里")
+                    .font(.title.bold())
+                    .foregroundStyle(TSDPalette.ink)
+            }
+            Spacer()
+            ZStack {
+                Circle().fill(TSDPalette.sage.opacity(0.38))
+                Image(systemName: "leaf.fill")
+                    .foregroundStyle(TSDPalette.moss)
+            }
+            .frame(width: 46, height: 46)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeMemoryCameraCard: View {
+    var onPicked: (MediaAnchor) -> Void
+    var onWrite: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            LinearGradient(
+                colors: [TSDPalette.mossDeep, TSDPalette.moss, Color(red: 0.35, green: 0.48, blue: 0.31)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+
+            Circle()
+                .fill(.white.opacity(0.08))
+                .frame(width: 170, height: 170)
+                .offset(x: 58, y: -72)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 14) {
+                Label("MEMORY CAMERA", systemImage: "viewfinder")
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.4)
+                    .foregroundStyle(.white.opacity(0.72))
+
+                Text("今天，哪一刻\n不想弄丢？")
+                    .font(.title2.bold())
+                    .foregroundStyle(.white)
+
+                Text("先留画面，文字可以以后再补。")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.78))
+
+                MemoryCameraPicker(onPicked: onPicked)
+
+                Button(action: onWrite) {
+                    Label("只写一句", systemImage: "square.and.pencil")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+        }
+        .shadow(color: TSDPalette.mossDeep.opacity(0.16), radius: 22, y: 10)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeYesterdayEchoCard: View {
+    var echo: YesterdayEcho
+    var latestRevisit: MemoryRevisit?
+    var onRevisit: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Label("昨日回声", systemImage: "clock.arrow.circlepath")
+                    .font(.headline)
+                    .foregroundStyle(TSDPalette.ink)
+                Spacer()
+                if echo.previousRevisitCount > 0 {
+                    Text("已回望 (echo.previousRevisitCount) 次")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(TSDPalette.moss)
+                }
+            }
+
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                        .fill(TSDPalette.sage.opacity(0.30))
+                    Image(systemName: echo.media == nil ? "text.quote" : (echo.media?.kind == .video ? "video.fill" : "photo.fill"))
+                        .foregroundStyle(TSDPalette.moss)
+                }
+                .frame(width: 58, height: 58)
+                .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(echo.title)
+                        .font(.headline)
+                        .foregroundStyle(TSDPalette.ink)
+                        .lineLimit(1)
+                    Text(echo.body)
+                        .font(.subheadline)
+                        .foregroundStyle(TSDPalette.inkSoft)
+                        .lineLimit(2)
+                }
+            }
+
+            if let latestRevisit, !latestRevisit.reflection.isEmpty {
+                Text("“\(latestRevisit.reflection)”")
+                    .font(.subheadline.italic())
+                    .foregroundStyle(TSDPalette.moss)
+                    .padding(.leading, 8)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(TSDPalette.amber).frame(width: 3)
+                    }
+            }
+
+            Button(action: onRevisit) {
+                HStack {
+                    Text("现在再看")
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(TSDPalette.moss)
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(TSDPalette.moss.opacity(0.08))
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeWeeklyStoryCard: View {
+    var progress: WeeklyStoryProgress
+    var onOpen: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("本周故事")
+                        .font(.headline)
+                        .foregroundStyle(TSDPalette.ink)
+                    Text(progress.readyCount == progress.target ? "已经可以讲起这一周" : "让三个瞬间慢慢长成故事")
+                        .font(.caption)
+                        .foregroundStyle(TSDPalette.inkSoft)
+                }
+                Spacer()
+                Text("\(progress.readyCount)/\(progress.target)")
+                    .font(.title3.bold())
+                    .foregroundStyle(TSDPalette.moss)
+                    .accessibilityLabel("三个瞬间中已有 \(progress.readyCount) 个可以讲述")
+            }
+
+            ProgressView(value: Double(progress.completeFieldCount), total: Double(max(1, progress.totalFieldCount)))
+                .tint(TSDPalette.moss)
+
+            HStack(spacing: 8) {
+                ForEach(progress.candidates) { candidate in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Image(systemName: candidate.isReady ? "checkmark.circle.fill" : "circle.dotted")
+                            .foregroundStyle(candidate.isReady ? TSDPalette.moss : TSDPalette.amber)
+                        Text(candidate.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(TSDPalette.ink)
+                            .lineLimit(2)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 78, alignment: .topLeading)
+                    .padding(10)
+                    .background(TSDPalette.canvas.opacity(0.74), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                }
+            }
+
+            Button(action: onOpen) {
+                HStack {
+                    Text(progress.readyCount == progress.target ? "查看本周章节" : "周末补一小步")
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                }
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(TSDPalette.moss)
+                .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeQuickMarkComposer: View {
+    @Binding var store: NativeShellStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var title = ""
+    @State private var note = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("先占住这个瞬间") {
+                    TextField("发生了什么？", text: $title)
+                    TextField("想多留一句也可以（可选）", text: $note, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+                Section {
+                    Text("不必完整。周末再补照片、人物或为什么值得记。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("快速记一下")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("留下") {
+                        if store.captureQuickMark(title: title, body: note) != nil { dismiss() }
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeRevisitComposer: View {
+    @Binding var store: NativeShellStore
+    var echo: YesterdayEcho
+    @Environment(\.dismiss) private var dismiss
+    @State private var reflection = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                Text(echo.title)
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                Text(echo.body)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                TextField(echo.prompt, text: $reflection, axis: .vertical)
+                    .lineLimit(3...7)
+                    .padding(14)
+                    .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                Text("新的感受会叠在原记忆上，不会改写当时的你。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(20)
+            .background(TSDPalette.canvas.ignoresSafeArea())
+            .navigationTitle("现在再看")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("叠进记忆") {
+                        if store.revisitYesterdayEcho(reflection: reflection) != nil { dismiss() }
+                    }
+                    .disabled(reflection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeWeekendWorkbench: View {
+    @Binding var store: NativeShellStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var value = ""
+
+    private var progress: WeeklyStoryProgress {
+        SliceFactory.weeklyStoryProgress(
+            from: store.slices,
+            claimedSliceIDs: Array(store.slices.prefix(3)).map(\.id)
+        )
+    }
+
+    private var nextGap: (WeeklyStoryCandidate, WeeklyStoryGapKind)? {
+        guard let candidate = progress.candidates.first(where: { !$0.missing.isEmpty }),
+              let gap = candidate.missing.first else { return nil }
+        return (candidate, gap)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(progress.readyCount)/\(progress.target) 个瞬间可以讲起")
+                            .font(.headline)
+                        Text("一次只补一个线索，不补也不会失去什么。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Text("\(progress.percent)%")
+                        .font(.title2.bold())
+                        .foregroundStyle(TSDPalette.moss)
+                }
+
+                ProgressView(value: Double(progress.completeFieldCount), total: Double(max(1, progress.totalFieldCount)))
+                    .tint(TSDPalette.moss)
+
+                if let (candidate, gap) = nextGap {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(candidate.title)
+                            .font(.title3.bold())
+                            .foregroundStyle(TSDPalette.ink)
+                        Label("补\(gap.title)", systemImage: icon(for: gap))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(TSDPalette.moss)
+
+                        if gap == .media {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(TSDPalette.moss)
+                                MemoryCameraPicker { anchor in
+                                    _ = store.completeWeekendGap(
+                                        sliceID: candidate.sliceID,
+                                        kind: .media,
+                                        media: anchor
+                                    )
+                                }
+                                .padding(12)
+                            }
+                        } else {
+                            TextField(prompt(for: gap), text: $value, axis: .vertical)
+                                .lineLimit(2...5)
+                                .padding(14)
+                                .background(TSDPalette.canvas, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+
+                            Button("补进这个瞬间") {
+                                if store.completeWeekendGap(sliceID: candidate.sliceID, kind: gap, value: value) {
+                                    value = ""
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(TSDPalette.moss)
+                            .disabled(value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(18)
+                    .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Image(systemName: "sparkles")
+                            .font(.title)
+                            .foregroundStyle(TSDPalette.amber)
+                        Text("这一周已经长出故事了")
+                            .font(.title2.bold())
+                        Text("影像、人物和意义都在。现在可以慢慢读回这一周。")
+                            .foregroundStyle(.secondary)
+                        Button("完成") { dismiss() }
+                            .buttonStyle(.borderedProminent)
+                            .tint(TSDPalette.moss)
+                    }
+                }
+                Spacer()
+            }
+            .padding(20)
+            .background(TSDPalette.canvas.ignoresSafeArea())
+            .navigationTitle("周末补全")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func icon(for gap: WeeklyStoryGapKind) -> String {
+        switch gap {
+        case .media: "photo"
+        case .people: "person.2"
+        case .meaning: "quote.bubble"
+        }
+    }
+
+    private func prompt(for gap: WeeklyStoryGapKind) -> String {
+        switch gap {
+        case .media: ""
+        case .people: "当时和谁在一起？"
+        case .meaning: "为什么还想记得它？"
         }
     }
 }
@@ -150,23 +649,133 @@ private struct NativeMeadowView: View {
 }
 
 @available(iOS 17.0, macOS 14.0, *)
-private struct NativeLaunchView: View {
+private struct NativeAchievementView: View {
+    @Binding var store: NativeShellStore
+
+    private var unlocked: [NativeAchievement] {
+        var items: [NativeAchievement] = []
+        if !store.slices.isEmpty {
+            items.append(.init(id: "first-leaf", title: "第一片叶", note: "留下第一个瞬间", symbol: "leaf.fill", color: TSDPalette.moss))
+        }
+        if store.slices.contains(where: \.hasMediaAnchor) {
+            items.append(.init(id: "media-anchor", title: "现场还在", note: "为记忆留下影像锚点", symbol: "photo.fill", color: TSDPalette.amber))
+        }
+        if !store.revisits.isEmpty {
+            items.append(.init(id: "time-layer", title: "时间层叠", note: "让今天与过去相遇", symbol: "clock.arrow.2.circlepath", color: TSDPalette.rose))
+        }
+        let progress = SliceFactory.weeklyStoryProgress(
+            from: store.slices,
+            claimedSliceIDs: Array(store.slices.prefix(3)).map(\.id)
+        )
+        if progress.readyCount == progress.target {
+            items.append(.init(id: "weekly-story", title: "一周成章", note: "三个瞬间长成了故事", symbol: "book.closed.fill", color: TSDPalette.mossDeep))
+        }
+        return items
+    }
+
     var body: some View {
         NavigationStack {
-            List {
-                Section("Native Handoff") {
-                    ForEach(NativeHandoffLedger.rows) { row in
-                        NativeReadinessRowView(row: row)
+            ZStack {
+                TSDPalette.canvas.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text("人生印记")
+                                .font(.largeTitle.bold())
+                                .foregroundStyle(TSDPalette.ink)
+                            Text("它们不是任务清单，而是某天回头时，会认出自己的证据。")
+                                .font(.subheadline)
+                                .foregroundStyle(TSDPalette.inkSoft)
+                        }
+
+                        if !unlocked.isEmpty {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
+                                ForEach(unlocked) { achievement in
+                                    NativeAchievementCard(achievement: achievement)
+                                }
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("还有一些相遇")
+                                .font(.headline)
+                                .foregroundStyle(TSDPalette.ink)
+                            HStack(spacing: 12) {
+                                NativeMysteryAchievement(seed: 1)
+                                NativeMysteryAchievement(seed: 2)
+                            }
+                            Text("不展示总数，也不催你完成。它们会在合适的时候出现。")
+                                .font(.caption)
+                                .foregroundStyle(TSDPalette.inkSoft)
+                        }
                     }
-                }
-                Section("Submission Packet") {
-                    ForEach(SubmissionPacket.rows) { row in
-                        NativeReadinessRowView(row: row)
-                    }
+                    .padding(18)
                 }
             }
-            .navigationTitle("上架就绪")
+            .navigationTitle("印记")
         }
+    }
+}
+
+private struct NativeAchievement: Identifiable {
+    var id: String
+    var title: String
+    var note: String
+    var symbol: String
+    var color: Color
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeAchievementCard: View {
+    var achievement: NativeAchievement
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(achievement.color.opacity(0.14))
+                Image(systemName: achievement.symbol)
+                    .font(.title2)
+                    .foregroundStyle(achievement.color)
+            }
+            .frame(width: 52, height: 52)
+            Text(achievement.title)
+                .font(.headline)
+                .foregroundStyle(TSDPalette.ink)
+            Text(achievement.note)
+                .font(.caption)
+                .foregroundStyle(TSDPalette.inkSoft)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
+        .padding(16)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("已获得印记：\(achievement.title)，\(achievement.note)")
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeMysteryAchievement: View {
+    var seed: Int
+
+    var body: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Circle()
+                    .fill(TSDPalette.sage.opacity(seed == 1 ? 0.22 : 0.15))
+                Text("?")
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.moss.opacity(0.62))
+            }
+            .frame(width: 56, height: 56)
+            Text("未知印记")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TSDPalette.inkSoft)
+        }
+        .frame(maxWidth: .infinity, minHeight: 112)
+        .background(TSDPalette.paper.opacity(0.68), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityLabel("一枚尚未相遇的未知印记")
     }
 }
 
