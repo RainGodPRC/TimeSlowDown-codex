@@ -44,9 +44,33 @@ public struct TSDExportZIPDocument: FileDocument, Equatable {
 @available(iOS 17.0, macOS 14.0, *)
 public struct TSDNativeShellView: View {
     @State private var store: NativeShellStore
+    @State private var persistenceMessage: String?
+    @State private var persistenceEnabled: Bool
+    private let persistenceURL: URL?
 
-    public init(store: NativeShellStore = .seeded()) {
-        self._store = State(initialValue: store)
+    public init(
+        store: NativeShellStore? = nil,
+        persistenceURL: URL? = NativeShellPersistence.defaultURL
+    ) {
+        var resolvedStore = store ?? NativeShellStore()
+        var message: String?
+        var canPersist = persistenceURL != nil
+        if store == nil, let persistenceURL {
+            do {
+                let result = try NativeShellPersistence.loadRecovering(from: persistenceURL)
+                resolvedStore = result.store
+                if case .recoveredCorruptBackup(let fileName) = result.source {
+                    message = "旧数据无法读取，已安全保留为 \(fileName)。新记录不会覆盖它。"
+                }
+            } catch {
+                message = "本地记忆暂时无法读取。为保护数据，本次启动不会覆盖原文件。"
+                canPersist = false
+            }
+        }
+        self._store = State(initialValue: resolvedStore)
+        self._persistenceMessage = State(initialValue: message)
+        self._persistenceEnabled = State(initialValue: canPersist)
+        self.persistenceURL = persistenceURL
     }
 
     public var body: some View {
@@ -72,6 +96,57 @@ public struct TSDNativeShellView: View {
                 .tag(NativeShellRoute.account)
         }
         .tint(TSDPalette.moss)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let persistenceMessage {
+                NativePersistenceBanner(message: persistenceMessage) {
+                    self.persistenceMessage = nil
+                }
+            }
+        }
+        .task(id: store) {
+            guard persistenceEnabled, let persistenceURL else { return }
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                let snapshot = store
+                try await Task.detached(priority: .utility) {
+                    try NativeShellPersistence.save(snapshot, to: persistenceURL)
+                }.value
+            } catch is CancellationError {
+                return
+            } catch {
+                persistenceMessage = "这次改动尚未保存到本机，请稍后重试。"
+            }
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativePersistenceBanner: View {
+    var message: String
+    var onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .foregroundStyle(TSDPalette.amber)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(TSDPalette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption.weight(.bold))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("关闭提示")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(TSDPalette.paper)
+        .overlay(alignment: .bottom) {
+            Divider().opacity(0.45)
+        }
     }
 }
 
@@ -107,21 +182,25 @@ private struct NativeNowView: View {
                             onWrite: { activeSheet = .quickMark }
                         )
 
-                        if let echo {
-                            NativeYesterdayEchoCard(
-                                echo: echo,
-                                latestRevisit: store.revisits
-                                    .filter { $0.sliceID == echo.sliceID }
-                                    .sorted { $0.revisitedAt > $1.revisitedAt }
-                                    .first,
-                                onRevisit: { activeSheet = .revisit }
+                        if store.slices.isEmpty {
+                            NativeFirstMemoryCard()
+                        } else {
+                            if let echo {
+                                NativeYesterdayEchoCard(
+                                    echo: echo,
+                                    latestRevisit: store.revisits
+                                        .filter { $0.sliceID == echo.sliceID }
+                                        .sorted { $0.revisitedAt > $1.revisitedAt }
+                                        .first,
+                                    onRevisit: { activeSheet = .revisit }
+                                )
+                            }
+
+                            NativeWeeklyStoryCard(
+                                progress: weeklyProgress,
+                                onOpen: { activeSheet = .weekend }
                             )
                         }
-
-                        NativeWeeklyStoryCard(
-                            progress: weeklyProgress,
-                            onOpen: { activeSheet = .weekend }
-                        )
 
                         HStack(spacing: 8) {
                             Image(systemName: "lock.shield")
@@ -152,6 +231,37 @@ private struct NativeNowView: View {
                 }
             }
         }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeFirstMemoryCard: View {
+    var body: some View {
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(TSDPalette.sage.opacity(0.28))
+                Image(systemName: "leaf")
+                    .font(.title2)
+                    .foregroundStyle(TSDPalette.moss)
+            }
+            .frame(width: 58, height: 58)
+            .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text("你的旷野还很安静")
+                    .font(.headline)
+                    .foregroundStyle(TSDPalette.ink)
+                Text("留下第一刻后，这里会开始长出回声和故事。")
+                    .font(.subheadline)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -612,18 +722,33 @@ private struct NativeSliceListView: View {
 
     var body: some View {
         NavigationStack {
-            List(store.slices) { slice in
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(slice.title).font(.headline)
-                    Text(slice.body).font(.subheadline).foregroundStyle(.secondary)
-                    if let media = slice.media {
-                        Label(media.label, systemImage: media.kind == .video ? "video" : "photo")
-                            .font(.caption.weight(.semibold))
+            Group {
+                if store.slices.isEmpty {
+                    NativeEmptyDestination(
+                        symbol: "square.stack.3d.up",
+                        title: "还没有切片",
+                        note: "照片或一句话，都可以成为第一张。",
+                        actionTitle: "去留下第一刻"
+                    ) {
+                        store.selectedRoute = .now
                     }
+                } else {
+                    List(store.slices) { slice in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(slice.title).font(.headline)
+                            Text(slice.body).font(.subheadline).foregroundStyle(.secondary)
+                            if let media = slice.media {
+                                Label(media.label, systemImage: media.kind == .video ? "video" : "photo")
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }
+                        .padding(.vertical, 4)
+                    }
+                    .scrollContentBackground(.hidden)
+                    .background(TSDPalette.canvas)
                 }
-                .padding(.vertical, 4)
             }
-            .navigationTitle("今日切片")
+            .navigationTitle("切片")
         }
     }
 }
@@ -634,16 +759,69 @@ private struct NativeMeadowView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("人生旷野")
-                    .font(.largeTitle.weight(.bold))
-                Text("这一周有 \(store.slices.count) 张切片，\(store.snapshot.mediaAnchorCount) 个影像锚点。")
-                Text("章节预览：\(store.weeklyPreviewTitle())")
-                    .foregroundStyle(.secondary)
-                Spacer()
+            Group {
+                if store.slices.isEmpty {
+                    NativeEmptyDestination(
+                        symbol: "leaf.circle",
+                        title: "旷野还没发芽",
+                        note: "第一张切片留下后，这里才开始生长。",
+                        actionTitle: "回到此刻"
+                    ) {
+                        store.selectedRoute = .now
+                    }
+                } else {
+                    ZStack {
+                        TSDPalette.canvas.ignoresSafeArea()
+                        VStack(alignment: .leading, spacing: 16) {
+                            Text("人生旷野")
+                                .font(.largeTitle.weight(.bold))
+                                .foregroundStyle(TSDPalette.ink)
+                            Text("这一周有 \(store.slices.count) 张切片，\(store.snapshot.mediaAnchorCount) 个影像锚点。")
+                            Text("章节预览：\(store.weeklyPreviewTitle())")
+                                .foregroundStyle(TSDPalette.inkSoft)
+                            Spacer()
+                        }
+                        .padding()
+                    }
+                }
             }
-            .padding()
             .navigationTitle("旷野")
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeEmptyDestination: View {
+    var symbol: String
+    var title: String
+    var note: String
+    var actionTitle: String
+    var action: () -> Void
+
+    var body: some View {
+        ZStack {
+            TSDPalette.canvas.ignoresSafeArea()
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(TSDPalette.sage.opacity(0.30))
+                    Image(systemName: symbol)
+                        .font(.largeTitle)
+                        .foregroundStyle(TSDPalette.moss)
+                }
+                .frame(width: 88, height: 88)
+                Text(title)
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                Text(note)
+                    .font(.subheadline)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .multilineTextAlignment(.center)
+                Button(actionTitle, action: action)
+                    .buttonStyle(.borderedProminent)
+                    .tint(TSDPalette.moss)
+                    .controlSize(.large)
+            }
+            .padding(28)
         }
     }
 }

@@ -116,6 +116,79 @@ public struct NativeExportSummary: Codable, Equatable, Sendable {
     }
 }
 
+public enum NativeShellPersistenceSource: Equatable, Sendable {
+    case newVault
+    case restored
+    case recoveredCorruptBackup(String)
+}
+
+public struct NativeShellPersistenceLoadResult: Equatable, Sendable {
+    public var store: NativeShellStore
+    public var source: NativeShellPersistenceSource
+
+    public init(store: NativeShellStore, source: NativeShellPersistenceSource) {
+        self.store = store
+        self.source = source
+    }
+}
+
+public enum NativeShellPersistence {
+    public static var defaultURL: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        return base
+            .appendingPathComponent("TimeSlowDown", isDirectory: true)
+            .appendingPathComponent("native-shell-v1.json", isDirectory: false)
+    }
+
+    public static func loadRecovering(from url: URL = defaultURL) throws -> NativeShellPersistenceLoadResult {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else {
+            return NativeShellPersistenceLoadResult(store: NativeShellStore(), source: .newVault)
+        }
+
+        let data = try Data(contentsOf: url)
+        if let store = decode(data) {
+            return NativeShellPersistenceLoadResult(store: store, source: .restored)
+        }
+
+        let backupURL = url
+            .deletingPathExtension()
+            .appendingPathExtension("corrupt-\(UUID().uuidString).json")
+        try fileManager.moveItem(at: url, to: backupURL)
+        return NativeShellPersistenceLoadResult(
+            store: NativeShellStore(),
+            source: .recoveredCorruptBackup(backupURL.lastPathComponent)
+        )
+    }
+
+    public static func save(_ store: NativeShellStore, to url: URL = defaultURL) throws {
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(store)
+#if os(iOS)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+#else
+        try data.write(to: url, options: .atomic)
+#endif
+    }
+
+    private static func decode(_ data: Data) -> NativeShellStore? {
+        let isoDecoder = JSONDecoder()
+        isoDecoder.dateDecodingStrategy = .iso8601
+        if let store = try? isoDecoder.decode(NativeShellStore.self, from: data) {
+            return store
+        }
+        return try? JSONDecoder().decode(NativeShellStore.self, from: data)
+    }
+}
+
 public struct NativeShellStore: Codable, Equatable, Sendable {
     public var selectedRoute: NativeShellRoute
     public var slices: [MemorySlice]

@@ -7,7 +7,7 @@ import TimeSlowDownKit
 struct TimeSlowDownAppPreview: App {
     var body: some Scene {
         WindowGroup {
-            TSDNativeShellView()
+            TSDNativeShellView(store: .seeded(), persistenceURL: nil)
         }
     }
 }

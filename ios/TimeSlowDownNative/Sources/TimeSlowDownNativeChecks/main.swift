@@ -292,6 +292,39 @@ let legacyShellData = try JSONSerialization.data(withJSONObject: legacyShellObje
 let migratedShell = try JSONDecoder().decode(NativeShellStore.self, from: legacyShellData)
 check(migratedShell.revisits.isEmpty, "Native shell migration should default legacy stores to an empty revisit list")
 
+let persistenceDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("tsd-native-persistence-\(UUID().uuidString)", isDirectory: true)
+let persistenceURL = persistenceDirectory.appendingPathComponent("native-shell-v1.json")
+defer { try? FileManager.default.removeItem(at: persistenceDirectory) }
+
+let freshVault = try NativeShellPersistence.loadRecovering(from: persistenceURL)
+check(freshVault.source == .newVault, "A first launch should create an honest empty vault instead of demo memories")
+check(freshVault.store.slices.isEmpty && freshVault.store.revisits.isEmpty, "A first launch vault should start empty")
+
+var persistedShell = NativeShellStore.seeded(now: fixedDate)
+_ = persistedShell.revisitYesterdayEcho(reflection: "重启后也要保留这句话。", now: fixedDate)
+try NativeShellPersistence.save(persistedShell, to: persistenceURL)
+let restoredVault = try NativeShellPersistence.loadRecovering(from: persistenceURL)
+check(restoredVault.source == .restored, "A saved native vault should restore from Application Support")
+check(restoredVault.store == persistedShell, "Persistence should round-trip slices, revisits, routes, privacy, and export state")
+
+var legacyPersistenceObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(persistedShell)) as! [String: Any]
+legacyPersistenceObject.removeValue(forKey: "revisits")
+let legacyPersistenceData = try JSONSerialization.data(withJSONObject: legacyPersistenceObject)
+try legacyPersistenceData.write(to: persistenceURL, options: .atomic)
+let restoredLegacyVault = try NativeShellPersistence.loadRecovering(from: persistenceURL)
+check(restoredLegacyVault.store.revisits.isEmpty, "Persistence should migrate a pre-revisit native vault without data loss")
+check(restoredLegacyVault.store.slices.count == persistedShell.slices.count, "Legacy persistence migration should preserve memory slices")
+
+try Data("not-a-native-vault".utf8).write(to: persistenceURL, options: .atomic)
+let recoveredVault = try NativeShellPersistence.loadRecovering(from: persistenceURL)
+if case .recoveredCorruptBackup(let backupName) = recoveredVault.source {
+    check(FileManager.default.fileExists(atPath: persistenceDirectory.appendingPathComponent(backupName).path), "Corrupt persistence recovery should retain a backup file")
+} else {
+    check(false, "Corrupt persistence should be backed up before starting a new vault")
+}
+check(recoveredVault.store.slices.isEmpty, "Corrupt persistence recovery should not fabricate memories")
+
 let captured = shell.captureFromMemoryCamera(
     MediaAnchor(kind: .image, label: "native-memory-camera.jpg", note: "SwiftUI Memory Camera")
 )
@@ -345,14 +378,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 74;"), "Xcode project build settings should carry v74 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 75;"), "Xcode project build settings should carry v75 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>74</string>"), "Info.plist should carry v74 build number")
+check(infoPlistText.contains("<string>75</string>"), "Info.plist should carry v75 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -1587,7 +1620,10 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "74", "TestFlight build notes should match v74")
+check(buildNotes.buildNumber == "75", "TestFlight build notes should match v75")
+check(buildNotes.summary.localizedCaseInsensitiveContains("local persistence"), "TestFlight build notes should mention local persistence")
+check(buildNotes.summary.localizedCaseInsensitiveContains("empty vault"), "TestFlight build notes should mention the honest first-launch vault")
+check(buildNotes.summary.localizedCaseInsensitiveContains("corrupt data"), "TestFlight build notes should mention corrupt backup recovery")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Memory Camera home"), "TestFlight build notes should mention the native product home")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Life Marks"), "TestFlight build notes should mention the private achievement gallery")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Yesterday Echo"), "TestFlight build notes should mention Yesterday Echo")
@@ -2025,8 +2061,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "74", "App Store submission gate should track v74")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v74 native product home")
+check(appStoreSubmissionGate.buildNumber == "75", "App Store submission gate should track v75")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v75 native persistence")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2302,4 +2338,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, and v74 native product home are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, atomic local persistence, legacy migration, corrupt backup recovery, honest first-launch empty vault, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, and v75 native persistence are aligned.")
