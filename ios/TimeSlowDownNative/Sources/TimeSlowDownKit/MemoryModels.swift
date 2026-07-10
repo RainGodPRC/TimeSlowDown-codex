@@ -13,6 +13,9 @@ public struct MediaAnchor: Codable, Equatable, Identifiable, Sendable {
     public var note: String
     public var storage: String
     public var source: String
+    public var thumbnailFileName: String?
+    public var thumbnailByteCount: Int?
+    public var thumbnailIssue: String?
 
     public init(
         id: UUID = UUID(),
@@ -20,7 +23,10 @@ public struct MediaAnchor: Codable, Equatable, Identifiable, Sendable {
         label: String,
         note: String = "",
         storage: String = "photos-picker-limited",
-        source: String = "user-selected-media"
+        source: String = "user-selected-media",
+        thumbnailFileName: String? = nil,
+        thumbnailByteCount: Int? = nil,
+        thumbnailIssue: String? = nil
     ) {
         self.id = id
         self.kind = kind
@@ -28,6 +34,13 @@ public struct MediaAnchor: Codable, Equatable, Identifiable, Sendable {
         self.note = note
         self.storage = storage
         self.source = source
+        self.thumbnailFileName = thumbnailFileName
+        self.thumbnailByteCount = thumbnailByteCount
+        self.thumbnailIssue = thumbnailIssue
+    }
+
+    public var hasLocalThumbnailReference: Bool {
+        thumbnailFileName?.isEmpty == false && (thumbnailByteCount ?? 0) > 0
     }
 }
 

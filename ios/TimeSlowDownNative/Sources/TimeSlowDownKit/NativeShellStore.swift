@@ -132,6 +132,18 @@ public struct NativeShellPersistenceLoadResult: Equatable, Sendable {
     }
 }
 
+public struct NativeDeletedMemorySlice: Equatable, Sendable {
+    public var slice: MemorySlice
+    public var index: Int
+    public var revisits: [MemoryRevisit]
+
+    public init(slice: MemorySlice, index: Int, revisits: [MemoryRevisit]) {
+        self.slice = slice
+        self.index = index
+        self.revisits = revisits
+    }
+}
+
 public enum NativeShellPersistence {
     public static var defaultURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
@@ -347,6 +359,74 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             slices[index] = next
         }
         selectedRoute = .now
+        return true
+    }
+
+    @discardableResult
+    public mutating func updateSlice(
+        id: UUID,
+        title: String,
+        body: String,
+        peopleText: String,
+        meaning: String
+    ) -> Bool {
+        guard let index = slices.firstIndex(where: { $0.id == id }) else { return false }
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return false }
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let people = peopleText
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .flatMap { $0.split(separator: "，", omittingEmptySubsequences: true) }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let cleanMeaning = meaning.trimmingCharacters(in: .whitespacesAndNewlines)
+        slices[index].title = cleanTitle
+        slices[index].body = cleanBody
+        slices[index].people = people.isEmpty ? nil : people
+        slices[index].meaning = cleanMeaning.isEmpty ? nil : cleanMeaning
+        if !slices[index].sources.contains("用户编辑") {
+            slices[index].sources.append("用户编辑")
+        }
+        return true
+    }
+
+    @discardableResult
+    public mutating func attachMedia(_ media: MediaAnchor, to sliceID: UUID) -> Bool {
+        guard let index = slices.firstIndex(where: { $0.id == sliceID }) else { return false }
+        slices[index] = SliceFactory.attach(media, to: slices[index])
+        return true
+    }
+
+    @discardableResult
+    public mutating func detachMedia(from sliceID: UUID) -> MediaAnchor? {
+        guard let index = slices.firstIndex(where: { $0.id == sliceID }),
+              let media = slices[index].media else { return nil }
+        slices[index].media = nil
+        slices[index].tags.removeAll { $0 == "照片" || $0 == "视频" }
+        if !slices[index].sources.contains("用户移除影像") {
+            slices[index].sources.append("用户移除影像")
+        }
+        return media
+    }
+
+    @discardableResult
+    public mutating func deleteSlice(id: UUID) -> NativeDeletedMemorySlice? {
+        guard let index = slices.firstIndex(where: { $0.id == id }) else { return nil }
+        let slice = slices.remove(at: index)
+        let relatedRevisits = revisits.filter { $0.sliceID == id }
+        revisits.removeAll { $0.sliceID == id }
+        selectedRoute = .slices
+        return NativeDeletedMemorySlice(slice: slice, index: index, revisits: relatedRevisits)
+    }
+
+    @discardableResult
+    public mutating func restoreDeletedSlice(_ deleted: NativeDeletedMemorySlice) -> Bool {
+        guard !slices.contains(where: { $0.id == deleted.slice.id }) else { return false }
+        slices.insert(deleted.slice, at: min(max(0, deleted.index), slices.count))
+        for revisit in deleted.revisits where !revisits.contains(where: { $0.id == revisit.id }) {
+            revisits.append(revisit)
+        }
+        selectedRoute = .slices
         return true
     }
 

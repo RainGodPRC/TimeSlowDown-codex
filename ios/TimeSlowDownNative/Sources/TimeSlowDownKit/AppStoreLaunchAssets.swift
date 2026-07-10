@@ -58,8 +58,8 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
     public var supportContact: String
 
     public init(
-        buildNumber: String = "75",
-        summary: String = "TimeSlowDown v75 adds atomic local persistence and an honest first-launch empty vault: slices, revisits, route, privacy, and export state survive app restarts; legacy JSON remains readable; corrupt data is retained as a backup before a new vault starts. It keeps the branded Memory Camera home, Yesterday Echo reflection sheet, native Weekly Story progress and one-gap-at-a-time Weekend Workbench, private Life Marks gallery, revisit export, Daily Difference Radar candidates, 90-day tellable progress, media-first slice capture, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffolds, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, screenshot/App Preview creative packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, weekly chapter preview, App Store launch assets, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
+        buildNumber: String = "76",
+        summary: String = "TimeSlowDown v76 adds a real local image-thumbnail pipeline and editable memory slices: PhotosPicker images are rendered through ImageIO into metadata-stripped bounded JPEG thumbnails, saved in an iOS-protected local cache, displayed in slice rows and detail, and surfaced as invalid when cache files disappear. Users can edit title/body/people/meaning, replace or remove media, delete a slice with its revisit layers, and undo deletion with thumbnail restoration. Video selection remains an honest poster-pending memory clue instead of loading an entire raw video. The build retains v75 atomic local persistence, first-launch empty vault, legacy migration, corrupt data backup recovery, the branded Memory Camera home, Yesterday Echo, native Weekly Story progress and Weekend Workbench, private Life Marks gallery, revisit export, Daily Difference Radar, 90-day tellable progress, Photos-library byte import adapter, E2EE media vault adapter, CryptoKit media vault envelope contract, Secure Enclave device-key contract, signed-device validation scaffold, signed-device media validation packet, archive/signing readiness packet, App Store metadata/legal review packet, screenshot/App Preview creative packet, Privacy Manifest required reason API audit packet, encryption export compliance review packet, Keychain record store adapter, Account Rights export UI state, SwiftUI fileExporter bridge, on-device export ZIP builder, raw media export policy, staged raw media export builder, deletion audit envelope, DeepSeek server gateway envelope, DeepSeek provider validation scaffold, DeepSeek integration test runner contract, DeepSeek backend endpoint/provider proxy contract, DeepSeek endpoint execution harness, optional live backend probe, deletion service boundary, deletion live probe, App Store submission gate, public URL packet, backend release manifest, App Privacy questionnaire packet, Age Rating review packet, and privacy/export/delete/AI trust boundaries.",
         testerRoute: [String] = [
             "Open Today and bring back Yesterday Echo; optionally add one user-authored reflection.",
             "Open Weekly Story Progress and complete one missing media, person, or meaning field in Weekend Workbench.",
@@ -87,6 +87,7 @@ public struct TestFlightBuildNotes: Codable, Equatable, Sendable {
             "v73 adds Yesterday Echo, user-authored revisit layers, weekly story progress, a non-punitive weekend completion workbench, and revisit export so first-week retention produces real memory value rather than streak debt.",
             "v74 replaces the engineering-style native home and Launch tab with a branded Memory Camera experience, native return-loop sheets, and a private Life Marks gallery that keeps mystery without totals, rankings, or streak debt.",
             "v75 replaces seeded demo memories in the shipping app with an empty personal vault, atomically persists native state in Application Support, migrates legacy JSON, preserves corrupt backups, and gives empty Slices and Meadow destinations an intentional first-memory path.",
+            "v76 generates protected metadata-stripped JPEG thumbnails for user-selected images, adds editable slice detail, media replacement/removal, delete plus undo, and missing-thumbnail recovery UI; video poster generation and signed-device Photos validation remain explicit follow-up work.",
             "Archive, signing, signed-device Photos/Files validation, TestFlight upload, App Store Connect metadata, full Xcode privacy report, dependency privacy manifest review, encryption export compliance, and legal review require full Xcode, Apple Developer access, and release/legal approval."
         ],
         supportContact: String = "support-url-or-email-required-before-testflight"
@@ -314,7 +315,7 @@ public struct ArchiveSigningValidationPacket: Codable, Equatable, Identifiable, 
         signingPlan.bundleIdentifier == "com.raingodprc.timeslowdown" &&
         signingPlan.requiresAppleDeveloperTeam &&
         signingPlan.fakeTeamIDForbidden &&
-        buildNotes.buildNumber == "75" &&
+        buildNotes.buildNumber == "76" &&
         steps.count == ArchiveSigningValidationScaffold.defaultSteps.count &&
         Set(steps.map(\.kind)).count == steps.count &&
         steps.allSatisfy(\.preservesTSDArchiveSigningBoundary) &&
@@ -504,7 +505,7 @@ public enum ArchiveSigningValidationScaffold {
 public enum AppStoreLaunchAssetChecklist {
     public static let rows: [ReadinessRow] = [
         .init(id: "app-icon-pngs", title: "App Icon PNG assets", status: .poc, owner: "design/iOS", evidence: "All iPhone and iOS marketing icon slots have deterministic PNG files referenced by AppIcon Contents.json."),
-        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v75 build notes name local persistence, first-launch empty vault, corrupt backup recovery, the native Memory Camera home, Yesterday Echo sheet, weekly story workbench, Life Marks gallery, export/delete rights, AI boundary, and production limitations."),
+        .init(id: "testflight-build-notes", title: "TestFlight build notes", status: .poc, owner: "release", evidence: "v76 build notes name protected image thumbnails, editable slice detail, media invalidation, delete/undo, honest video poster limits, local persistence, export/delete rights, AI boundary, and production limitations."),
         .init(id: "app-review-route", title: "App Review route", status: .poc, owner: "release", evidence: "Guest-friendly review route covers Memory Camera, slice, media wall, weekly chapter, account rights, and privacy center."),
         .init(id: "signing-readiness-plan", title: "Signing readiness plan", status: .poc, owner: "release/iOS", evidence: "Bundle ID and automatic signing are declared, but Team ID is intentionally blank until Apple Developer access exists.")
     ]
@@ -1865,7 +1866,7 @@ public struct AppStoreSubmissionGate: Codable, Equatable, Sendable {
     public var buildNumber: String
     public var rows: [AppStoreSubmissionGateRow]
 
-    public init(buildNumber: String = "75", rows: [AppStoreSubmissionGateRow]) {
+    public init(buildNumber: String = "76", rows: [AppStoreSubmissionGateRow]) {
         self.buildNumber = buildNumber
         self.rows = rows
     }

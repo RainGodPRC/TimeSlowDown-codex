@@ -1,4 +1,8 @@
 import Foundation
+#if canImport(ImageIO)
+import ImageIO
+import UniformTypeIdentifiers
+#endif
 
 public enum PhotosLibraryImportRepresentation: String, Codable, Equatable, Sendable {
     case thumbnailOnly
@@ -147,6 +151,172 @@ public enum PhotosLibraryByteImportAdapter {
             originalData: request.allowsOriginalBytes ? originalData : nil
         )
         return PhotosLibraryByteImportResult(request: request, payload: payload)
+    }
+}
+
+public struct MemoryCameraSelection: Equatable, Sendable {
+    public var anchor: MediaAnchor
+    public var thumbnailData: Data?
+    public var issue: String?
+
+    public init(anchor: MediaAnchor, thumbnailData: Data? = nil, issue: String? = nil) {
+        self.anchor = anchor
+        self.thumbnailData = thumbnailData
+        self.issue = issue
+    }
+}
+
+public enum MediaThumbnailError: Error, Equatable, Sendable {
+    case unsupportedImage
+    case renderFailed
+    case invalidFileName
+    case thumbnailTooLarge(Int)
+}
+
+public enum MediaThumbnailRenderer {
+    public static func jpegThumbnail(
+        from sourceData: Data,
+        maxPixelSize: Int = 1_200,
+        quality: Double = 0.82
+    ) throws -> Data {
+#if canImport(ImageIO)
+        guard let source = CGImageSourceCreateWithData(sourceData as CFData, [
+            kCGImageSourceShouldCache: false
+        ] as CFDictionary) else {
+            throw MediaThumbnailError.unsupportedImage
+        }
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary) else {
+            throw MediaThumbnailError.renderFailed
+        }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            output,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw MediaThumbnailError.renderFailed
+        }
+        CGImageDestinationAddImage(destination, image, [
+            kCGImageDestinationLossyCompressionQuality: min(1, max(0.2, quality))
+        ] as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            throw MediaThumbnailError.renderFailed
+        }
+        let data = output as Data
+        guard data.count <= NativeMediaThumbnailStore.maximumThumbnailBytes else {
+            throw MediaThumbnailError.thumbnailTooLarge(data.count)
+        }
+        return data
+#else
+        throw MediaThumbnailError.unsupportedImage
+#endif
+    }
+}
+
+public enum NativeMediaThumbnailStore {
+    public static let maximumThumbnailBytes = 3_000_000
+
+    public static var defaultDirectory: URL {
+        NativeShellPersistence.defaultURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("MediaThumbnails", isDirectory: true)
+    }
+
+    public static func save(
+        _ data: Data,
+        anchorID: UUID,
+        directory: URL = defaultDirectory
+    ) throws -> String {
+        guard !data.isEmpty else { throw MediaThumbnailError.renderFailed }
+        guard data.count <= maximumThumbnailBytes else {
+            throw MediaThumbnailError.thumbnailTooLarge(data.count)
+        }
+        let fileName = "\(anchorID.uuidString.lowercased()).jpg"
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(fileName, isDirectory: false)
+#if os(iOS)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+#else
+        try data.write(to: url, options: .atomic)
+#endif
+        return fileName
+    }
+
+    public static func data(
+        fileName: String,
+        directory: URL = defaultDirectory
+    ) -> Data? {
+        guard isSafeFileName(fileName) else { return nil }
+        return try? Data(contentsOf: directory.appendingPathComponent(fileName, isDirectory: false))
+    }
+
+    public static func remove(
+        fileName: String,
+        directory: URL = defaultDirectory
+    ) throws {
+        guard isSafeFileName(fileName) else { throw MediaThumbnailError.invalidFileName }
+        let url = directory.appendingPathComponent(fileName, isDirectory: false)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        try FileManager.default.removeItem(at: url)
+    }
+
+    public static func restoreAfterUndo(
+        _ anchor: MediaAnchor,
+        thumbnailData: Data?,
+        directory: URL = defaultDirectory
+    ) -> MediaAnchor {
+        guard anchor.thumbnailFileName != nil else { return anchor }
+        var restored = anchor
+        restored.thumbnailFileName = nil
+        restored.thumbnailByteCount = nil
+        guard let thumbnailData else {
+            restored.thumbnailIssue = "切片已恢复，影像缩略图需重新选择。"
+            return restored
+        }
+        do {
+            restored.thumbnailFileName = try save(
+                thumbnailData,
+                anchorID: anchor.id,
+                directory: directory
+            )
+            restored.thumbnailByteCount = thumbnailData.count
+            restored.thumbnailIssue = nil
+        } catch {
+            restored.thumbnailIssue = "切片已恢复，影像缩略图需重新选择。"
+        }
+        return restored
+    }
+
+    public static func persist(
+        _ selection: MemoryCameraSelection,
+        directory: URL = defaultDirectory
+    ) throws -> MediaAnchor {
+        var anchor = selection.anchor
+        anchor.thumbnailIssue = selection.issue
+        guard let thumbnailData = selection.thumbnailData else {
+            if anchor.kind == .image {
+                throw MediaThumbnailError.renderFailed
+            }
+            return anchor
+        }
+        let fileName = try save(thumbnailData, anchorID: anchor.id, directory: directory)
+        anchor.thumbnailFileName = fileName
+        anchor.thumbnailByteCount = thumbnailData.count
+        anchor.thumbnailIssue = nil
+        anchor.storage = "protected-local-thumbnail"
+        return anchor
+    }
+
+    private static func isSafeFileName(_ fileName: String) -> Bool {
+        !fileName.isEmpty &&
+        URL(fileURLWithPath: fileName).lastPathComponent == fileName &&
+        !fileName.contains("..")
     }
 }
 
@@ -557,43 +727,85 @@ import PhotosUI
 
 @available(iOS 17.0, macOS 14.0, *)
 public struct MemoryCameraPicker: View {
-    private let onPicked: (MediaAnchor) -> Void
+    private let onPicked: (MemoryCameraSelection) -> Void
     @State private var selectedItem: PhotosPickerItem?
+    @State private var isImporting = false
+    @State private var importIssue: String?
 
-    public init(onPicked: @escaping (MediaAnchor) -> Void) {
+    public init(onPicked: @escaping (MemoryCameraSelection) -> Void) {
         self.onPicked = onPicked
     }
 
     public var body: some View {
-        PhotosPicker(
-            selection: $selectedItem,
-            matching: .any(of: [.images, .videos]),
-            photoLibrary: .shared()
-        ) {
-            HStack(spacing: 10) {
-                Image(systemName: "camera.fill")
-                Text("照片或视频")
-                    .fontWeight(.semibold)
-                Spacer(minLength: 0)
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.bold))
+        let importing = isImporting
+        VStack(alignment: .leading, spacing: 7) {
+            PhotosPicker(
+                selection: $selectedItem,
+                matching: .any(of: [.images, .videos]),
+                photoLibrary: .shared()
+            ) {
+                HStack(spacing: 10) {
+                    if importing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "camera.fill")
+                    }
+                    Text(importing ? "正在留下画面" : "照片或视频")
+                        .fontWeight(.semibold)
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption.weight(.bold))
+                }
+                .foregroundStyle(Color(red: 0.12, green: 0.18, blue: 0.14))
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .padding(.horizontal, 16)
+                .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .foregroundStyle(Color(red: 0.12, green: 0.18, blue: 0.14))
-            .frame(maxWidth: .infinity, minHeight: 48)
-            .padding(.horizontal, 16)
-            .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .buttonStyle(.plain)
+            .disabled(isImporting)
+
+            if let importIssue {
+                Text(importIssue)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.78))
+            }
         }
-        .buttonStyle(.plain)
         .onChange(of: selectedItem) { _, newItem in
             guard let newItem else { return }
-            onPicked(MediaAnchor(
-                kind: inferredKind(from: newItem),
-                label: newItem.itemIdentifier ?? "PhotosPicker media",
-                note: "来自系统照片选择器，文字可以以后再补。",
-                storage: "photos-picker-limited",
-                source: "PhotosPicker"
-            ))
+            Task { await importSelection(newItem) }
         }
+    }
+
+    @MainActor
+    private func importSelection(_ item: PhotosPickerItem) async {
+        isImporting = true
+        importIssue = nil
+        let kind = inferredKind(from: item)
+        var anchor = MediaAnchor(
+            kind: kind,
+            label: kind == .video ? "选中的视频" : "选中的照片",
+            note: "来自系统照片选择器，文字可以以后再补。",
+            storage: "photos-picker-limited",
+            source: "PhotosPicker"
+        )
+        if kind == .video {
+            let issue = "视频已作为记忆线索保存；本地封面将在后续版本生成。"
+            anchor.thumbnailIssue = issue
+            onPicked(MemoryCameraSelection(anchor: anchor, issue: issue))
+        } else {
+            do {
+                guard let sourceData = try await item.loadTransferable(type: Data.self) else {
+                    throw PhotosLibraryByteImporterError.missingThumbnail(anchor.id.uuidString)
+                }
+                let thumbnail = try MediaThumbnailRenderer.jpegThumbnail(from: sourceData)
+                onPicked(MemoryCameraSelection(anchor: anchor, thumbnailData: thumbnail))
+            } catch {
+                let issue = "照片缩略图生成失败，尚未写入记忆，可重新选择。"
+                importIssue = issue
+            }
+        }
+        selectedItem = nil
+        isImporting = false
     }
 
     private func inferredKind(from item: PhotosPickerItem) -> MediaKind {
@@ -633,20 +845,25 @@ import SwiftUI
 
 @available(iOS 17.0, macOS 14.0, *)
 public struct MemoryCameraPicker: View {
-    private let onPicked: (MediaAnchor) -> Void
+    private let onPicked: (MemoryCameraSelection) -> Void
 
-    public init(onPicked: @escaping (MediaAnchor) -> Void) {
+    public init(onPicked: @escaping (MemoryCameraSelection) -> Void) {
         self.onPicked = onPicked
     }
 
     public var body: some View {
         Button {
-            onPicked(MediaAnchor(
-                kind: .image,
-                label: "photos-picker-unavailable",
-                note: "当前编译环境没有 PhotosUI；真实 iOS target 应接入 PhotosPicker。",
-                storage: "photos-picker-unavailable",
-                source: "PhotosPicker fallback"
+            let issue = "当前编译环境无法生成系统照片缩略图。"
+            onPicked(MemoryCameraSelection(
+                anchor: MediaAnchor(
+                    kind: .image,
+                    label: "photos-picker-unavailable",
+                    note: "当前编译环境没有 PhotosUI；真实 iOS target 应接入 PhotosPicker。",
+                    storage: "photos-picker-unavailable",
+                    source: "PhotosPicker fallback",
+                    thumbnailIssue: issue
+                ),
+                issue: issue
             ))
         } label: {
             HStack(spacing: 10) {

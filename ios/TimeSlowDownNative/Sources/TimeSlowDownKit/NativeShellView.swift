@@ -1,6 +1,9 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import UniformTypeIdentifiers
+#if canImport(ImageIO)
+import ImageIO
+#endif
 
 @available(iOS 17.0, macOS 14.0, *)
 public struct TSDExportZIPDocument: FileDocument, Equatable {
@@ -154,6 +157,7 @@ private struct NativePersistenceBanner: View {
 private struct NativeNowView: View {
     @Binding var store: NativeShellStore
     @State private var activeSheet: NativeNowSheet?
+    @State private var mediaIssue: String?
 
     private var echo: YesterdayEcho? {
         SliceFactory.yesterdayEcho(from: store.slices, revisits: store.revisits)
@@ -176,10 +180,17 @@ private struct NativeNowView: View {
                         NativeNowHeader()
 
                         NativeMemoryCameraCard(
-                            onPicked: { anchor in
-                                _ = store.captureFromMemoryCamera(anchor)
+                            onPicked: { selection in
+                                do {
+                                    let anchor = try NativeMediaThumbnailStore.persist(selection)
+                                    _ = store.captureFromMemoryCamera(anchor)
+                                    mediaIssue = nil
+                                } catch {
+                                    mediaIssue = "照片没有安全保存，请重新选择。"
+                                }
                             },
-                            onWrite: { activeSheet = .quickMark }
+                            onWrite: { activeSheet = .quickMark },
+                            mediaIssue: mediaIssue
                         )
 
                         if store.slices.isEmpty {
@@ -329,8 +340,9 @@ private struct NativeNowHeader: View {
 
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeMemoryCameraCard: View {
-    var onPicked: (MediaAnchor) -> Void
+    var onPicked: (MemoryCameraSelection) -> Void
     var onWrite: () -> Void
+    var mediaIssue: String?
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -362,6 +374,12 @@ private struct NativeMemoryCameraCard: View {
                     .foregroundStyle(.white.opacity(0.78))
 
                 MemoryCameraPicker(onPicked: onPicked)
+
+                if let mediaIssue {
+                    Label(mediaIssue, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.84))
+                }
 
                 Button(action: onWrite) {
                     Label("只写一句", systemImage: "square.and.pencil")
@@ -597,6 +615,7 @@ private struct NativeWeekendWorkbench: View {
     @Binding var store: NativeShellStore
     @Environment(\.dismiss) private var dismiss
     @State private var value = ""
+    @State private var mediaMessage: String?
 
     private var progress: WeeklyStoryProgress {
         SliceFactory.weeklyStoryProgress(
@@ -644,14 +663,25 @@ private struct NativeWeekendWorkbench: View {
                             ZStack {
                                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                                     .fill(TSDPalette.moss)
-                                MemoryCameraPicker { anchor in
-                                    _ = store.completeWeekendGap(
-                                        sliceID: candidate.sliceID,
-                                        kind: .media,
-                                        media: anchor
-                                    )
+                                MemoryCameraPicker { selection in
+                                    do {
+                                        let anchor = try NativeMediaThumbnailStore.persist(selection)
+                                        _ = store.completeWeekendGap(
+                                            sliceID: candidate.sliceID,
+                                            kind: .media,
+                                            media: anchor
+                                        )
+                                        mediaMessage = nil
+                                    } catch {
+                                        mediaMessage = "照片没有安全保存，请重新选择。"
+                                    }
                                 }
                                 .padding(12)
+                            }
+                            if let mediaMessage {
+                                Label(mediaMessage, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(TSDPalette.amber)
                             }
                         } else {
                             TextField(prompt(for: gap), text: $value, axis: .vertical)
@@ -719,6 +749,7 @@ private struct NativeWeekendWorkbench: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeSliceListView: View {
     @Binding var store: NativeShellStore
+    @State private var pendingDeletion: NativePendingSliceDeletion?
 
     var body: some View {
         NavigationStack {
@@ -734,22 +765,295 @@ private struct NativeSliceListView: View {
                     }
                 } else {
                     List(store.slices) { slice in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(slice.title).font(.headline)
-                            Text(slice.body).font(.subheadline).foregroundStyle(.secondary)
-                            if let media = slice.media {
-                                Label(media.label, systemImage: media.kind == .video ? "video" : "photo")
-                                    .font(.caption.weight(.semibold))
+                        NavigationLink {
+                            NativeSliceDetailView(store: $store, sliceID: slice.id) {
+                                delete(sliceID: slice.id)
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                if let media = slice.media {
+                                    NativeMediaPreview(media: media, height: 72, cornerRadius: 14)
+                                        .frame(width: 72)
+                                }
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(slice.title).font(.headline)
+                                    Text(slice.body).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
+                                    if let media = slice.media {
+                                        Label(media.label, systemImage: media.kind == .video ? "video" : "photo")
+                                            .font(.caption.weight(.semibold))
+                                    }
+                                }
                             }
                         }
                         .padding(.vertical, 4)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                delete(sliceID: slice.id)
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
                     }
                     .scrollContentBackground(.hidden)
                     .background(TSDPalette.canvas)
                 }
             }
             .navigationTitle("切片")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if let pendingDeletion {
+                    HStack(spacing: 12) {
+                        Text("已删除“\(pendingDeletion.deleted.slice.title)”")
+                            .font(.subheadline)
+                            .lineLimit(1)
+                        Spacer()
+                        Button("撤销") { undo(pendingDeletion) }
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(TSDPalette.moss)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 52)
+                    .background(TSDPalette.paper)
+                    .overlay(alignment: .top) { Divider() }
+                }
+            }
+            .task(id: pendingDeletion?.deleted.slice.id) {
+                guard let deletionID = pendingDeletion?.deleted.slice.id else { return }
+                do {
+                    try await Task.sleep(nanoseconds: 8_000_000_000)
+                    if pendingDeletion?.deleted.slice.id == deletionID {
+                        pendingDeletion = nil
+                    }
+                } catch {
+                    return
+                }
+            }
         }
+    }
+
+    private func delete(sliceID: UUID) {
+        guard let deleted = store.deleteSlice(id: sliceID) else { return }
+        let thumbnailData = deleted.slice.media?.thumbnailFileName.flatMap {
+            NativeMediaThumbnailStore.data(fileName: $0)
+        }
+        if let fileName = deleted.slice.media?.thumbnailFileName {
+            try? NativeMediaThumbnailStore.remove(fileName: fileName)
+        }
+        pendingDeletion = NativePendingSliceDeletion(deleted: deleted, thumbnailData: thumbnailData)
+    }
+
+    private func undo(_ pending: NativePendingSliceDeletion) {
+        var deleted = pending.deleted
+        if let media = deleted.slice.media {
+            deleted.slice.media = NativeMediaThumbnailStore.restoreAfterUndo(
+                media,
+                thumbnailData: pending.thumbnailData
+            )
+        }
+        _ = store.restoreDeletedSlice(deleted)
+        pendingDeletion = nil
+    }
+}
+
+private struct NativePendingSliceDeletion: Equatable {
+    var deleted: NativeDeletedMemorySlice
+    var thumbnailData: Data?
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeSliceDetailView: View {
+    @Binding var store: NativeShellStore
+    var sliceID: UUID
+    var onDelete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var bodyText: String
+    @State private var peopleText: String
+    @State private var meaning: String
+    @State private var mediaMessage: String?
+
+    init(store: Binding<NativeShellStore>, sliceID: UUID, onDelete: @escaping () -> Void) {
+        self._store = store
+        self.sliceID = sliceID
+        self.onDelete = onDelete
+        let slice = store.wrappedValue.slices.first(where: { $0.id == sliceID })
+        self._title = State(initialValue: slice?.title ?? "")
+        self._bodyText = State(initialValue: slice?.body ?? "")
+        self._peopleText = State(initialValue: slice?.people?.joined(separator: "，") ?? "")
+        self._meaning = State(initialValue: slice?.meaning ?? "")
+        self._mediaMessage = State(initialValue: nil)
+    }
+
+    private var slice: MemorySlice? {
+        store.slices.first(where: { $0.id == sliceID })
+    }
+
+    var body: some View {
+        ZStack {
+            TSDPalette.canvas.ignoresSafeArea()
+            if let slice {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if let media = slice.media {
+                            NativeMediaPreview(media: media, height: 220, cornerRadius: 24)
+                            if let issue = media.thumbnailIssue {
+                                Label(issue, systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(TSDPalette.amber)
+                            }
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            TextField("这一刻叫什么？", text: $title)
+                                .font(.title2.bold())
+                            TextField("发生了什么？", text: $bodyText, axis: .vertical)
+                                .lineLimit(3...8)
+                            Divider()
+                            TextField("当时和谁在一起？", text: $peopleText)
+                            TextField("为什么还想记得它？", text: $meaning, axis: .vertical)
+                                .lineLimit(2...5)
+                        }
+                        .padding(18)
+                        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+                        VStack(spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(TSDPalette.moss)
+                                MemoryCameraPicker { selection in
+                                    replaceMedia(with: selection)
+                                }
+                                .padding(12)
+                            }
+                            if slice.media != nil {
+                                Button(role: .destructive) {
+                                    removeMedia()
+                                } label: {
+                                    Label("移除当前影像", systemImage: "photo.badge.minus")
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            if let mediaMessage {
+                                Text(mediaMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(TSDPalette.amber)
+                            }
+                        }
+
+                        Button(role: .destructive) {
+                            onDelete()
+                            dismiss()
+                        } label: {
+                            Label("删除这张切片", systemImage: "trash")
+                                .frame(maxWidth: .infinity, minHeight: 48)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(18)
+                    .padding(.bottom, 24)
+                }
+            } else {
+                NativeEmptyDestination(
+                    symbol: "questionmark.folder",
+                    title: "这张切片已不在这里",
+                    note: "它可能刚刚被删除或移动。",
+                    actionTitle: "返回切片"
+                ) { dismiss() }
+            }
+        }
+        .navigationTitle("记忆切片")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("保存") {
+                    _ = store.updateSlice(
+                        id: sliceID,
+                        title: title,
+                        body: bodyText,
+                        peopleText: peopleText,
+                        meaning: meaning
+                    )
+                }
+                .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+    }
+
+    private func replaceMedia(with selection: MemoryCameraSelection) {
+        mediaMessage = nil
+        let media: MediaAnchor
+        do {
+            media = try NativeMediaThumbnailStore.persist(selection)
+        } catch {
+            mediaMessage = "照片没有安全保存，当前影像保持不变。"
+            return
+        }
+        if let currentFileName = slice?.media?.thumbnailFileName {
+            try? NativeMediaThumbnailStore.remove(fileName: currentFileName)
+        }
+        _ = store.attachMedia(media, to: sliceID)
+    }
+
+    private func removeMedia() {
+        guard let media = store.detachMedia(from: sliceID) else { return }
+        if let fileName = media.thumbnailFileName {
+            try? NativeMediaThumbnailStore.remove(fileName: fileName)
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeMediaPreview: View {
+    var media: MediaAnchor
+    var height: CGFloat
+    var cornerRadius: CGFloat
+    @State private var thumbnailData: Data?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(TSDPalette.sage.opacity(0.24))
+            if let image = decodedImage {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                VStack(spacing: 7) {
+                    Image(systemName: placeholderSymbol)
+                        .font(.title2)
+                        .foregroundStyle(TSDPalette.moss)
+                    if media.thumbnailFileName != nil {
+                        Text(height > 100 ? "影像需重新选择" : "需重选")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(TSDPalette.inkSoft)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                .padding(8)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .task(id: media.thumbnailFileName) {
+            thumbnailData = media.thumbnailFileName.flatMap {
+                NativeMediaThumbnailStore.data(fileName: $0)
+            }
+        }
+        .accessibilityLabel(media.kind == .video ? "记忆视频" : "记忆照片")
+    }
+
+    private var placeholderSymbol: String {
+        if media.thumbnailFileName != nil { return "photo.badge.exclamationmark" }
+        return media.kind == .video ? "video.fill" : "photo.fill"
+    }
+
+    private var decodedImage: CGImage? {
+#if canImport(ImageIO)
+        guard let thumbnailData,
+              let source = CGImageSourceCreateWithData(thumbnailData as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+#else
+        return nil
+#endif
     }
 }
 

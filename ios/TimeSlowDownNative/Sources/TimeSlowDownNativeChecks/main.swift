@@ -278,6 +278,34 @@ check(peopleGapShell.slices[0].people == ["老朋友"], "Weekend person completi
 check(peopleGapShell.completeWeekendGap(sliceID: peopleSliceID, kind: .meaning, value: "那天终于把误会说开了。"), "Weekend Workbench should save a meaning clue")
 check(peopleGapShell.slices[0].meaning == "那天终于把误会说开了。", "Weekend meaning completion should update the memory slice")
 
+let editableSlice = SliceFactory.quickMark(title: "旧标题", body: "旧正文")
+let editableRevisit = MemoryRevisit(sliceID: editableSlice.id, reflection: "旧回访")
+var editingShell = NativeShellStore(slices: [editableSlice], revisits: [editableRevisit])
+check(editingShell.updateSlice(id: editableSlice.id, title: " 新标题 ", body: " 新正文 ", peopleText: "爸爸，朋友", meaning: " 值得留下 "), "Slice detail should save user edits")
+check(editingShell.slices[0].title == "新标题", "Slice editing should trim its title")
+check(editingShell.slices[0].people == ["爸爸", "朋友"], "Slice editing should parse people clues")
+check(editingShell.slices[0].meaning == "值得留下", "Slice editing should save meaning")
+check(editingShell.slices[0].sources.contains("用户编辑"), "Slice editing should preserve source lineage")
+check(!editingShell.updateSlice(id: editableSlice.id, title: "  ", body: "", peopleText: "", meaning: ""), "Slice editing should reject an empty title")
+
+let editableMedia = MediaAnchor(
+    kind: .image,
+    label: "detail-photo.jpg",
+    thumbnailFileName: "detail-photo.jpg",
+    thumbnailByteCount: 128
+)
+check(editingShell.attachMedia(editableMedia, to: editableSlice.id), "Slice detail should attach replacement media")
+check(editingShell.slices[0].media == editableMedia, "Slice media replacement should update the source slice")
+check(editingShell.detachMedia(from: editableSlice.id) == editableMedia, "Slice detail should detach media explicitly")
+check(editingShell.slices[0].media == nil, "Detached slice media should no longer be referenced")
+_ = editingShell.attachMedia(editableMedia, to: editableSlice.id)
+
+let deletedEditableSlice = editingShell.deleteSlice(id: editableSlice.id)
+check(deletedEditableSlice?.revisits == [editableRevisit], "Deleting a slice should retain related revisits for undo")
+check(editingShell.slices.isEmpty && editingShell.revisits.isEmpty, "Deleting a slice should remove the slice and its revisit layers")
+check(deletedEditableSlice.map { editingShell.restoreDeletedSlice($0) } == true, "Undo should restore a deleted slice")
+check(editingShell.slices.first?.id == editableSlice.id && editingShell.revisits == [editableRevisit], "Undo should restore the slice and revisit lineage")
+
 let yesterdayEcho = SliceFactory.yesterdayEcho(from: shell.slices)
 check(yesterdayEcho?.isGentleReturnReady == true, "Yesterday echo should be a gentle, source-backed return prompt")
 let nativeRevisit = shell.revisitYesterdayEcho(reflection: "现在再看，还是记得那碗面的热气。")
@@ -378,14 +406,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 75;"), "Xcode project build settings should carry v75 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 76;"), "Xcode project build settings should carry v76 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>75</string>"), "Info.plist should carry v75 build number")
+check(infoPlistText.contains("<string>76</string>"), "Info.plist should carry v76 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -429,6 +457,68 @@ for slot in AppIconAssetContract.slots {
 }
 check(AppIconAssetContract.requiredVisualMotifs.contains("no-copyrighted-asset"), "App Icon contract should forbid third-party assets")
 check(AppIconAssetContract.requiredVisualMotifs.contains("no-alpha-channel"), "App Icon contract should require no alpha channel")
+
+let thumbnailSourceSlot = AppIconAssetContract.slots.max(by: { $0.pixelSize < $1.pixelSize })!
+let thumbnailSourceURL = packageRoot
+    .appendingPathComponent(AppIconAssetContract.assetCatalogPath)
+    .appendingPathComponent(thumbnailSourceSlot.filename)
+let thumbnailSourceData = try Data(contentsOf: thumbnailSourceURL)
+let renderedThumbnail = try MediaThumbnailRenderer.jpegThumbnail(from: thumbnailSourceData, maxPixelSize: 320)
+check(renderedThumbnail.starts(with: [0xFF, 0xD8]), "Rendered local thumbnail should be JPEG data")
+check(renderedThumbnail.count <= NativeMediaThumbnailStore.maximumThumbnailBytes, "Rendered local thumbnail should respect the protected-cache byte ceiling")
+check(renderedThumbnail != thumbnailSourceData, "Thumbnail rendering should create a new metadata-stripped representation")
+
+let thumbnailDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("tsd-thumbnail-store-\(UUID().uuidString)", isDirectory: true)
+defer { try? FileManager.default.removeItem(at: thumbnailDirectory) }
+let thumbnailAnchor = MediaAnchor(kind: .image, label: "selected-photo")
+let thumbnailSelection = MemoryCameraSelection(anchor: thumbnailAnchor, thumbnailData: renderedThumbnail)
+let persistedThumbnailAnchor = try NativeMediaThumbnailStore.persist(thumbnailSelection, directory: thumbnailDirectory)
+check(persistedThumbnailAnchor.hasLocalThumbnailReference, "Persisted media anchor should reference a protected local thumbnail")
+check(persistedThumbnailAnchor.thumbnailIssue == nil, "Successful thumbnail persistence should clear media issues")
+check(persistedThumbnailAnchor.storage == "protected-local-thumbnail", "Persisted thumbnail should expose its local protected storage boundary")
+check(persistedThumbnailAnchor.thumbnailFileName.flatMap { NativeMediaThumbnailStore.data(fileName: $0, directory: thumbnailDirectory) } == renderedThumbnail, "Protected thumbnail cache should round-trip rendered bytes")
+let restoredThumbnailAnchor = NativeMediaThumbnailStore.restoreAfterUndo(
+    persistedThumbnailAnchor,
+    thumbnailData: renderedThumbnail,
+    directory: thumbnailDirectory
+)
+check(restoredThumbnailAnchor.hasLocalThumbnailReference, "Undo should restore protected thumbnail bytes")
+let degradedUndoAnchor = NativeMediaThumbnailStore.restoreAfterUndo(
+    persistedThumbnailAnchor,
+    thumbnailData: nil,
+    directory: thumbnailDirectory
+)
+check(!degradedUndoAnchor.hasLocalThumbnailReference, "Undo without thumbnail bytes must clear stale file references")
+check(degradedUndoAnchor.thumbnailIssue != nil, "Undo without thumbnail bytes should disclose media recovery state")
+if let thumbnailFileName = persistedThumbnailAnchor.thumbnailFileName {
+    try NativeMediaThumbnailStore.remove(fileName: thumbnailFileName, directory: thumbnailDirectory)
+    check(NativeMediaThumbnailStore.data(fileName: thumbnailFileName, directory: thumbnailDirectory) == nil, "Removing media should delete its local thumbnail cache")
+}
+do {
+    try NativeMediaThumbnailStore.remove(fileName: "../outside.jpg", directory: thumbnailDirectory)
+    check(false, "Thumbnail cache should reject unsafe relative paths")
+} catch MediaThumbnailError.invalidFileName {
+    check(true, "Thumbnail cache rejected unsafe relative paths")
+}
+
+let pendingVideoAnchor = try NativeMediaThumbnailStore.persist(MemoryCameraSelection(
+    anchor: MediaAnchor(kind: .video, label: "selected-video"),
+    issue: "视频封面待生成"
+), directory: thumbnailDirectory)
+check(!pendingVideoAnchor.hasLocalThumbnailReference, "Video selection should not pretend a poster exists before generation")
+check(pendingVideoAnchor.thumbnailIssue == "视频封面待生成", "Video selection should preserve an honest poster-pending state")
+do {
+    _ = try NativeMediaThumbnailStore.persist(
+        MemoryCameraSelection(anchor: MediaAnchor(kind: .image, label: "missing-thumbnail")),
+        directory: thumbnailDirectory
+    )
+    check(false, "Image selections without rendered thumbnail data must not persist")
+} catch MediaThumbnailError.renderFailed {
+    check(true, "Image selections without rendered thumbnail data should fail explicitly")
+} catch {
+    check(false, "Missing image thumbnails should fail with renderFailed")
+}
 
 let deviceKey = KeychainVaultStub.bootstrapDeviceKey(
     accountID: "guest-pass",
@@ -1620,7 +1710,11 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "75", "TestFlight build notes should match v75")
+check(buildNotes.buildNumber == "76", "TestFlight build notes should match v76")
+check(buildNotes.summary.localizedCaseInsensitiveContains("image-thumbnail pipeline"), "TestFlight build notes should mention the real image thumbnail pipeline")
+check(buildNotes.summary.localizedCaseInsensitiveContains("editable memory slices"), "TestFlight build notes should mention editable slice detail")
+check(buildNotes.summary.localizedCaseInsensitiveContains("undo deletion"), "TestFlight build notes should mention deletion undo")
+check(buildNotes.summary.localizedCaseInsensitiveContains("poster-pending"), "TestFlight build notes should keep video poster limits honest")
 check(buildNotes.summary.localizedCaseInsensitiveContains("local persistence"), "TestFlight build notes should mention local persistence")
 check(buildNotes.summary.localizedCaseInsensitiveContains("empty vault"), "TestFlight build notes should mention the honest first-launch vault")
 check(buildNotes.summary.localizedCaseInsensitiveContains("corrupt data"), "TestFlight build notes should mention corrupt backup recovery")
@@ -2061,8 +2155,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "75", "App Store submission gate should track v75")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v75 native persistence")
+check(appStoreSubmissionGate.buildNumber == "76", "App Store submission gate should track v76")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v76 media editing")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2338,4 +2432,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, atomic local persistence, legacy migration, corrupt backup recovery, honest first-launch empty vault, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, and v75 native persistence are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, atomic local persistence, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, honest video poster pending, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, and v76 media editing are aligned.")
