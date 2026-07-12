@@ -313,6 +313,305 @@ public struct WeeklyStoryProgress: Codable, Equatable, Sendable {
     }
 }
 
+public enum LifeMeadowScale: String, CaseIterable, Codable, Equatable, Sendable {
+    case week
+    case month
+    case year
+    case decade
+
+    public var title: String {
+        switch self {
+        case .week: "周"
+        case .month: "月"
+        case .year: "年"
+        case .decade: "十年"
+        }
+    }
+}
+
+public enum LifeMeadowGrowth: Int, Codable, Equatable, Comparable, Sendable {
+    case quiet
+    case grass
+    case bloom
+    case grove
+
+    public static func < (lhs: LifeMeadowGrowth, rhs: LifeMeadowGrowth) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+
+    public var accessibilityName: String {
+        switch self {
+        case .quiet: "安静的草地"
+        case .grass: "长出青草"
+        case .bloom: "长出花朵"
+        case .grove: "长成花丛和树林"
+        }
+    }
+}
+
+public struct LifeMeadowPeriod: Codable, Equatable, Identifiable, Sendable {
+    public var id: String
+    public var start: Date
+    public var end: Date
+    public var title: String
+    public var subtitle: String
+    public var sliceIDs: [UUID]
+    public var mediaAnchorCount: Int
+    public var revisitCount: Int
+    public var growth: LifeMeadowGrowth
+    public var prominentSliceID: UUID?
+
+    public init(
+        id: String,
+        start: Date,
+        end: Date,
+        title: String,
+        subtitle: String,
+        sliceIDs: [UUID],
+        mediaAnchorCount: Int,
+        revisitCount: Int,
+        growth: LifeMeadowGrowth,
+        prominentSliceID: UUID?
+    ) {
+        self.id = id
+        self.start = start
+        self.end = end
+        self.title = title
+        self.subtitle = subtitle
+        self.sliceIDs = sliceIDs
+        self.mediaAnchorCount = mediaAnchorCount
+        self.revisitCount = revisitCount
+        self.growth = growth
+        self.prominentSliceID = prominentSliceID
+    }
+
+    public var memoryCount: Int { sliceIDs.count }
+    public var hasMemories: Bool { !sliceIDs.isEmpty }
+}
+
+public struct LifeMeadowSnapshot: Codable, Equatable, Sendable {
+    public var scale: LifeMeadowScale
+    public var anchorDate: Date
+    public var intervalStart: Date
+    public var intervalEnd: Date
+    public var title: String
+    public var periods: [LifeMeadowPeriod]
+    public var memoryCount: Int
+    public var mediaAnchorCount: Int
+    public var revisitCount: Int
+
+    public init(
+        scale: LifeMeadowScale,
+        anchorDate: Date,
+        intervalStart: Date,
+        intervalEnd: Date,
+        title: String,
+        periods: [LifeMeadowPeriod],
+        memoryCount: Int,
+        mediaAnchorCount: Int,
+        revisitCount: Int
+    ) {
+        self.scale = scale
+        self.anchorDate = anchorDate
+        self.intervalStart = intervalStart
+        self.intervalEnd = intervalEnd
+        self.title = title
+        self.periods = periods
+        self.memoryCount = memoryCount
+        self.mediaAnchorCount = mediaAnchorCount
+        self.revisitCount = revisitCount
+    }
+
+    public var isSourceBacked: Bool {
+        memoryCount == periods.reduce(0) { $0 + $1.memoryCount } &&
+        mediaAnchorCount == periods.reduce(0) { $0 + $1.mediaAnchorCount } &&
+        revisitCount == periods.reduce(0) { $0 + $1.revisitCount }
+    }
+}
+
+public enum LifeMeadowFactory {
+    public static func snapshot(
+        from slices: [MemorySlice],
+        revisits: [MemoryRevisit],
+        scale: LifeMeadowScale,
+        anchorDate: Date = Date(),
+        calendar: Calendar = .current
+    ) -> LifeMeadowSnapshot {
+        let interval = displayInterval(for: scale, anchorDate: anchorDate, calendar: calendar)
+        let slots = periodIntervals(for: scale, within: interval, calendar: calendar)
+        let periods = slots.enumerated().map { index, slot in
+            let matchingSlices = slices
+                .filter { slot.contains($0.capturedAt) }
+                .sorted { $0.capturedAt > $1.capturedAt }
+            let sliceIDs = Set(matchingSlices.map(\.id))
+            let matchingRevisits = revisits.filter { sliceIDs.contains($0.sliceID) }
+            let mediaCount = matchingSlices.filter(\.hasMediaAnchor).count
+            let score = matchingSlices.count + mediaCount + matchingRevisits.count
+            let prominent = matchingSlices.first(where: \.hasMediaAnchor) ?? matchingSlices.first
+            return LifeMeadowPeriod(
+                id: "\(scale.rawValue)-\(Int(slot.start.timeIntervalSince1970))-\(index)",
+                start: slot.start,
+                end: slot.end,
+                title: periodTitle(for: scale, date: slot.start, calendar: calendar),
+                subtitle: periodSubtitle(for: scale, date: slot.start, calendar: calendar),
+                sliceIDs: matchingSlices.map(\.id),
+                mediaAnchorCount: mediaCount,
+                revisitCount: matchingRevisits.count,
+                growth: growth(for: score),
+                prominentSliceID: prominent?.id
+            )
+        }
+        return LifeMeadowSnapshot(
+            scale: scale,
+            anchorDate: anchorDate,
+            intervalStart: interval.start,
+            intervalEnd: interval.end,
+            title: rangeTitle(for: scale, interval: interval, calendar: calendar),
+            periods: periods,
+            memoryCount: periods.reduce(0) { $0 + $1.memoryCount },
+            mediaAnchorCount: periods.reduce(0) { $0 + $1.mediaAnchorCount },
+            revisitCount: periods.reduce(0) { $0 + $1.revisitCount }
+        )
+    }
+
+    public static func shiftedAnchor(
+        from anchorDate: Date,
+        scale: LifeMeadowScale,
+        direction: Int,
+        calendar: Calendar = .current
+    ) -> Date {
+        let delta = direction < 0 ? -1 : 1
+        switch scale {
+        case .week:
+            return calendar.date(byAdding: .weekOfYear, value: delta, to: anchorDate) ?? anchorDate
+        case .month:
+            return calendar.date(byAdding: .month, value: delta, to: anchorDate) ?? anchorDate
+        case .year:
+            return calendar.date(byAdding: .year, value: delta, to: anchorDate) ?? anchorDate
+        case .decade:
+            return calendar.date(byAdding: .year, value: delta * 10, to: anchorDate) ?? anchorDate
+        }
+    }
+
+    public static func leadingWeekdayPlaceholders(
+        for intervalStart: Date,
+        calendar: Calendar = .current
+    ) -> Int {
+        let weekday = calendar.component(.weekday, from: intervalStart)
+        return (weekday - calendar.firstWeekday + 7) % 7
+    }
+
+    private static func displayInterval(
+        for scale: LifeMeadowScale,
+        anchorDate: Date,
+        calendar: Calendar
+    ) -> DateInterval {
+        if scale == .decade {
+            let anchorYear = calendar.component(.year, from: anchorDate)
+            let firstYear = anchorYear - (anchorYear % 10)
+            var components = DateComponents()
+            components.calendar = calendar
+            components.timeZone = calendar.timeZone
+            components.year = firstYear
+            components.month = 1
+            components.day = 1
+            let start = calendar.date(from: components) ?? anchorDate
+            let end = calendar.date(byAdding: .year, value: 10, to: start) ?? start
+            return DateInterval(start: start, end: end)
+        }
+        let component: Calendar.Component = switch scale {
+        case .week: .weekOfYear
+        case .month: .month
+        case .year: .year
+        case .decade: .year
+        }
+        return calendar.dateInterval(of: component, for: anchorDate) ?? DateInterval(start: anchorDate, duration: 1)
+    }
+
+    private static func periodIntervals(
+        for scale: LifeMeadowScale,
+        within interval: DateInterval,
+        calendar: Calendar
+    ) -> [DateInterval] {
+        let component: Calendar.Component = switch scale {
+        case .week, .month: .day
+        case .year: .month
+        case .decade: .year
+        }
+        var result: [DateInterval] = []
+        var cursor = interval.start
+        while cursor < interval.end {
+            let next = calendar.date(byAdding: component, value: 1, to: cursor) ?? interval.end
+            let end = min(next, interval.end)
+            guard cursor < end else { break }
+            result.append(DateInterval(start: cursor, end: end))
+            cursor = end
+        }
+        return result
+    }
+
+    private static func growth(for score: Int) -> LifeMeadowGrowth {
+        switch score {
+        case 0: .quiet
+        case 1: .grass
+        case 2...3: .bloom
+        default: .grove
+        }
+    }
+
+    private static func periodTitle(
+        for scale: LifeMeadowScale,
+        date: Date,
+        calendar: Calendar
+    ) -> String {
+        let components = calendar.dateComponents([.day, .month, .year], from: date)
+        return switch scale {
+        case .week, .month: "\(components.day ?? 0)"
+        case .year: "\(components.month ?? 0)月"
+        case .decade: "\(components.year ?? 0)"
+        }
+    }
+
+    private static func periodSubtitle(
+        for scale: LifeMeadowScale,
+        date: Date,
+        calendar: Calendar
+    ) -> String {
+        switch scale {
+        case .week:
+            let weekday = calendar.component(.weekday, from: date)
+            let names = calendar.shortWeekdaySymbols
+            return names.indices.contains(weekday - 1) ? names[weekday - 1] : ""
+        case .month:
+            return ""
+        case .year:
+            return ""
+        case .decade:
+            return "年"
+        }
+    }
+
+    private static func rangeTitle(
+        for scale: LifeMeadowScale,
+        interval: DateInterval,
+        calendar: Calendar
+    ) -> String {
+        let start = calendar.dateComponents([.day, .month, .year], from: interval.start)
+        let inclusiveEnd = calendar.date(byAdding: .second, value: -1, to: interval.end) ?? interval.end
+        let end = calendar.dateComponents([.day, .month, .year], from: inclusiveEnd)
+        switch scale {
+        case .week:
+            return "\(start.month ?? 0)月\(start.day ?? 0)日 – \(end.month ?? 0)月\(end.day ?? 0)日"
+        case .month:
+            return "\(start.year ?? 0)年\(start.month ?? 0)月"
+        case .year:
+            return "\(start.year ?? 0)年"
+        case .decade:
+            return "\(start.year ?? 0) – \(end.year ?? 0)"
+        }
+    }
+}
+
 public enum SliceFactory {
     public static func quickMark(
         title: String,

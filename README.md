@@ -76,6 +76,7 @@ Current demo focus:
 - Native build v76 renders selected images into metadata-stripped protected JPEG thumbnails, displays them across slice list/detail, supports editing title/body/people/meaning, media replacement/removal, missing-thumbnail recovery, and slice delete with undo; videos remain honest poster-pending clues
 - Native build v77 imports selected videos through a file representation, extracts a protected JPEG poster with AVFoundation, and discards the raw video handoff without loading it into app memory or retaining it in the memory vault
 - Native build v78 serializes debounced persistence with background flush, imports photo/video thumbnails through file representations, disables the unsafe legacy byte bridge, and includes available protected thumbnails in the default portable ZIP without exporting raw originals
+- Native build v79 replaces the native Meadow placeholder with source-backed semantic zoom across week, month, year, and decade, plus a plain chronological river and drill-down to original words, media, people, meaning, and revisit layers
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report

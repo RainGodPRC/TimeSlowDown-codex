@@ -330,6 +330,105 @@ check(weeklyProgress.candidates.count == 3, "Weekend workbench should expose thr
 check(weeklyProgress.isNonPunitive, "Weekend workbench copy should avoid debt, streak, and failure language")
 check(weeklyProgress.percent > 0 && weeklyProgress.percent <= 100, "Weekly story progress should expose bounded field completeness")
 
+var meadowCalendar = Calendar(identifier: .gregorian)
+meadowCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+meadowCalendar.firstWeekday = 2
+func meadowDate(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 12) -> Date {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    return calendar.date(from: DateComponents(
+        timeZone: calendar.timeZone,
+        year: year,
+        month: month,
+        day: day,
+        hour: hour
+    ))!
+}
+let meadowMedia = MediaAnchor(kind: .image, label: "summer.jpg")
+let julyPhoto = SliceFactory.quickMark(
+    title: "七月的海风",
+    tags: ["家人"],
+    media: meadowMedia,
+    now: meadowDate(2026, 7, 2)
+)
+let julyOrdinary = SliceFactory.quickMark(
+    title: "普通的晚饭",
+    body: "没有大事，但桌边的灯很暖。",
+    now: meadowDate(2026, 7, 2, 20)
+)
+let julyRain = SliceFactory.quickMark(
+    title: "低落的一场雨",
+    body: "这也是完整人生的一部分。",
+    now: meadowDate(2026, 7, 15)
+)
+let juneMemory = SliceFactory.quickMark(title: "六月收尾", now: meadowDate(2026, 6, 30))
+let olderMemory = SliceFactory.quickMark(title: "五年前学会骑车", now: meadowDate(2021, 4, 8))
+let meadowSlices = [julyPhoto, julyOrdinary, julyRain, juneMemory, olderMemory]
+let meadowRevisit = MemoryRevisit(
+    sliceID: julyPhoto.id,
+    revisitedAt: meadowDate(2026, 7, 20),
+    reflection: "现在还记得风的声音。"
+)
+let monthMeadow = LifeMeadowFactory.snapshot(
+    from: meadowSlices,
+    revisits: [meadowRevisit],
+    scale: .month,
+    anchorDate: meadowDate(2026, 7, 15),
+    calendar: meadowCalendar
+)
+check(monthMeadow.periods.count == 31, "July meadow should expose one stable period per calendar day")
+check(LifeMeadowFactory.leadingWeekdayPlaceholders(for: monthMeadow.intervalStart, calendar: meadowCalendar) == 2, "Month grid should align day one under Wednesday when Monday is the first weekday")
+check(monthMeadow.memoryCount == 3, "Month meadow should include only source slices inside the selected month")
+check(monthMeadow.mediaAnchorCount == 1, "Month meadow should preserve media density")
+check(monthMeadow.revisitCount == 1, "Month meadow should layer later revisits onto their original memory period")
+check(monthMeadow.isSourceBacked, "Meadow summary should exactly equal its source periods")
+let julySecond = monthMeadow.periods.first { $0.title == "2" }
+check(julySecond?.memoryCount == 2, "Same-day memories should share one deterministic meadow period")
+check(julySecond?.growth == .grove, "Multiple slices, media, and revisits should form a denser source-backed landscape")
+check(julySecond?.sliceIDs.contains(julyPhoto.id) == true, "A visible meadow period should retain drill-down source IDs")
+check(
+    LifeMeadowFactory.snapshot(
+        from: meadowSlices,
+        revisits: [meadowRevisit],
+        scale: .month,
+        anchorDate: meadowDate(2026, 7, 15),
+        calendar: meadowCalendar
+    ) == monthMeadow,
+    "Meadow projection should be deterministic across recomputation"
+)
+let yearMeadow = LifeMeadowFactory.snapshot(
+    from: meadowSlices,
+    revisits: [meadowRevisit],
+    scale: .year,
+    anchorDate: meadowDate(2026, 7, 15),
+    calendar: meadowCalendar
+)
+check(yearMeadow.periods.count == 12 && yearMeadow.memoryCount == 4, "Year meadow should aggregate stable month periods")
+let decadeMeadow = LifeMeadowFactory.snapshot(
+    from: meadowSlices,
+    revisits: [meadowRevisit],
+    scale: .decade,
+    anchorDate: meadowDate(2026, 7, 15),
+    calendar: meadowCalendar
+)
+check(decadeMeadow.periods.count == 10 && decadeMeadow.memoryCount == 5, "Decade meadow should preserve memories across calendar years")
+check(decadeMeadow.periods.first { $0.title == "2021" }?.sliceIDs == [olderMemory.id], "Decade source IDs should remain attached to their original year")
+let emptyMeadow = LifeMeadowFactory.snapshot(
+    from: [],
+    revisits: [],
+    scale: .week,
+    anchorDate: meadowDate(2026, 7, 15),
+    calendar: meadowCalendar
+)
+check(emptyMeadow.periods.count == 7 && emptyMeadow.memoryCount == 0 && emptyMeadow.isSourceBacked, "Empty meadow should stay honest and structurally complete")
+let nextMonthAnchor = LifeMeadowFactory.shiftedAnchor(
+    from: meadowDate(2026, 7, 15),
+    scale: .month,
+    direction: 1,
+    calendar: meadowCalendar
+)
+check(meadowCalendar.component(.month, from: nextMonthAnchor) == 8, "Meadow navigation should move by the selected semantic scale")
+
 var productInteractionShell = NativeShellStore.seeded()
 check(productInteractionShell.captureQuickMark(title: "   ") == nil, "Quick Mark should reject an empty title")
 let nativeQuickMark = productInteractionShell.captureQuickMark(title: "雨停后的十分钟", body: "路面有一点亮。")
@@ -540,14 +639,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 78;"), "Xcode project build settings should carry v78 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 79;"), "Xcode project build settings should carry v79 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>78</string>"), "Info.plist should carry v78 build number")
+check(infoPlistText.contains("<string>79</string>"), "Info.plist should carry v79 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -1890,7 +1989,10 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "78", "TestFlight build notes should match v78")
+check(buildNotes.buildNumber == "79", "TestFlight build notes should match v79")
+check(buildNotes.summary.localizedCaseInsensitiveContains("semantic zoom"), "TestFlight build notes should mention native Meadow semantic zoom")
+check(buildNotes.summary.localizedCaseInsensitiveContains("source-backed"), "TestFlight build notes should keep the Meadow traceable to real sources")
+check(buildNotes.summary.localizedCaseInsensitiveContains("chronological river"), "TestFlight build notes should mention the plain linear Meadow route")
 check(buildNotes.summary.localizedCaseInsensitiveContains("video poster extraction"), "TestFlight build notes should mention the real video poster pipeline")
 check(buildNotes.summary.localizedCaseInsensitiveContains("file representation"), "TestFlight build notes should mention file-based video transfer")
 check(buildNotes.summary.localizedCaseInsensitiveContains("editable memory slices"), "TestFlight build notes should mention editable slice detail")
@@ -2336,8 +2438,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "78", "App Store submission gate should track v78")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v78 reliability hardening")
+check(appStoreSubmissionGate.buildNumber == "79", "App Store submission gate should track v79")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v79 native Meadow")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2613,4 +2715,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, and v78 persistence/media portability hardening are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, and v79 native Life Meadow are aligned.")
