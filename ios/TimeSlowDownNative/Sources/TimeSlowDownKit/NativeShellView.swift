@@ -76,7 +76,7 @@ public struct TSDNativeShellView: View {
         self._store = State(initialValue: resolvedStore)
         self._persistenceMessage = State(initialValue: message)
         self._persistenceEnabled = State(initialValue: canPersist)
-        self.persistenceCoordinator = persistenceURL.map(NativeShellPersistenceCoordinator.init(url:))
+        self.persistenceCoordinator = persistenceURL.map { NativeShellPersistenceCoordinator(url: $0) }
     }
 
     public var body: some View {
@@ -113,7 +113,7 @@ public struct TSDNativeShellView: View {
             guard persistenceEnabled, let persistenceCoordinator else { return }
             let snapshot = store
             do {
-                try await persistenceCoordinator.saveDebounced(snapshot)
+                _ = try await persistenceCoordinator.saveDebounced(snapshot)
             } catch is CancellationError {
                 return
             } catch {
@@ -127,7 +127,7 @@ public struct TSDNativeShellView: View {
             let snapshot = store
             Task {
                 do {
-                    try await persistenceCoordinator.flush(snapshot)
+                    _ = try await persistenceCoordinator.flush(snapshot)
                 } catch {
                     persistenceMessage = "进入后台前未能保存最后一次改动，请重新打开确认。"
                 }
@@ -857,9 +857,6 @@ private struct NativeSliceListView: View {
         let thumbnailData = deleted.slice.media?.thumbnailFileName.flatMap {
             NativeMediaThumbnailStore.data(fileName: $0)
         }
-        if let fileName = deleted.slice.media?.thumbnailFileName {
-            try? NativeMediaThumbnailStore.remove(fileName: fileName)
-        }
         pendingDeletion = NativePendingSliceDeletion(deleted: deleted, thumbnailData: thumbnailData)
     }
 
@@ -1008,17 +1005,17 @@ private struct NativeSliceDetailView: View {
             mediaMessage = "影像没有安全保存，当前影像保持不变。"
             return
         }
-        if let currentFileName = slice?.media?.thumbnailFileName {
-            try? NativeMediaThumbnailStore.remove(fileName: currentFileName)
+        guard store.attachMedia(media, to: sliceID) else {
+            if let fileName = media.thumbnailFileName {
+                try? NativeMediaThumbnailStore.remove(fileName: fileName)
+            }
+            mediaMessage = "这张切片已发生变化，新影像没有覆盖任何现有记忆。"
+            return
         }
-        _ = store.attachMedia(media, to: sliceID)
     }
 
     private func removeMedia() {
-        guard let media = store.detachMedia(from: sliceID) else { return }
-        if let fileName = media.thumbnailFileName {
-            try? NativeMediaThumbnailStore.remove(fileName: fileName)
-        }
+        _ = store.detachMedia(from: sliceID)
     }
 }
 

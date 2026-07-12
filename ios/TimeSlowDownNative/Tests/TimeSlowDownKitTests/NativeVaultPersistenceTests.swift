@@ -147,4 +147,137 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertGreaterThan(secondEnvelope.updatedAt, originalUpdatedAt)
         XCTAssertEqual(secondEnvelope.store.slices.count, 2)
     }
+
+    func testCommittedSnapshotGarbageCollectsOnlyUnreferencedManagedThumbnails() async throws {
+        let url = temporaryVaultURL()
+        let thumbnailDirectory = url.deletingLastPathComponent().appendingPathComponent("MediaThumbnails")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let referencedAnchor = try NativeMediaThumbnailStore.persist(
+            MemoryCameraSelection(
+                anchor: MediaAnchor(kind: .image, label: "仍被切片引用.jpg"),
+                thumbnailData: Data([0xFF, 0xD8, 0xFF, 0xD9])
+            ),
+            directory: thumbnailDirectory
+        )
+        let orphanedAnchor = try NativeMediaThumbnailStore.persist(
+            MemoryCameraSelection(
+                anchor: MediaAnchor(kind: .image, label: "已经被替换.jpg"),
+                thumbnailData: Data([0xFF, 0xD8, 0x00, 0xD9])
+            ),
+            directory: thumbnailDirectory
+        )
+        let managedLookingDirectory = thumbnailDirectory.appendingPathComponent(
+            "\(UUID().uuidString.lowercased()).jpg",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: managedLookingDirectory,
+            withIntermediateDirectories: true
+        )
+        var store = NativeShellStore()
+        _ = store.captureFromMemoryCamera(referencedAnchor)
+
+        let coordinator = NativeShellPersistenceCoordinator(
+            url: url,
+            thumbnailDirectory: thumbnailDirectory
+        )
+        let receipt = try await coordinator.flush(store)
+
+        let referencedFileName = try XCTUnwrap(referencedAnchor.thumbnailFileName)
+        let orphanedFileName = try XCTUnwrap(orphanedAnchor.thumbnailFileName)
+        XCTAssertNotNil(NativeMediaThumbnailStore.data(fileName: referencedFileName, directory: thumbnailDirectory))
+        XCTAssertNil(NativeMediaThumbnailStore.data(fileName: orphanedFileName, directory: thumbnailDirectory))
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: managedLookingDirectory.path, isDirectory: &isDirectory)
+        )
+        XCTAssertTrue(isDirectory.boolValue)
+        XCTAssertEqual(receipt.mediaGarbageCollection.removedFileNames, [orphanedFileName])
+        XCTAssertTrue(receipt.mediaGarbageCollection.failedFileNames.isEmpty)
+
+        let restored = try NativeShellPersistence.loadRecovering(from: url)
+        XCTAssertEqual(restored.store.slices.first?.media?.thumbnailFileName, referencedFileName)
+    }
+
+    func testFailedVaultCommitDoesNotGarbageCollectMedia() async throws {
+        let url = temporaryVaultURL()
+        let thumbnailDirectory = url.deletingLastPathComponent().appendingPathComponent("MediaThumbnails")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let orphanedAnchor = try NativeMediaThumbnailStore.persist(
+            MemoryCameraSelection(
+                anchor: MediaAnchor(kind: .image, label: "提交失败时必须保留.jpg"),
+                thumbnailData: Data([0xFF, 0xD8, 0x01, 0xD9])
+            ),
+            directory: thumbnailDirectory
+        )
+        try NativeShellPersistence.save(NativeShellStore(), to: url)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        object["schemaVersion"] = NativeVaultEnvelope.currentSchemaVersion + 1
+        try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            .write(to: url, options: .atomic)
+
+        let coordinator = NativeShellPersistenceCoordinator(
+            url: url,
+            thumbnailDirectory: thumbnailDirectory
+        )
+        await XCTAssertThrowsErrorAsync(try await coordinator.flush(NativeShellStore())) { error in
+            XCTAssertEqual(
+                error as? NativeVaultPersistenceError,
+                .unsupportedSchema(NativeVaultEnvelope.currentSchemaVersion + 1)
+            )
+        }
+
+        let fileName = try XCTUnwrap(orphanedAnchor.thumbnailFileName)
+        XCTAssertNotNil(NativeMediaThumbnailStore.data(fileName: fileName, directory: thumbnailDirectory))
+    }
+
+    func testSharedThumbnailIsCollectedOnlyAfterItsFinalCommittedReferenceIsRemoved() async throws {
+        let url = temporaryVaultURL()
+        let thumbnailDirectory = url.deletingLastPathComponent().appendingPathComponent("MediaThumbnails")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let sharedAnchor = try NativeMediaThumbnailStore.persist(
+            MemoryCameraSelection(
+                anchor: MediaAnchor(kind: .image, label: "两张切片共同引用.jpg"),
+                thumbnailData: Data([0xFF, 0xD8, 0x02, 0xD9])
+            ),
+            directory: thumbnailDirectory
+        )
+        var store = NativeShellStore()
+        let first = store.captureFromMemoryCamera(sharedAnchor, title: "第一张切片")
+        let second = store.captureFromMemoryCamera(sharedAnchor, title: "第二张切片")
+        let coordinator = NativeShellPersistenceCoordinator(
+            url: url,
+            thumbnailDirectory: thumbnailDirectory
+        )
+        let fileName = try XCTUnwrap(sharedAnchor.thumbnailFileName)
+
+        _ = try await coordinator.flush(store)
+        _ = store.deleteSlice(id: first.id)
+        _ = try await coordinator.flush(store)
+        XCTAssertNotNil(NativeMediaThumbnailStore.data(fileName: fileName, directory: thumbnailDirectory))
+
+        _ = store.deleteSlice(id: second.id)
+        let finalReceipt = try await coordinator.flush(store)
+        XCTAssertNil(NativeMediaThumbnailStore.data(fileName: fileName, directory: thumbnailDirectory))
+        XCTAssertEqual(finalReceipt.mediaGarbageCollection.removedFileNames, [fileName])
+    }
+}
+
+private func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure () async throws -> T,
+    _ errorHandler: (Error) -> Void = { _ in },
+    file: StaticString = #filePath,
+    line: UInt = #line
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("Expected expression to throw", file: file, line: line)
+    } catch {
+        errorHandler(error)
+    }
 }

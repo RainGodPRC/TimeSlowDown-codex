@@ -530,12 +530,12 @@ let latestSave = Task {
     try await persistenceCoordinator.saveDebounced(latestSnapshot, delayNanoseconds: 5_000_000)
 }
 do {
-    try await earlierSave.value
+    _ = try await earlierSave.value
     check(false, "Persistence coordinator should cancel a stale delayed snapshot")
 } catch is CancellationError {
     check(true, "Persistence coordinator cancelled a stale delayed snapshot")
 }
-try await latestSave.value
+_ = try await latestSave.value
 let coordinatedVault = try NativeShellPersistence.loadRecovering(from: coordinatedPersistenceURL)
 check(
     coordinatedVault.store.slices.map(\.title) == latestSnapshot.slices.map(\.title),
@@ -554,9 +554,9 @@ let supersededSave = Task {
 while await persistenceCoordinator.latestRequestedRevision < 3 {
     await Task.yield()
 }
-try await persistenceCoordinator.flush(backgroundSnapshot)
+_ = try await persistenceCoordinator.flush(backgroundSnapshot)
 do {
-    try await supersededSave.value
+    _ = try await supersededSave.value
     check(false, "Background flush should invalidate an older pending debounce")
 } catch is CancellationError {
     check(true, "Background flush invalidated an older pending debounce")
@@ -568,6 +568,45 @@ check(
 )
 let flushedRevision = await persistenceCoordinator.latestCommittedRevision
 check(flushedRevision == 4, "Background flush should advance past the superseded pending revision")
+
+let gcDirectory = persistenceDirectory.appendingPathComponent("gc-vault", isDirectory: true)
+let gcPersistenceURL = gcDirectory.appendingPathComponent("native-shell-v1.json")
+let gcThumbnailDirectory = gcDirectory.appendingPathComponent("MediaThumbnails", isDirectory: true)
+let referencedGCAnchor = try NativeMediaThumbnailStore.persist(
+    MemoryCameraSelection(
+        anchor: MediaAnchor(kind: .image, label: "referenced-gc.jpg"),
+        thumbnailData: Data([0xFF, 0xD8, 0x10, 0xD9])
+    ),
+    directory: gcThumbnailDirectory
+)
+let orphanedGCAnchor = try NativeMediaThumbnailStore.persist(
+    MemoryCameraSelection(
+        anchor: MediaAnchor(kind: .image, label: "orphaned-gc.jpg"),
+        thumbnailData: Data([0xFF, 0xD8, 0x11, 0xD9])
+    ),
+    directory: gcThumbnailDirectory
+)
+var gcStore = NativeShellStore()
+_ = gcStore.captureFromMemoryCamera(referencedGCAnchor)
+let gcCoordinator = NativeShellPersistenceCoordinator(
+    url: gcPersistenceURL,
+    thumbnailDirectory: gcThumbnailDirectory
+)
+let gcReceipt = try await gcCoordinator.flush(gcStore)
+let referencedGCFileName = referencedGCAnchor.thumbnailFileName ?? ""
+let orphanedGCFileName = orphanedGCAnchor.thumbnailFileName ?? ""
+check(
+    NativeMediaThumbnailStore.data(fileName: referencedGCFileName, directory: gcThumbnailDirectory) != nil,
+    "Post-commit media GC should preserve thumbnails referenced by the committed snapshot"
+)
+check(
+    NativeMediaThumbnailStore.data(fileName: orphanedGCFileName, directory: gcThumbnailDirectory) == nil,
+    "Post-commit media GC should remove orphaned managed thumbnails"
+)
+check(
+    gcReceipt.mediaGarbageCollection.removedFileNames == [orphanedGCFileName],
+    "Persistence commit receipts should audit removed orphan thumbnails"
+)
 
 var legacyPersistenceObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(persistedShell)) as! [String: Any]
 legacyPersistenceObject.removeValue(forKey: "revisits")
@@ -639,14 +678,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 80;"), "Xcode project build settings should carry v80 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 81;"), "Xcode project build settings should carry v81 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>80</string>"), "Info.plist should carry v80 build number")
+check(infoPlistText.contains("<string>81</string>"), "Info.plist should carry v81 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -1989,7 +2028,9 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "80", "TestFlight build notes should match v80")
+check(buildNotes.buildNumber == "81", "TestFlight build notes should match v81")
+check(buildNotes.summary.localizedCaseInsensitiveContains("garbage-collects"), "TestFlight build notes should mention post-commit media garbage collection")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Failed vault commits never delete media"), "TestFlight build notes should preserve the failed-commit media invariant")
 check(buildNotes.summary.localizedCaseInsensitiveContains("versioned native vault"), "TestFlight build notes should mention the versioned native vault")
 check(buildNotes.summary.localizedCaseInsensitiveContains("last-known-good"), "TestFlight build notes should mention last-known-good recovery")
 check(buildNotes.summary.localizedCaseInsensitiveContains("future schema"), "TestFlight build notes should mention future-schema refusal")
@@ -2441,8 +2482,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "80", "App Store submission gate should track v80")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v80 native vault hardening")
+check(appStoreSubmissionGate.buildNumber == "81", "App Store submission gate should track v81")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v81 media transaction hardening")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2718,4 +2759,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, and v80 versioned last-known-good vault recovery are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, and v81 post-commit media garbage collection are aligned.")

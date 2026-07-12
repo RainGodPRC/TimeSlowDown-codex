@@ -329,6 +329,10 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public var latestExportSummary: NativeExportSummary?
     public var latestExportError: String?
 
+    public var referencedThumbnailFileNames: Set<String> {
+        Set(slices.compactMap { $0.media?.thumbnailFileName })
+    }
+
     public init(
         selectedRoute: NativeShellRoute = .now,
         slices: [MemorySlice] = [],

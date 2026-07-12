@@ -309,6 +309,16 @@ public enum VideoPosterFrameRenderer {
     }
 }
 
+public struct NativeMediaGarbageCollectionReport: Equatable, Sendable {
+    public var removedFileNames: [String]
+    public var failedFileNames: [String]
+
+    public init(removedFileNames: [String] = [], failedFileNames: [String] = []) {
+        self.removedFileNames = removedFileNames
+        self.failedFileNames = failedFileNames
+    }
+}
+
 public enum NativeMediaThumbnailStore {
     public static let maximumThumbnailBytes = 3_000_000
 
@@ -366,6 +376,40 @@ public enum NativeMediaThumbnailStore {
         try FileManager.default.removeItem(at: url)
     }
 
+    public static func garbageCollect(
+        referencedFileNames: Set<String>,
+        directory: URL = defaultDirectory
+    ) -> NativeMediaGarbageCollectionReport {
+        let fileManager = FileManager.default
+        guard let urls = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return NativeMediaGarbageCollectionReport()
+        }
+
+        var removedFileNames: [String] = []
+        var failedFileNames: [String] = []
+        for url in urls.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            let fileName = url.lastPathComponent
+            let isRegularFile = (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            guard isRegularFile,
+                  isManagedFileName(fileName),
+                  !referencedFileNames.contains(fileName) else { continue }
+            do {
+                try fileManager.removeItem(at: url)
+                removedFileNames.append(fileName)
+            } catch {
+                failedFileNames.append(fileName)
+            }
+        }
+        return NativeMediaGarbageCollectionReport(
+            removedFileNames: removedFileNames,
+            failedFileNames: failedFileNames
+        )
+    }
+
     public static func restoreAfterUndo(
         _ anchor: MediaAnchor,
         thumbnailData: Data?,
@@ -417,6 +461,15 @@ public enum NativeMediaThumbnailStore {
         !fileName.isEmpty &&
         URL(fileURLWithPath: fileName).lastPathComponent == fileName &&
         !fileName.contains("..")
+    }
+
+    private static func isManagedFileName(_ fileName: String) -> Bool {
+        guard isSafeFileName(fileName),
+              URL(fileURLWithPath: fileName).pathExtension.lowercased() == "jpg" else {
+            return false
+        }
+        let baseName = URL(fileURLWithPath: fileName).deletingPathExtension().lastPathComponent
+        return UUID(uuidString: baseName) != nil
     }
 }
 
