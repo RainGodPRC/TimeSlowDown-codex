@@ -3,6 +3,9 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 #endif
+#if canImport(AVFoundation)
+import AVFoundation
+#endif
 
 public enum PhotosLibraryImportRepresentation: String, Codable, Equatable, Sendable {
     case thumbnailOnly
@@ -168,6 +171,7 @@ public struct MemoryCameraSelection: Equatable, Sendable {
 
 public enum MediaThumbnailError: Error, Equatable, Sendable {
     case unsupportedImage
+    case unsupportedVideo
     case renderFailed
     case invalidFileName
     case thumbnailTooLarge(Int)
@@ -193,6 +197,17 @@ public enum MediaThumbnailRenderer {
         ] as CFDictionary) else {
             throw MediaThumbnailError.renderFailed
         }
+        return try jpegData(from: image, quality: quality)
+#else
+        throw MediaThumbnailError.unsupportedImage
+#endif
+    }
+
+    public static func jpegData(
+        from image: CGImage,
+        quality: Double = 0.82
+    ) throws -> Data {
+#if canImport(ImageIO)
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             output,
@@ -215,6 +230,81 @@ public enum MediaThumbnailRenderer {
         return data
 #else
         throw MediaThumbnailError.unsupportedImage
+#endif
+    }
+
+    public static func jpegThumbnail(
+        from sourceURL: URL,
+        maxPixelSize: Int = 1_200,
+        quality: Double = 0.82
+    ) throws -> Data {
+#if canImport(ImageIO)
+        guard sourceURL.isFileURL,
+              let source = CGImageSourceCreateWithURL(sourceURL as CFURL, [
+                  kCGImageSourceShouldCache: false
+              ] as CFDictionary) else {
+            throw MediaThumbnailError.unsupportedImage
+        }
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary) else {
+            throw MediaThumbnailError.renderFailed
+        }
+        return try jpegData(from: image, quality: quality)
+#else
+        throw MediaThumbnailError.unsupportedImage
+#endif
+    }
+}
+
+public struct VideoPosterFrame: Equatable, Sendable {
+    public var jpegData: Data
+    public var requestedTimeSeconds: Double
+    public var actualTimeSeconds: Double
+
+    public init(jpegData: Data, requestedTimeSeconds: Double, actualTimeSeconds: Double) {
+        self.jpegData = jpegData
+        self.requestedTimeSeconds = requestedTimeSeconds
+        self.actualTimeSeconds = actualTimeSeconds
+    }
+}
+
+public enum VideoPosterFrameRenderer {
+    public static func jpegPoster(
+        from videoURL: URL,
+        maxPixelSize: Int = 1_200,
+        quality: Double = 0.82
+    ) async throws -> VideoPosterFrame {
+#if canImport(AVFoundation)
+        guard videoURL.isFileURL else { throw MediaThumbnailError.unsupportedVideo }
+        let asset = AVURLAsset(url: videoURL)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard !videoTracks.isEmpty else { throw MediaThumbnailError.unsupportedVideo }
+        let duration = try await asset.load(.duration)
+        let durationSeconds = duration.seconds
+        guard durationSeconds.isFinite, durationSeconds > 0 else {
+            throw MediaThumbnailError.unsupportedVideo
+        }
+        let requestedTimeSeconds = min(0.5, max(0, durationSeconds * 0.25))
+        let requestedTime = CMTime(seconds: requestedTimeSeconds, preferredTimescale: 600)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: maxPixelSize, height: maxPixelSize)
+        let tolerance = CMTime(seconds: 0.25, preferredTimescale: 600)
+        generator.requestedTimeToleranceBefore = tolerance
+        generator.requestedTimeToleranceAfter = tolerance
+        let result = try await generator.image(at: requestedTime)
+        let posterData = try MediaThumbnailRenderer.jpegData(from: result.image, quality: quality)
+        return VideoPosterFrame(
+            jpegData: posterData,
+            requestedTimeSeconds: requestedTimeSeconds,
+            actualTimeSeconds: result.actualTime.seconds
+        )
+#else
+        throw MediaThumbnailError.unsupportedVideo
 #endif
     }
 }
@@ -253,7 +343,17 @@ public enum NativeMediaThumbnailStore {
         directory: URL = defaultDirectory
     ) -> Data? {
         guard isSafeFileName(fileName) else { return nil }
-        return try? Data(contentsOf: directory.appendingPathComponent(fileName, isDirectory: false))
+        let url = directory.appendingPathComponent(fileName, isDirectory: false)
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let fileSize = attributes[.size] as? NSNumber,
+              fileSize.intValue > 0,
+              fileSize.intValue <= maximumThumbnailBytes,
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              !data.isEmpty,
+              data.count <= maximumThumbnailBytes else {
+            return nil
+        }
+        return data
     }
 
     public static func remove(
@@ -300,7 +400,7 @@ public enum NativeMediaThumbnailStore {
         var anchor = selection.anchor
         anchor.thumbnailIssue = selection.issue
         guard let thumbnailData = selection.thumbnailData else {
-            if anchor.kind == .image {
+            if anchor.kind == .image || anchor.kind == .video {
                 throw MediaThumbnailError.renderFailed
             }
             return anchor
@@ -724,6 +824,79 @@ public enum SignedDeviceMediaValidationScaffold {
 #if canImport(SwiftUI) && canImport(PhotosUI)
 import SwiftUI
 import PhotosUI
+import CoreTransferable
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct PhotosPickerImageThumbnail: Transferable, Sendable {
+    var jpegData: Data
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(
+            importedContentType: .image,
+            shouldAttemptToOpenInPlace: true
+        ) { received async throws in
+            let hasSecurityScope = received.file.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope {
+                    received.file.stopAccessingSecurityScopedResource()
+                }
+            }
+            return PhotosPickerImageThumbnail(
+                jpegData: try MediaThumbnailRenderer.jpegThumbnail(from: received.file)
+            )
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct PhotosPickerVideoPoster: Transferable, Sendable {
+    var frame: VideoPosterFrame
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(
+            importedContentType: .movie,
+            shouldAttemptToOpenInPlace: true
+        ) { received async throws in
+            let hasSecurityScope = received.file.startAccessingSecurityScopedResource()
+            defer {
+                if hasSecurityScope {
+                    received.file.stopAccessingSecurityScopedResource()
+                }
+            }
+            return PhotosPickerVideoPoster(
+                frame: try await VideoPosterFrameRenderer.jpegPoster(from: received.file)
+            )
+        }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+public enum PhotosPickerMediaBridge {
+    public static func selection(
+        from item: PhotosPickerItem,
+        anchor: MediaAnchor
+    ) async throws -> MemoryCameraSelection {
+        switch anchor.kind {
+        case .image:
+            guard let thumbnail = try await item.loadTransferable(type: PhotosPickerImageThumbnail.self) else {
+                throw PhotosLibraryByteImporterError.missingThumbnail(anchor.id.uuidString)
+            }
+            return MemoryCameraSelection(anchor: anchor, thumbnailData: thumbnail.jpegData)
+        case .video:
+            guard let poster = try await item.loadTransferable(type: PhotosPickerVideoPoster.self) else {
+                throw MediaThumbnailError.unsupportedVideo
+            }
+            var videoAnchor = anchor
+            videoAnchor.note = String(
+                format: "来自系统照片选择器，封面取自视频约 %.1f 秒处。",
+                poster.frame.actualTimeSeconds
+            )
+            return MemoryCameraSelection(anchor: videoAnchor, thumbnailData: poster.frame.jpegData)
+        case .link:
+            throw PhotosLibraryByteImporterError.unsafeRequest("PhotosPicker does not import link anchors.")
+        }
+    }
+}
 
 @available(iOS 17.0, macOS 14.0, *)
 public struct MemoryCameraPicker: View {
@@ -781,28 +954,19 @@ public struct MemoryCameraPicker: View {
         isImporting = true
         importIssue = nil
         let kind = inferredKind(from: item)
-        var anchor = MediaAnchor(
+        let anchor = MediaAnchor(
             kind: kind,
             label: kind == .video ? "选中的视频" : "选中的照片",
             note: "来自系统照片选择器，文字可以以后再补。",
             storage: "photos-picker-limited",
             source: "PhotosPicker"
         )
-        if kind == .video {
-            let issue = "视频已作为记忆线索保存；本地封面将在后续版本生成。"
-            anchor.thumbnailIssue = issue
-            onPicked(MemoryCameraSelection(anchor: anchor, issue: issue))
-        } else {
-            do {
-                guard let sourceData = try await item.loadTransferable(type: Data.self) else {
-                    throw PhotosLibraryByteImporterError.missingThumbnail(anchor.id.uuidString)
-                }
-                let thumbnail = try MediaThumbnailRenderer.jpegThumbnail(from: sourceData)
-                onPicked(MemoryCameraSelection(anchor: anchor, thumbnailData: thumbnail))
-            } catch {
-                let issue = "照片缩略图生成失败，尚未写入记忆，可重新选择。"
-                importIssue = issue
-            }
+        do {
+            onPicked(try await PhotosPickerMediaBridge.selection(from: item, anchor: anchor))
+        } catch {
+            importIssue = kind == .video
+                ? "视频封面生成失败，尚未写入记忆，可重新选择。"
+                : "照片缩略图生成失败，尚未写入记忆，可重新选择。"
         }
         selectedItem = nil
         isImporting = false
@@ -819,24 +983,15 @@ public struct MemoryCameraPicker: View {
 
 @available(iOS 17.0, macOS 14.0, *)
 public enum PhotosPickerByteBridge {
+    @available(*, unavailable, message: "Use PhotosPickerMediaBridge for metadata-stripped thumbnails. Original bytes require a separate explicit-consent export flow.")
     public static func importPayload(
         from item: PhotosPickerItem,
         anchor: MediaAnchor,
         representation: PhotosLibraryImportRepresentation,
         consentReceiptID: String? = nil
     ) async throws -> PhotosLibraryByteImportResult {
-        let request = PhotosLibraryByteImportAdapter.request(
-            for: anchor,
-            representation: representation,
-            consentReceiptID: consentReceiptID
-        )
-        guard let data = try await item.loadTransferable(type: Data.self) else {
-            throw PhotosLibraryByteImporterError.missingThumbnail(anchor.id.uuidString)
-        }
-        return try PhotosLibraryByteImportAdapter.importPayload(
-            request: request,
-            thumbnailData: data,
-            originalData: representation == .selectedOriginal ? data : nil
+        throw PhotosLibraryByteImporterError.unsafeRequest(
+            "The legacy PhotosPickerByteBridge is unavailable because it cannot prove metadata stripping."
         )
     }
 }

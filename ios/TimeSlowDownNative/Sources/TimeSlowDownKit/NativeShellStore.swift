@@ -431,7 +431,10 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     }
 
     @discardableResult
-    public mutating func exportMemoryVault(now: Date = Date()) throws -> ExportZIPPackage {
+    public mutating func exportMemoryVault(
+        now: Date = Date(),
+        thumbnailDirectory: URL = NativeMediaThumbnailStore.defaultDirectory
+    ) throws -> ExportZIPPackage {
         let key = KeychainVaultStub.bootstrapDeviceKey(
             accountID: "guest-pass",
             deviceName: "This iPhone",
@@ -452,12 +455,27 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             scopes: [.localCache, .encryptedCloudBackup, .aiDrafts, .mediaThumbnails],
             requestedAt: now
         )
+        let thumbnailPairs: [(String, Data)] = slices.compactMap { slice in
+            guard let media = slice.media,
+                  let fileName = media.thumbnailFileName,
+                  let data = NativeMediaThumbnailStore.data(
+                      fileName: fileName,
+                      directory: thumbnailDirectory
+                  ) else {
+                return nil
+            }
+            return (media.id.uuidString, data)
+        }
+        let thumbnailDataByAnchorID = thumbnailPairs.reduce(into: [String: Data]()) { result, pair in
+            result[pair.0] = pair.1
+        }
         let package = try OnDeviceExportZIPBuilder.package(
             for: plan,
             slices: slices,
             chapters: [chapter],
             revisits: revisits,
-            deletionReceipt: deletionReceipt
+            deletionReceipt: deletionReceipt,
+            thumbnailDataByAnchorID: thumbnailDataByAnchorID
         )
         latestExportSummary = NativeExportSummary.from(package)
         latestExportError = nil

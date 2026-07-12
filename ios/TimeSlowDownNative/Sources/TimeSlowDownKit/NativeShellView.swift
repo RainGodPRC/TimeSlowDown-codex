@@ -49,7 +49,8 @@ public struct TSDNativeShellView: View {
     @State private var store: NativeShellStore
     @State private var persistenceMessage: String?
     @State private var persistenceEnabled: Bool
-    private let persistenceURL: URL?
+    @Environment(\.scenePhase) private var scenePhase
+    private let persistenceCoordinator: NativeShellPersistenceCoordinator?
 
     public init(
         store: NativeShellStore? = nil,
@@ -73,7 +74,7 @@ public struct TSDNativeShellView: View {
         self._store = State(initialValue: resolvedStore)
         self._persistenceMessage = State(initialValue: message)
         self._persistenceEnabled = State(initialValue: canPersist)
-        self.persistenceURL = persistenceURL
+        self.persistenceCoordinator = persistenceURL.map(NativeShellPersistenceCoordinator.init(url:))
     }
 
     public var body: some View {
@@ -107,17 +108,27 @@ public struct TSDNativeShellView: View {
             }
         }
         .task(id: store) {
-            guard persistenceEnabled, let persistenceURL else { return }
+            guard persistenceEnabled, let persistenceCoordinator else { return }
+            let snapshot = store
             do {
-                try await Task.sleep(nanoseconds: 250_000_000)
-                let snapshot = store
-                try await Task.detached(priority: .utility) {
-                    try NativeShellPersistence.save(snapshot, to: persistenceURL)
-                }.value
+                try await persistenceCoordinator.saveDebounced(snapshot)
             } catch is CancellationError {
                 return
             } catch {
                 persistenceMessage = "这次改动尚未保存到本机，请稍后重试。"
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase != .active,
+                  persistenceEnabled,
+                  let persistenceCoordinator else { return }
+            let snapshot = store
+            Task {
+                do {
+                    try await persistenceCoordinator.flush(snapshot)
+                } catch {
+                    persistenceMessage = "进入后台前未能保存最后一次改动，请重新打开确认。"
+                }
             }
         }
     }
@@ -186,7 +197,7 @@ private struct NativeNowView: View {
                                     _ = store.captureFromMemoryCamera(anchor)
                                     mediaIssue = nil
                                 } catch {
-                                    mediaIssue = "照片没有安全保存，请重新选择。"
+                                    mediaIssue = "影像没有安全保存，请重新选择。"
                                 }
                             },
                             onWrite: { activeSheet = .quickMark },
@@ -673,7 +684,7 @@ private struct NativeWeekendWorkbench: View {
                                         )
                                         mediaMessage = nil
                                     } catch {
-                                        mediaMessage = "照片没有安全保存，请重新选择。"
+                                        mediaMessage = "影像没有安全保存，请重新选择。"
                                     }
                                 }
                                 .padding(12)
@@ -983,7 +994,7 @@ private struct NativeSliceDetailView: View {
         do {
             media = try NativeMediaThumbnailStore.persist(selection)
         } catch {
-            mediaMessage = "照片没有安全保存，当前影像保持不变。"
+            mediaMessage = "影像没有安全保存，当前影像保持不变。"
             return
         }
         if let currentFileName = slice?.media?.thumbnailFileName {

@@ -1,5 +1,9 @@
 import Foundation
 import TimeSlowDownKit
+#if canImport(AVFoundation)
+import AVFoundation
+import CoreVideo
+#endif
 #if canImport(SwiftUI)
 import SwiftUI
 #endif
@@ -15,6 +19,81 @@ func environmentValue(_ name: String) -> String? {
     }
     return value
 }
+
+#if canImport(AVFoundation)
+func makeVideoPosterFixture(at url: URL) async throws {
+    try? FileManager.default.removeItem(at: url)
+    let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
+    let width = 192
+    let height = 108
+    let input = AVAssetWriterInput(
+        mediaType: .video,
+        outputSettings: [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height
+        ]
+    )
+    input.expectsMediaDataInRealTime = false
+    let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+        assetWriterInput: input,
+        sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height
+        ]
+    )
+    guard writer.canAdd(input) else { throw MediaThumbnailError.unsupportedVideo }
+    writer.add(input)
+    guard writer.startWriting() else {
+        throw writer.error ?? MediaThumbnailError.renderFailed
+    }
+    writer.startSession(atSourceTime: .zero)
+
+    var pixelBuffer: CVPixelBuffer?
+    let status = CVPixelBufferCreate(
+        kCFAllocatorDefault,
+        width,
+        height,
+        kCVPixelFormatType_32BGRA,
+        nil,
+        &pixelBuffer
+    )
+    guard status == kCVReturnSuccess, let pixelBuffer else {
+        throw MediaThumbnailError.renderFailed
+    }
+    CVPixelBufferLockBaseAddress(pixelBuffer, [])
+    if let baseAddress = CVPixelBufferGetBaseAddress(pixelBuffer) {
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+        for row in 0..<height {
+            let bytes = baseAddress.advanced(by: row * bytesPerRow).assumingMemoryBound(to: UInt8.self)
+            for column in 0..<width {
+                let offset = column * 4
+                bytes[offset] = UInt8(70 + (column % 80))
+                bytes[offset + 1] = UInt8(120 + (row % 80))
+                bytes[offset + 2] = 210
+                bytes[offset + 3] = 255
+            }
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+
+    for _ in 0..<200 where !input.isReadyForMoreMediaData {
+        try await Task.sleep(nanoseconds: 5_000_000)
+    }
+    guard input.isReadyForMoreMediaData,
+          adaptor.append(pixelBuffer, withPresentationTime: .zero),
+          adaptor.append(pixelBuffer, withPresentationTime: CMTime(seconds: 1, preferredTimescale: 600)) else {
+        writer.cancelWriting()
+        throw writer.error ?? MediaThumbnailError.renderFailed
+    }
+    input.markAsFinished()
+    await writer.finishWriting()
+    guard writer.status == .completed else {
+        throw writer.error ?? MediaThumbnailError.renderFailed
+    }
+}
+#endif
 
 final class HTTPResultBox: @unchecked Sendable {
     private let lock = NSLock()
@@ -336,6 +415,61 @@ let restoredVault = try NativeShellPersistence.loadRecovering(from: persistenceU
 check(restoredVault.source == .restored, "A saved native vault should restore from Application Support")
 check(restoredVault.store == persistedShell, "Persistence should round-trip slices, revisits, routes, privacy, and export state")
 
+let coordinatedPersistenceURL = persistenceDirectory.appendingPathComponent("coordinated-native-shell-v1.json")
+let persistenceCoordinator = NativeShellPersistenceCoordinator(url: coordinatedPersistenceURL)
+var earlierSnapshot = NativeShellStore()
+_ = earlierSnapshot.captureQuickMark(title: "较早的状态")
+var latestSnapshot = earlierSnapshot
+_ = latestSnapshot.captureQuickMark(title: "必须最后留下的状态")
+let earlierSave = Task {
+    try await persistenceCoordinator.saveDebounced(earlierSnapshot, delayNanoseconds: 80_000_000)
+}
+while await persistenceCoordinator.latestRequestedRevision < 1 {
+    await Task.yield()
+}
+let latestSave = Task {
+    try await persistenceCoordinator.saveDebounced(latestSnapshot, delayNanoseconds: 5_000_000)
+}
+do {
+    try await earlierSave.value
+    check(false, "Persistence coordinator should cancel a stale delayed snapshot")
+} catch is CancellationError {
+    check(true, "Persistence coordinator cancelled a stale delayed snapshot")
+}
+try await latestSave.value
+let coordinatedVault = try NativeShellPersistence.loadRecovering(from: coordinatedPersistenceURL)
+check(
+    coordinatedVault.store.slices.map(\.title) == latestSnapshot.slices.map(\.title),
+    "Persistence coordinator should reject a stale delayed snapshot"
+)
+let coordinatedRevision = await persistenceCoordinator.latestCommittedRevision
+check(coordinatedRevision == 2, "Persistence coordinator should commit only the latest scheduled revision")
+
+var backgroundSnapshot = latestSnapshot
+_ = backgroundSnapshot.captureQuickMark(title: "进入后台前必须保存")
+var supersededSnapshot = latestSnapshot
+_ = supersededSnapshot.captureQuickMark(title: "不能覆盖后台快照")
+let supersededSave = Task {
+    try await persistenceCoordinator.saveDebounced(supersededSnapshot, delayNanoseconds: 80_000_000)
+}
+while await persistenceCoordinator.latestRequestedRevision < 3 {
+    await Task.yield()
+}
+try await persistenceCoordinator.flush(backgroundSnapshot)
+do {
+    try await supersededSave.value
+    check(false, "Background flush should invalidate an older pending debounce")
+} catch is CancellationError {
+    check(true, "Background flush invalidated an older pending debounce")
+}
+let flushedVault = try NativeShellPersistence.loadRecovering(from: coordinatedPersistenceURL)
+check(
+    flushedVault.store.slices.map(\.title) == backgroundSnapshot.slices.map(\.title),
+    "Background flush should persist the latest snapshot immediately"
+)
+let flushedRevision = await persistenceCoordinator.latestCommittedRevision
+check(flushedRevision == 4, "Background flush should advance past the superseded pending revision")
+
 var legacyPersistenceObject = try JSONSerialization.jsonObject(with: JSONEncoder().encode(persistedShell)) as! [String: Any]
 legacyPersistenceObject.removeValue(forKey: "revisits")
 let legacyPersistenceData = try JSONSerialization.data(withJSONObject: legacyPersistenceObject)
@@ -406,14 +540,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 76;"), "Xcode project build settings should carry v76 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 78;"), "Xcode project build settings should carry v78 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>76</string>"), "Info.plist should carry v76 build number")
+check(infoPlistText.contains("<string>78</string>"), "Info.plist should carry v78 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -478,6 +612,23 @@ check(persistedThumbnailAnchor.hasLocalThumbnailReference, "Persisted media anch
 check(persistedThumbnailAnchor.thumbnailIssue == nil, "Successful thumbnail persistence should clear media issues")
 check(persistedThumbnailAnchor.storage == "protected-local-thumbnail", "Persisted thumbnail should expose its local protected storage boundary")
 check(persistedThumbnailAnchor.thumbnailFileName.flatMap { NativeMediaThumbnailStore.data(fileName: $0, directory: thumbnailDirectory) } == renderedThumbnail, "Protected thumbnail cache should round-trip rendered bytes")
+var portableShell = NativeShellStore()
+if let portableSlice = portableShell.captureQuickMark(title: "可迁移的照片记忆", now: fixedDate) {
+    check(portableShell.attachMedia(persistedThumbnailAnchor, to: portableSlice.id), "Portable export fixture should attach its protected thumbnail")
+    if let linkedSlice = portableShell.captureQuickMark(title: "同一张照片的另一段记忆", now: fixedDate) {
+        check(portableShell.attachMedia(persistedThumbnailAnchor, to: linkedSlice.id), "Portable export fixture should support a shared media anchor")
+    }
+    let portableExport = try portableShell.exportMemoryVault(now: fixedDate, thumbnailDirectory: thumbnailDirectory)
+    let portableThumbnailPath = "media/thumbnails/\(persistedThumbnailAnchor.id.uuidString.lowercased()).jpg"
+    check(portableExport.entries.count == 7, "A shared available thumbnail should be exported once alongside the six default documents")
+    check(portableExport.entries.contains { $0.path == portableThumbnailPath }, "Default ZIP export should carry the protected thumbnail bytes")
+    check(portableExport.entries.first { $0.path == portableThumbnailPath }?.containsRawMedia == false, "Exported thumbnails must remain derived media rather than raw originals")
+    check(portableExport.data.range(of: Data(portableThumbnailPath.utf8)) != nil, "ZIP bytes should contain the portable thumbnail path")
+    check(portableExport.data.range(of: Data("\"thumbnailPath\"".utf8)) != nil, "Media index should disclose the exported thumbnail path")
+    check(portableExport.isMemorySafeDefault, "A thumbnail-inclusive default export should preserve the memory-rights boundary")
+} else {
+    check(false, "Portable export fixture should create a memory slice")
+}
 let restoredThumbnailAnchor = NativeMediaThumbnailStore.restoreAfterUndo(
     persistedThumbnailAnchor,
     thumbnailData: renderedThumbnail,
@@ -502,12 +653,41 @@ do {
     check(true, "Thumbnail cache rejected unsafe relative paths")
 }
 
-let pendingVideoAnchor = try NativeMediaThumbnailStore.persist(MemoryCameraSelection(
-    anchor: MediaAnchor(kind: .video, label: "selected-video"),
-    issue: "视频封面待生成"
-), directory: thumbnailDirectory)
-check(!pendingVideoAnchor.hasLocalThumbnailReference, "Video selection should not pretend a poster exists before generation")
-check(pendingVideoAnchor.thumbnailIssue == "视频封面待生成", "Video selection should preserve an honest poster-pending state")
+let videoFixtureURL = thumbnailDirectory.appendingPathComponent("poster-fixture.mov")
+try await makeVideoPosterFixture(at: videoFixtureURL)
+let videoPoster = try await VideoPosterFrameRenderer.jpegPoster(from: videoFixtureURL, maxPixelSize: 320)
+check(videoPoster.jpegData.starts(with: [0xFF, 0xD8]), "Video poster renderer should produce JPEG bytes")
+check(videoPoster.jpegData.count <= NativeMediaThumbnailStore.maximumThumbnailBytes, "Video poster should respect the protected-cache byte ceiling")
+check(videoPoster.actualTimeSeconds.isFinite, "Video poster should disclose the actual extracted frame time")
+do {
+    _ = try await VideoPosterFrameRenderer.jpegPoster(from: thumbnailSourceURL)
+    check(false, "Video poster renderer must reject files without a video track")
+} catch {
+    check(true, "Video poster renderer rejected a non-video file")
+}
+let persistedVideoAnchor = try NativeMediaThumbnailStore.persist(
+    MemoryCameraSelection(
+        anchor: MediaAnchor(kind: .video, label: "selected-video"),
+        thumbnailData: videoPoster.jpegData
+    ),
+    directory: thumbnailDirectory
+)
+check(persistedVideoAnchor.hasLocalThumbnailReference, "Video selection should persist a protected local poster")
+check(persistedVideoAnchor.thumbnailIssue == nil, "Successful video poster generation should clear pending issues")
+if let videoPosterFileName = persistedVideoAnchor.thumbnailFileName {
+    try NativeMediaThumbnailStore.remove(fileName: videoPosterFileName, directory: thumbnailDirectory)
+}
+do {
+    _ = try NativeMediaThumbnailStore.persist(
+        MemoryCameraSelection(anchor: MediaAnchor(kind: .video, label: "missing-poster")),
+        directory: thumbnailDirectory
+    )
+    check(false, "Video selections without poster data must not persist")
+} catch MediaThumbnailError.renderFailed {
+    check(true, "Video selections without poster data should fail explicitly")
+} catch {
+    check(false, "Missing video posters should fail with renderFailed")
+}
 do {
     _ = try NativeMediaThumbnailStore.persist(
         MemoryCameraSelection(anchor: MediaAnchor(kind: .image, label: "missing-thumbnail")),
@@ -1710,11 +1890,12 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "76", "TestFlight build notes should match v76")
-check(buildNotes.summary.localizedCaseInsensitiveContains("image-thumbnail pipeline"), "TestFlight build notes should mention the real image thumbnail pipeline")
+check(buildNotes.buildNumber == "78", "TestFlight build notes should match v78")
+check(buildNotes.summary.localizedCaseInsensitiveContains("video poster extraction"), "TestFlight build notes should mention the real video poster pipeline")
+check(buildNotes.summary.localizedCaseInsensitiveContains("file representation"), "TestFlight build notes should mention file-based video transfer")
 check(buildNotes.summary.localizedCaseInsensitiveContains("editable memory slices"), "TestFlight build notes should mention editable slice detail")
 check(buildNotes.summary.localizedCaseInsensitiveContains("undo deletion"), "TestFlight build notes should mention deletion undo")
-check(buildNotes.summary.localizedCaseInsensitiveContains("poster-pending"), "TestFlight build notes should keep video poster limits honest")
+check(buildNotes.summary.localizedCaseInsensitiveContains("does not load the entire video into Data"), "TestFlight build notes should keep raw-video memory limits honest")
 check(buildNotes.summary.localizedCaseInsensitiveContains("local persistence"), "TestFlight build notes should mention local persistence")
 check(buildNotes.summary.localizedCaseInsensitiveContains("empty vault"), "TestFlight build notes should mention the honest first-launch vault")
 check(buildNotes.summary.localizedCaseInsensitiveContains("corrupt data"), "TestFlight build notes should mention corrupt backup recovery")
@@ -2155,8 +2336,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "76", "App Store submission gate should track v76")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v76 media editing")
+check(appStoreSubmissionGate.buildNumber == "78", "App Store submission gate should track v78")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v78 reliability hardening")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2432,4 +2613,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, atomic local persistence, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, honest video poster pending, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, and v76 media editing are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, and v78 persistence/media portability hardening are aligned.")

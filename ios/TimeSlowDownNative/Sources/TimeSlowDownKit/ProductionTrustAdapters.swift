@@ -2993,7 +2993,8 @@ public enum OnDeviceExportZIPBuilder {
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
         revisits: [MemoryRevisit] = [],
-        deletionReceipt: DeletionReceipt
+        deletionReceipt: DeletionReceipt,
+        thumbnailDataByAnchorID: [String: Data] = [:]
     ) throws -> ExportZIPPackage {
         try validate(plan)
 
@@ -3002,7 +3003,8 @@ public enum OnDeviceExportZIPBuilder {
             slices: slices,
             chapters: chapters,
             revisits: revisits,
-            deletionReceipt: deletionReceipt
+            deletionReceipt: deletionReceipt,
+            thumbnailDataByAnchorID: thumbnailDataByAnchorID
         )
         let zipData = try buildZIP(files: files)
         let entries = files.map {
@@ -3043,7 +3045,8 @@ public enum OnDeviceExportZIPBuilder {
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
         revisits: [MemoryRevisit],
-        deletionReceipt: DeletionReceipt
+        deletionReceipt: DeletionReceipt,
+        thumbnailDataByAnchorID: [String: Data]
     ) throws -> [ExportFile] {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
@@ -3057,16 +3060,32 @@ public enum OnDeviceExportZIPBuilder {
             }
         }
 
+        var thumbnailFiles: [ExportFile] = []
+        var exportedThumbnailPaths = Set<String>()
         let mediaIndex = MediaIndexDocument(
             generatedFromExportID: plan.manifest.id,
             anchors: slices.compactMap { slice -> MediaIndexAnchor? in
                 guard let media = slice.media else { return nil }
+                let anchorID = media.id.uuidString
+                let thumbnailData = thumbnailDataByAnchorID[anchorID].flatMap { data in
+                    data.isEmpty || data.count > NativeMediaThumbnailStore.maximumThumbnailBytes ? nil : data
+                }
+                let thumbnailPath = thumbnailData.map { _ in "media/thumbnails/\(anchorID.lowercased()).jpg" }
+                if let thumbnailData,
+                   let thumbnailPath,
+                   exportedThumbnailPaths.insert(thumbnailPath).inserted {
+                    thumbnailFiles.append(ExportFile(path: thumbnailPath, data: thumbnailData))
+                }
                 return MediaIndexAnchor(
                     sliceID: slice.id.uuidString,
+                    anchorID: anchorID,
                     kind: media.kind.rawValue,
                     label: media.label,
                     noteDigest: media.note.isEmpty ? nil : TrustDigest.checksum([media.note]),
-                    containsRawMedia: false
+                    containsRawMedia: false,
+                    thumbnailPath: thumbnailPath,
+                    thumbnailByteCount: thumbnailData?.count,
+                    thumbnailChecksum: thumbnailData.map { TrustDigest.checksum([$0.base64EncodedString()]) }
                 )
             }
         )
@@ -3078,14 +3097,15 @@ public enum OnDeviceExportZIPBuilder {
             canRequestDeletionAfterSubscriptionEnds: true
         )
 
-        return try [
+        let documents = try [
             ExportFile(path: "manifest.json", data: encode(plan.manifest, label: "manifest")),
             ExportFile(path: "memories/slices.json", data: encode(slices, label: "slices")),
             ExportFile(path: "memories/chapters.json", data: encode(chapters, label: "chapters")),
             ExportFile(path: "memories/revisits.json", data: encode(revisits, label: "revisits")),
             ExportFile(path: "media/index.json", data: encode(mediaIndex, label: "media-index")),
             ExportFile(path: "rights/deletion-receipt-template.json", data: encode(deletionRights, label: "deletion-rights"))
-        ].sorted { $0.path < $1.path }
+        ]
+        return (documents + thumbnailFiles).sorted { $0.path < $1.path }
     }
 
     private static func buildZIP(files: [ExportFile]) throws -> Data {
@@ -3187,10 +3207,14 @@ private struct MediaIndexDocument: Codable, Equatable {
 
 private struct MediaIndexAnchor: Codable, Equatable {
     var sliceID: String
+    var anchorID: String
     var kind: String
     var label: String
     var noteDigest: String?
     var containsRawMedia: Bool
+    var thumbnailPath: String?
+    var thumbnailByteCount: Int?
+    var thumbnailChecksum: String?
 }
 
 private struct DeletionRightsDocument: Codable, Equatable {
