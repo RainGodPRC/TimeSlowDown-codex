@@ -33,6 +33,10 @@ let package = Package(
         .executableTarget(
             name: "TimeSlowDownAppPreview",
             dependencies: ["TimeSlowDownKit"]
+        ),
+        .testTarget(
+            name: "TimeSlowDownKitTests",
+            dependencies: ["TimeSlowDownKit"]
         )
     ]
 )

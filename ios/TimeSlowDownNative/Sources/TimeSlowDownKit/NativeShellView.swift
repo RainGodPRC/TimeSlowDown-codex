@@ -63,7 +63,9 @@ public struct TSDNativeShellView: View {
             do {
                 let result = try NativeShellPersistence.loadRecovering(from: persistenceURL)
                 resolvedStore = result.store
-                if case .recoveredCorruptBackup(let fileName) = result.source {
+                if case .restoredLastKnownGood(let fileName) = result.source {
+                    message = "最近一次文件异常，已恢复到上一个安全版本；损坏文件已保留为 \(fileName)。"
+                } else if case .recoveredCorruptBackup(let fileName) = result.source {
                     message = "旧数据无法读取，已安全保留为 \(fileName)。新记录不会覆盖它。"
                 }
             } catch {

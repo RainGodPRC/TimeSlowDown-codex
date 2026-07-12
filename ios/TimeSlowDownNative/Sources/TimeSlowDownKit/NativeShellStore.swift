@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 
 public enum NativeShellRoute: String, CaseIterable, Codable, Equatable, Sendable {
     case now
@@ -119,6 +122,8 @@ public struct NativeExportSummary: Codable, Equatable, Sendable {
 public enum NativeShellPersistenceSource: Equatable, Sendable {
     case newVault
     case restored
+    case migratedLegacy
+    case restoredLastKnownGood(String)
     case recoveredCorruptBackup(String)
 }
 
@@ -129,6 +134,34 @@ public struct NativeShellPersistenceLoadResult: Equatable, Sendable {
     public init(store: NativeShellStore, source: NativeShellPersistenceSource) {
         self.store = store
         self.source = source
+    }
+}
+
+public enum NativeVaultPersistenceError: Error, Equatable, Sendable {
+    case unsupportedSchema(Int)
+}
+
+public struct NativeVaultEnvelope: Codable, Equatable, Sendable {
+    public static let currentSchemaVersion = 2
+
+    public var schemaVersion: Int
+    public var createdAt: Date
+    public var updatedAt: Date
+    public var payloadChecksum: String
+    public var store: NativeShellStore
+
+    public init(
+        schemaVersion: Int = Self.currentSchemaVersion,
+        createdAt: Date,
+        updatedAt: Date,
+        payloadChecksum: String,
+        store: NativeShellStore
+    ) {
+        self.schemaVersion = schemaVersion
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.payloadChecksum = payloadChecksum
+        self.store = store
     }
 }
 
@@ -160,18 +193,37 @@ public enum NativeShellPersistence {
         }
 
         let data = try Data(contentsOf: url)
-        if let store = decode(data) {
-            return NativeShellPersistenceLoadResult(store: store, source: .restored)
+        if let schemaVersion = envelopeSchemaVersion(in: data),
+           schemaVersion > NativeVaultEnvelope.currentSchemaVersion {
+            throw NativeVaultPersistenceError.unsupportedSchema(schemaVersion)
+        }
+        if let envelope = decodeEnvelope(data) {
+            return NativeShellPersistenceLoadResult(store: envelope.store, source: .restored)
+        }
+        if looksLikeLegacyStore(data), let store = decodeLegacyStore(data) {
+            try save(store, to: url)
+            return NativeShellPersistenceLoadResult(store: store, source: .migratedLegacy)
         }
 
-        let backupURL = url
-            .deletingPathExtension()
-            .appendingPathExtension("corrupt-\(UUID().uuidString).json")
+        let backupURL = corruptBackupURL(for: url)
         try fileManager.moveItem(at: url, to: backupURL)
+        let lastKnownGoodURL = lastKnownGoodURL(for: url)
+        if fileManager.fileExists(atPath: lastKnownGoodURL.path),
+           let lastKnownGoodEnvelope = decodeEnvelope(try Data(contentsOf: lastKnownGoodURL)) {
+            try save(lastKnownGoodEnvelope.store, to: url)
+            return NativeShellPersistenceLoadResult(
+                store: lastKnownGoodEnvelope.store,
+                source: .restoredLastKnownGood(backupURL.lastPathComponent)
+            )
+        }
         return NativeShellPersistenceLoadResult(
             store: NativeShellStore(),
             source: .recoveredCorruptBackup(backupURL.lastPathComponent)
         )
+    }
+
+    public static func lastKnownGoodURL(for url: URL) -> URL {
+        url.deletingPathExtension().appendingPathExtension("last-known-good.json")
     }
 
     public static func save(_ store: NativeShellStore, to url: URL = defaultURL) throws {
@@ -180,10 +232,35 @@ public enum NativeShellPersistence {
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.sortedKeys]
-        let data = try encoder.encode(store)
+        var currentEnvelope: NativeVaultEnvelope?
+        if fileManager.fileExists(atPath: url.path) {
+            let currentData = try Data(contentsOf: url)
+            if let schemaVersion = envelopeSchemaVersion(in: currentData),
+               schemaVersion > NativeVaultEnvelope.currentSchemaVersion {
+                throw NativeVaultPersistenceError.unsupportedSchema(schemaVersion)
+            }
+            currentEnvelope = decodeEnvelope(currentData)
+            if currentEnvelope != nil {
+                try write(currentData, to: lastKnownGoodURL(for: url))
+            }
+        }
+        let now = Date()
+        let envelope = NativeVaultEnvelope(
+            createdAt: currentEnvelope?.createdAt ?? now,
+            updatedAt: now,
+            payloadChecksum: try checksum(for: store),
+            store: store
+        )
+        let data = try encoder().encode(envelope)
+        try write(data, to: url)
+    }
+
+    private static func corruptBackupURL(for url: URL) -> URL {
+        url.deletingPathExtension()
+            .appendingPathExtension("corrupt-\(UUID().uuidString).json")
+    }
+
+    private static func write(_ data: Data, to url: URL) throws {
 #if os(iOS)
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
 #else
@@ -191,7 +268,50 @@ public enum NativeShellPersistence {
 #endif
     }
 
-    private static func decode(_ data: Data) -> NativeShellStore? {
+    private static func encoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
+    }
+
+    private static func checksum(for store: NativeShellStore) throws -> String {
+        let payload = try encoder().encode(store)
+#if canImport(CryptoKit)
+        return SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
+#else
+        return payload.base64EncodedString()
+#endif
+    }
+
+    private static func decodeEnvelope(_ data: Data) -> NativeVaultEnvelope? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let envelope = try? decoder.decode(NativeVaultEnvelope.self, from: data),
+              envelope.schemaVersion == NativeVaultEnvelope.currentSchemaVersion,
+              let expectedChecksum = try? checksum(for: envelope.store),
+              envelope.payloadChecksum == expectedChecksum else {
+            return nil
+        }
+        return envelope
+    }
+
+    private static func looksLikeLegacyStore(_ data: Data) -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        return object["schemaVersion"] == nil &&
+            (object["slices"] != nil || object["privacyBoundary"] != nil || object["selectedRoute"] != nil)
+    }
+
+    private static func envelopeSchemaVersion(in data: Data) -> Int? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return object["schemaVersion"] as? Int
+    }
+
+    private static func decodeLegacyStore(_ data: Data) -> NativeShellStore? {
         let isoDecoder = JSONDecoder()
         isoDecoder.dateDecodingStrategy = .iso8601
         if let store = try? isoDecoder.decode(NativeShellStore.self, from: data) {
