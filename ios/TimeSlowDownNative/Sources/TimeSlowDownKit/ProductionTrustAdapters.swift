@@ -2142,6 +2142,62 @@ public struct ExportZIPPackage: Codable, Equatable, Sendable {
     }
 }
 
+public struct NativeMemoryExportRequest: Equatable, Sendable {
+    public var plan: ExportArchivePlan
+    public var slices: [MemorySlice]
+    public var chapters: [WeeklyChapter]
+    public var revisits: [MemoryRevisit]
+    public var deletionReceipt: DeletionReceipt
+    public var thumbnailDirectory: URL
+
+    public init(
+        plan: ExportArchivePlan,
+        slices: [MemorySlice],
+        chapters: [WeeklyChapter],
+        revisits: [MemoryRevisit],
+        deletionReceipt: DeletionReceipt,
+        thumbnailDirectory: URL
+    ) {
+        self.plan = plan
+        self.slices = slices
+        self.chapters = chapters
+        self.revisits = revisits
+        self.deletionReceipt = deletionReceipt
+        self.thumbnailDirectory = thumbnailDirectory
+    }
+}
+
+public struct NativeExportFileArtifact: Equatable, Sendable {
+    public var fileName: String
+    public var fileURL: URL
+    public var fileSizeBytes: Int
+    public var entries: [ExportZIPEntry]
+    public var generatedOnDevice: Bool
+    public var canBeGeneratedAfterSubscriptionEnds: Bool
+
+    public init(
+        fileName: String,
+        fileURL: URL,
+        fileSizeBytes: Int,
+        entries: [ExportZIPEntry],
+        generatedOnDevice: Bool,
+        canBeGeneratedAfterSubscriptionEnds: Bool
+    ) {
+        self.fileName = fileName
+        self.fileURL = fileURL
+        self.fileSizeBytes = fileSizeBytes
+        self.entries = entries
+        self.generatedOnDevice = generatedOnDevice
+        self.canBeGeneratedAfterSubscriptionEnds = canBeGeneratedAfterSubscriptionEnds
+    }
+
+    public var isMemorySafeDefault: Bool {
+        generatedOnDevice &&
+        canBeGeneratedAfterSubscriptionEnds &&
+        entries.allSatisfy { !$0.containsRawMedia && !$0.containsAITranscript }
+    }
+}
+
 public struct RawMediaAssetPayload: Codable, Equatable, Identifiable, Sendable {
     public var id: String { anchorID }
     public var anchorID: String
@@ -2985,6 +3041,8 @@ public enum ExportZIPBuilderError: Error, Equatable, Sendable {
     case unsafePlan(String)
     case encodingFailed(String)
     case zipSizeOverflow(String)
+    case insufficientDiskSpace(required: Int64, available: Int64)
+    case fileIO(String)
 }
 
 public enum OnDeviceExportZIPBuilder {
@@ -3181,6 +3239,357 @@ public enum OnDeviceExportZIPBuilder {
     }
 }
 
+public enum NativeMemoryExportFileBuilder {
+    public static let defaultChunkSize = 256 * 1024
+
+    @discardableResult
+    public static func removeOwnedArtifacts(
+        in directory: URL,
+        fileManager: FileManager = .default
+    ) throws -> [String] {
+        guard fileManager.fileExists(atPath: directory.path) else { return [] }
+        let candidates = try fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: []
+        )
+        var removed: [String] = []
+        for candidate in candidates where isOwnedArtifactName(candidate.lastPathComponent) {
+            try fileManager.removeItem(at: candidate)
+            removed.append(candidate.lastPathComponent)
+        }
+        return removed.sorted()
+    }
+
+    public static func export(
+        _ request: NativeMemoryExportRequest,
+        to directory: URL,
+        availableCapacityBytes: Int64? = nil,
+        chunkSize: Int = defaultChunkSize,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> NativeExportFileArtifact {
+        try Task.checkCancellation()
+        guard chunkSize > 0 else {
+            throw ExportZIPBuilderError.fileIO("Export chunk size must be positive.")
+        }
+        try validate(request.plan)
+        let files = try makeFiles(for: request)
+        let prepared = try await prepare(files, chunkSize: chunkSize)
+        let requiredBytes = try estimatedArchiveSize(prepared)
+
+        let fileManager = FileManager.default
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let availableBytes = availableCapacityBytes ?? availableCapacity(at: directory)
+        if let availableBytes, availableBytes < requiredBytes {
+            throw ExportZIPBuilderError.insufficientDiskSpace(
+                required: requiredBytes,
+                available: availableBytes
+            )
+        }
+
+        let token = UUID().uuidString.lowercased()
+        let partialURL = directory.appendingPathComponent(".tsd-export-\(token).partial")
+        let finalURL = directory.appendingPathComponent("tsd-export-\(token).zip")
+        _ = fileManager.createFile(atPath: partialURL.path, contents: nil)
+        var handle: FileHandle?
+        do {
+            let output = try FileHandle(forWritingTo: partialURL)
+            handle = output
+            var centralDirectory = Data()
+            var archiveOffset: UInt64 = 0
+            let totalPayloadBytes = max(1, prepared.reduce(Int64(0)) { $0 + Int64($1.byteCount) })
+            var writtenPayloadBytes: Int64 = 0
+
+            for item in prepared {
+                try Task.checkCancellation()
+                let pathData = Data(item.file.path.utf8)
+                guard archiveOffset <= UInt64(UInt32.max),
+                      item.byteCount <= Int(UInt32.max),
+                      pathData.count <= Int(UInt16.max) else {
+                    throw ExportZIPBuilderError.zipSizeOverflow(item.file.path)
+                }
+                let localOffset = UInt32(archiveOffset)
+                var header = Data()
+                header.appendUInt32LE(0x04034B50)
+                header.appendUInt16LE(20)
+                header.appendUInt16LE(0)
+                header.appendUInt16LE(0)
+                header.appendUInt16LE(0)
+                header.appendUInt16LE(0)
+                header.appendUInt32LE(item.crc32)
+                header.appendUInt32LE(UInt32(item.byteCount))
+                header.appendUInt32LE(UInt32(item.byteCount))
+                header.appendUInt16LE(UInt16(pathData.count))
+                header.appendUInt16LE(0)
+                header.append(pathData)
+                try output.write(contentsOf: header)
+                archiveOffset += UInt64(header.count)
+
+                try await stream(
+                    item.file.source,
+                    to: output,
+                    chunkSize: chunkSize
+                ) { chunk in
+                    writtenPayloadBytes += Int64(chunk.count)
+                    progress?(min(0.94, Double(writtenPayloadBytes) / Double(totalPayloadBytes) * 0.94))
+                }
+                archiveOffset += UInt64(item.byteCount)
+
+                centralDirectory.appendUInt32LE(0x02014B50)
+                centralDirectory.appendUInt16LE(20)
+                centralDirectory.appendUInt16LE(20)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt32LE(item.crc32)
+                centralDirectory.appendUInt32LE(UInt32(item.byteCount))
+                centralDirectory.appendUInt32LE(UInt32(item.byteCount))
+                centralDirectory.appendUInt16LE(UInt16(pathData.count))
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt16LE(0)
+                centralDirectory.appendUInt32LE(0)
+                centralDirectory.appendUInt32LE(localOffset)
+                centralDirectory.append(pathData)
+            }
+
+            guard archiveOffset <= UInt64(UInt32.max),
+                  centralDirectory.count <= Int(UInt32.max),
+                  prepared.count <= Int(UInt16.max) else {
+                throw ExportZIPBuilderError.zipSizeOverflow("central-directory")
+            }
+            let centralOffset = UInt32(archiveOffset)
+            try output.write(contentsOf: centralDirectory)
+            var footer = Data()
+            footer.appendUInt32LE(0x06054B50)
+            footer.appendUInt16LE(0)
+            footer.appendUInt16LE(0)
+            footer.appendUInt16LE(UInt16(prepared.count))
+            footer.appendUInt16LE(UInt16(prepared.count))
+            footer.appendUInt32LE(UInt32(centralDirectory.count))
+            footer.appendUInt32LE(centralOffset)
+            footer.appendUInt16LE(0)
+            try output.write(contentsOf: footer)
+            try output.synchronize()
+            try output.close()
+            handle = nil
+            try Task.checkCancellation()
+            try fileManager.moveItem(at: partialURL, to: finalURL)
+            progress?(1)
+
+            let attributes = try fileManager.attributesOfItem(atPath: finalURL.path)
+            let fileSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
+            return NativeExportFileArtifact(
+                fileName: request.plan.fileName,
+                fileURL: finalURL,
+                fileSizeBytes: fileSize,
+                entries: prepared.map(\.entry),
+                generatedOnDevice: request.plan.generatedOnDevice,
+                canBeGeneratedAfterSubscriptionEnds: request.plan.canBeGeneratedAfterSubscriptionEnds
+            )
+        } catch {
+            try? handle?.close()
+            try? fileManager.removeItem(at: partialURL)
+            try? fileManager.removeItem(at: finalURL)
+            throw error
+        }
+    }
+
+    private static func validate(_ plan: ExportArchivePlan) throws {
+        guard plan.format == "zip" else {
+            throw ExportZIPBuilderError.unsafePlan("Only zip export archives are supported.")
+        }
+        guard plan.generatedOnDevice else {
+            throw ExportZIPBuilderError.unsafePlan("TSD memory exports must be generated on device by default.")
+        }
+        guard plan.canBeGeneratedAfterSubscriptionEnds else {
+            throw ExportZIPBuilderError.unsafePlan("Export must remain available after subscription ends.")
+        }
+        guard plan.entries.allSatisfy({ !$0.containsRawMedia && !$0.containsAITranscript }) else {
+            throw ExportZIPBuilderError.unsafePlan("Default export package must not include raw media or AI transcripts.")
+        }
+    }
+
+    private static func makeFiles(for request: NativeMemoryExportRequest) throws -> [StreamingExportFile] {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .prettyPrinted, .withoutEscapingSlashes]
+        encoder.dateEncodingStrategy = .iso8601
+
+        func encode<T: Encodable>(_ value: T, label: String) throws -> Data {
+            do {
+                return try encoder.encode(value)
+            } catch {
+                throw ExportZIPBuilderError.encodingFailed(label)
+            }
+        }
+
+        var thumbnailFiles: [StreamingExportFile] = []
+        var exportedThumbnailPaths = Set<String>()
+        let mediaIndex = MediaIndexDocument(
+            generatedFromExportID: request.plan.manifest.id,
+            anchors: request.slices.compactMap { slice -> MediaIndexAnchor? in
+                guard let media = slice.media else { return nil }
+                let anchorID = media.id.uuidString
+                let thumbnailData = media.thumbnailFileName.flatMap {
+                    NativeMediaThumbnailStore.data(
+                        fileName: $0,
+                        directory: request.thumbnailDirectory
+                    )
+                }
+                let thumbnailPath = thumbnailData.map { _ in
+                    "media/thumbnails/\(anchorID.lowercased()).jpg"
+                }
+                if let thumbnailData,
+                   let thumbnailPath,
+                   let fileName = media.thumbnailFileName,
+                   exportedThumbnailPaths.insert(thumbnailPath).inserted {
+                    let sourceURL = request.thumbnailDirectory.appendingPathComponent(fileName)
+                    thumbnailFiles.append(
+                        StreamingExportFile(
+                            path: thumbnailPath,
+                            source: .file(sourceURL, byteCount: thumbnailData.count)
+                        )
+                    )
+                }
+                return MediaIndexAnchor(
+                    sliceID: slice.id.uuidString,
+                    anchorID: anchorID,
+                    kind: media.kind.rawValue,
+                    label: media.label,
+                    noteDigest: media.note.isEmpty ? nil : TrustDigest.checksum([media.note]),
+                    containsRawMedia: false,
+                    thumbnailPath: thumbnailPath,
+                    thumbnailByteCount: thumbnailData?.count,
+                    thumbnailChecksum: thumbnailData.map { TrustDigest.checksum([$0.base64EncodedString()]) }
+                )
+            }
+        )
+        let deletionRights = DeletionRightsDocument(
+            exportID: request.plan.manifest.id,
+            receiptID: request.deletionReceipt.id,
+            scopes: request.deletionReceipt.scopes.map(\.rawValue).sorted(),
+            userCanExportBeforeDeletion: request.deletionReceipt.userCanExportBeforeDeletion,
+            canRequestDeletionAfterSubscriptionEnds: true
+        )
+        let documents = try [
+            StreamingExportFile(path: "manifest.json", source: .data(encode(request.plan.manifest, label: "manifest"))),
+            StreamingExportFile(path: "memories/slices.json", source: .data(encode(request.slices, label: "slices"))),
+            StreamingExportFile(path: "memories/chapters.json", source: .data(encode(request.chapters, label: "chapters"))),
+            StreamingExportFile(path: "memories/revisits.json", source: .data(encode(request.revisits, label: "revisits"))),
+            StreamingExportFile(path: "media/index.json", source: .data(encode(mediaIndex, label: "media-index"))),
+            StreamingExportFile(path: "rights/deletion-receipt-template.json", source: .data(encode(deletionRights, label: "deletion-rights")))
+        ]
+        return (documents + thumbnailFiles).sorted { $0.path < $1.path }
+    }
+
+    private static func prepare(
+        _ files: [StreamingExportFile],
+        chunkSize: Int
+    ) async throws -> [PreparedStreamingExportFile] {
+        var prepared: [PreparedStreamingExportFile] = []
+        prepared.reserveCapacity(files.count)
+        for file in files {
+            try Task.checkCancellation()
+            var accumulator = CRC32.Accumulator()
+            try await stream(file.source, to: nil, chunkSize: chunkSize) { data in
+                accumulator.update(data)
+            }
+            prepared.append(
+                PreparedStreamingExportFile(
+                    file: file,
+                    crc32: accumulator.checksum,
+                    byteCount: file.source.byteCount
+                )
+            )
+        }
+        return prepared
+    }
+
+    private static func estimatedArchiveSize(_ files: [PreparedStreamingExportFile]) throws -> Int64 {
+        var total: Int64 = 22
+        for item in files {
+            let pathBytes = item.file.path.utf8.count
+            total += Int64(30 + pathBytes + item.byteCount)
+            total += Int64(46 + pathBytes)
+        }
+        guard total <= Int64(UInt32.max) else {
+            throw ExportZIPBuilderError.zipSizeOverflow("archive")
+        }
+        return total + max(1_048_576, total / 10)
+    }
+
+    private static func availableCapacity(at directory: URL) -> Int64? {
+        let values = try? directory.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
+        return values?.volumeAvailableCapacityForImportantUsage
+    }
+
+    private static func isOwnedArtifactName(_ name: String) -> Bool {
+        (name.hasPrefix(".tsd-export-") && name.hasSuffix(".partial")) ||
+        (name.hasPrefix("tsd-export-") && name.hasSuffix(".zip"))
+    }
+
+    private static func stream(
+        _ source: StreamingExportSource,
+        to output: FileHandle?,
+        chunkSize: Int,
+        consume: (Data) throws -> Void
+    ) async throws {
+        switch source {
+        case .data(let data):
+            try Task.checkCancellation()
+            try output?.write(contentsOf: data)
+            try consume(data)
+        case .file(let url, _):
+            let input = try FileHandle(forReadingFrom: url)
+            defer { try? input.close() }
+            while true {
+                try Task.checkCancellation()
+                guard let chunk = try input.read(upToCount: chunkSize), !chunk.isEmpty else { break }
+                try output?.write(contentsOf: chunk)
+                try consume(chunk)
+                await Task.yield()
+            }
+        }
+    }
+}
+
+private enum StreamingExportSource: Equatable, Sendable {
+    case data(Data)
+    case file(URL, byteCount: Int)
+
+    var byteCount: Int {
+        switch self {
+        case .data(let data): data.count
+        case .file(_, let byteCount): byteCount
+        }
+    }
+}
+
+private struct StreamingExportFile: Equatable, Sendable {
+    var path: String
+    var source: StreamingExportSource
+    var containsRawMedia: Bool = false
+    var containsAITranscript: Bool = false
+}
+
+private struct PreparedStreamingExportFile: Sendable {
+    var file: StreamingExportFile
+    var crc32: UInt32
+    var byteCount: Int
+
+    var entry: ExportZIPEntry {
+        ExportZIPEntry(
+            path: file.path,
+            crc32: crc32,
+            uncompressedSize: byteCount,
+            containsRawMedia: file.containsRawMedia,
+            containsAITranscript: file.containsAITranscript
+        )
+    }
+}
+
 private struct ExportFile: Equatable {
     var path: String
     var data: Data
@@ -3298,20 +3707,30 @@ private enum StoreOnlyZIPWriter {
 }
 
 private enum CRC32 {
-    static func checksum(_ data: Data) -> UInt32 {
-        var crc: UInt32 = 0xFFFF_FFFF
-        for byte in data {
-            var value = (crc ^ UInt32(byte)) & 0xFF
-            for _ in 0..<8 {
-                if value & 1 == 1 {
-                    value = (value >> 1) ^ 0xEDB8_8320
-                } else {
-                    value >>= 1
+    struct Accumulator {
+        private var value: UInt32 = 0xFFFF_FFFF
+
+        mutating func update(_ data: Data) {
+            for byte in data {
+                var next = (value ^ UInt32(byte)) & 0xFF
+                for _ in 0..<8 {
+                    if next & 1 == 1 {
+                        next = (next >> 1) ^ 0xEDB8_8320
+                    } else {
+                        next >>= 1
+                    }
                 }
+                value = (value >> 8) ^ next
             }
-            crc = (crc >> 8) ^ value
         }
-        return crc ^ 0xFFFF_FFFF
+
+        var checksum: UInt32 { value ^ 0xFFFF_FFFF }
+    }
+
+    static func checksum(_ data: Data) -> UInt32 {
+        var accumulator = Accumulator()
+        accumulator.update(data)
+        return accumulator.checksum
     }
 }
 

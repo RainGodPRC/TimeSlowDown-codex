@@ -1,6 +1,7 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import UniformTypeIdentifiers
+import CoreTransferable
 #if canImport(ImageIO)
 import ImageIO
 #endif
@@ -41,6 +42,26 @@ public struct TSDExportZIPDocument: FileDocument, Equatable {
         byteCount > 22 &&
         entryCount >= 5 &&
         isMemoryRightsSafe
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+public struct TSDExportZIPFile: Transferable, Equatable, Sendable {
+    public static let exportedContentType = UTType(filenameExtension: "zip") ?? .data
+
+    public var artifact: NativeExportFileArtifact
+
+    public init(artifact: NativeExportFileArtifact) {
+        self.artifact = artifact
+    }
+
+    public var fileName: String { artifact.fileName }
+    public var fileURL: URL { artifact.fileURL }
+
+    public static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: exportedContentType) { file in
+            SentTransferredFile(file.fileURL)
+        }
     }
 }
 
@@ -1797,8 +1818,11 @@ private struct NativeMysteryAchievement: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeAccountView: View {
     @Binding var store: NativeShellStore
-    @State private var exportDocument: TSDExportZIPDocument?
+    @State private var exportFile: TSDExportZIPFile?
     @State private var isFileExporterPresented = false
+    @State private var isPreparingExport = false
+    @State private var exportProgress = 0.0
+    @State private var exportTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -1808,16 +1832,25 @@ private struct NativeAccountView: View {
                 Label("不上传原始影像", systemImage: store.privacyBoundary.allowsRawMediaUpload ? "xmark.circle" : "checkmark.circle")
                 Label("不读取通讯录/GPS/人脸", systemImage: store.privacyBoundary.isAppStoreSafeDefault ? "checkmark.circle" : "exclamationmark.triangle")
                 Label("订阅不得扣留导出", systemImage: store.privacyBoundary.subscriptionCanBlockExport ? "xmark.circle" : "checkmark.circle")
-                Button("导出我的记忆 ZIP") {
-                    do {
-                        let package = try store.exportMemoryVault()
-                        exportDocument = TSDExportZIPDocument(package: package)
-                        isFileExporterPresented = true
-                    } catch {
-                        store.recordExportError("导出失败：\(error)")
+                Button(isPreparingExport ? "取消导出" : "导出我的记忆 ZIP") {
+                    if isPreparingExport {
+                        exportTask?.cancel()
+                    } else {
+                        startExport()
                     }
                 }
                 .buttonStyle(.borderedProminent)
+
+                if isPreparingExport {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ProgressView(value: exportProgress)
+                        Text("正在设备本地写入临时 ZIP · \(Int(exportProgress * 100))%")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("正在导出记忆，进度百分之 \(Int(exportProgress * 100))")
+                }
 
                 if let summary = store.latestExportSummary {
                     VStack(alignment: .leading, spacing: 8) {
@@ -1845,15 +1878,59 @@ private struct NativeAccountView: View {
             .navigationTitle("我的")
             .fileExporter(
                 isPresented: $isFileExporterPresented,
-                document: exportDocument,
-                contentType: TSDExportZIPDocument.exportedContentType,
-                defaultFilename: exportDocument?.fileName ?? "timeslowdown-export.zip"
+                item: exportFile,
+                contentTypes: [TSDExportZIPFile.exportedContentType],
+                defaultFilename: exportFile?.fileName ?? "timeslowdown-export.zip"
             ) { result in
                 if case .failure(let error) = result {
                     store.recordExportError("系统导出失败：\(error.localizedDescription)")
                 }
+                cleanupExportFile()
             }
         }
+    }
+
+    private func startExport() {
+        cleanupExportFile()
+        let request = store.memoryExportRequest()
+        let outputDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("TimeSlowDownExports", isDirectory: true)
+        isPreparingExport = true
+        exportProgress = 0
+        store.beginExport()
+        exportTask = Task { @MainActor in
+            do {
+                _ = try NativeMemoryExportFileBuilder.removeOwnedArtifacts(in: outputDirectory)
+                let artifact = try await NativeMemoryExportFileBuilder.export(
+                    request,
+                    to: outputDirectory,
+                    progress: { value in
+                        Task { @MainActor in
+                            exportProgress = value
+                        }
+                    }
+                )
+                try Task.checkCancellation()
+                store.recordExportSuccess(artifact)
+                exportFile = TSDExportZIPFile(artifact: artifact)
+                isFileExporterPresented = true
+            } catch is CancellationError {
+                store.recordExportError("导出已取消，没有留下未完成文件。")
+            } catch ExportZIPBuilderError.insufficientDiskSpace(let required, let available) {
+                store.recordExportError("设备空间不足：需要约 \(required) bytes，可用 \(available) bytes。")
+            } catch {
+                store.recordExportError("导出失败：\(error.localizedDescription)")
+            }
+            isPreparingExport = false
+            exportTask = nil
+        }
+    }
+
+    private func cleanupExportFile() {
+        if let fileURL = exportFile?.fileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        exportFile = nil
     }
 }
 

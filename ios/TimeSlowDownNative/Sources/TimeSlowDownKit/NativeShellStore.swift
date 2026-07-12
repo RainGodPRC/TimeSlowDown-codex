@@ -110,6 +110,19 @@ public struct NativeExportSummary: Codable, Equatable, Sendable {
         )
     }
 
+    public static func from(_ artifact: NativeExportFileArtifact) -> NativeExportSummary {
+        NativeExportSummary(
+            fileName: artifact.fileName,
+            entryCount: artifact.entries.count,
+            fileSizeBytes: artifact.fileSizeBytes,
+            generatedOnDevice: artifact.generatedOnDevice,
+            canBeGeneratedAfterSubscriptionEnds: artifact.canBeGeneratedAfterSubscriptionEnds,
+            excludesRawMediaAndAITranscripts: artifact.entries.allSatisfy {
+                !$0.containsRawMedia && !$0.containsAITranscript
+            }
+        )
+    }
+
     public var isTSDMemoryRightsSafe: Bool {
         generatedOnDevice &&
         canBeGeneratedAfterSubscriptionEnds &&
@@ -659,11 +672,10 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         return true
     }
 
-    @discardableResult
-    public mutating func exportMemoryVault(
+    public func memoryExportRequest(
         now: Date = Date(),
         thumbnailDirectory: URL = NativeMediaThumbnailStore.defaultDirectory
-    ) throws -> ExportZIPPackage {
+    ) -> NativeMemoryExportRequest {
         let key = KeychainVaultStub.bootstrapDeviceKey(
             accountID: "guest-pass",
             deviceName: "This iPhone",
@@ -684,6 +696,22 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             scopes: [.localCache, .encryptedCloudBackup, .aiDrafts, .mediaThumbnails],
             requestedAt: now
         )
+        return NativeMemoryExportRequest(
+            plan: plan,
+            slices: slices,
+            chapters: [chapter],
+            revisits: revisits,
+            deletionReceipt: deletionReceipt,
+            thumbnailDirectory: thumbnailDirectory
+        )
+    }
+
+    @discardableResult
+    public mutating func exportMemoryVault(
+        now: Date = Date(),
+        thumbnailDirectory: URL = NativeMediaThumbnailStore.defaultDirectory
+    ) throws -> ExportZIPPackage {
+        let request = memoryExportRequest(now: now, thumbnailDirectory: thumbnailDirectory)
         let thumbnailPairs: [(String, Data)] = slices.compactMap { slice in
             guard let media = slice.media,
                   let fileName = media.thumbnailFileName,
@@ -699,11 +727,11 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             result[pair.0] = pair.1
         }
         let package = try OnDeviceExportZIPBuilder.package(
-            for: plan,
-            slices: slices,
-            chapters: [chapter],
-            revisits: revisits,
-            deletionReceipt: deletionReceipt,
+            for: request.plan,
+            slices: request.slices,
+            chapters: request.chapters,
+            revisits: request.revisits,
+            deletionReceipt: request.deletionReceipt,
             thumbnailDataByAnchorID: thumbnailDataByAnchorID
         )
         latestExportSummary = NativeExportSummary.from(package)
@@ -714,6 +742,17 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
 
     public mutating func recordExportError(_ message: String) {
         latestExportError = message
+        selectedRoute = .account
+    }
+
+    public mutating func beginExport() {
+        latestExportError = nil
+        selectedRoute = .account
+    }
+
+    public mutating func recordExportSuccess(_ artifact: NativeExportFileArtifact) {
+        latestExportSummary = NativeExportSummary.from(artifact)
+        latestExportError = nil
         selectedRoute = .account
     }
 

@@ -117,6 +117,23 @@ final class HTTPResultBox: @unchecked Sendable {
     }
 }
 
+final class ExportProgressBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Double] = []
+
+    func append(_ value: Double) {
+        lock.lock()
+        storage.append(value)
+        lock.unlock()
+    }
+
+    var values: [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+}
+
 func synchronousPOST(
     urlRequest: URLRequest,
     timeoutSeconds: TimeInterval
@@ -659,6 +676,33 @@ check(shell.latestExportSummary?.isTSDMemoryRightsSafe == true, "Native shell ex
 check(shell.snapshot.hasExportPackage, "Native shell snapshot should show that an export package exists after export")
 check(shell.snapshot.lastExportEntryCount == 6, "Native shell snapshot should expose latest export entry count")
 check(shell.latestExportError == nil, "Native shell should clear export errors after a successful export")
+let fileExportDirectory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("tsd-native-check-export-\(UUID().uuidString)", isDirectory: true)
+let unrelatedExportFile = fileExportDirectory.appendingPathComponent("keep-me.txt")
+try FileManager.default.createDirectory(at: fileExportDirectory, withIntermediateDirectories: true)
+try Data("unrelated".utf8).write(to: unrelatedExportFile)
+try Data("stale".utf8).write(to: fileExportDirectory.appendingPathComponent(".tsd-export-stale.partial"))
+let removedExportArtifacts = try NativeMemoryExportFileBuilder.removeOwnedArtifacts(in: fileExportDirectory)
+check(removedExportArtifacts == [".tsd-export-stale.partial"], "File export cleanup should remove only builder-owned artifacts")
+check(FileManager.default.fileExists(atPath: unrelatedExportFile.path), "File export cleanup should preserve unrelated temporary files")
+let exportProgress = ExportProgressBox()
+let fileArtifact = try await NativeMemoryExportFileBuilder.export(
+    shell.memoryExportRequest(now: fixedDate),
+    to: fileExportDirectory,
+    availableCapacityBytes: 10_000_000,
+    progress: { exportProgress.append($0) }
+)
+check(FileManager.default.fileExists(atPath: fileArtifact.fileURL.path), "URL-backed export should create a completed ZIP file")
+check(fileArtifact.fileSizeBytes > 22, "URL-backed export should contain ZIP headers and payload")
+check(fileArtifact.entries.count == 6, "URL-backed export should contain the six default documents")
+check(fileArtifact.isMemorySafeDefault, "URL-backed export should preserve the default memory-rights boundary")
+let fileArtifactData = try Data(contentsOf: fileArtifact.fileURL)
+check(fileArtifactData.starts(with: [0x50, 0x4B, 0x03, 0x04]), "URL-backed export should begin with ZIP local-file magic")
+check(fileArtifactData.suffix(22).starts(with: [0x50, 0x4B, 0x05, 0x06]), "URL-backed export should end with a ZIP central-directory footer")
+check(exportProgress.values.last == 1, "URL-backed export progress should finish at one")
+check(zip(exportProgress.values, exportProgress.values.dropFirst()).allSatisfy { $0 <= $1 }, "URL-backed export progress should be monotonic")
+check(NativeExportSummary.from(fileArtifact).fileSizeBytes == fileArtifact.fileSizeBytes, "URL-backed export should create a summary without retaining archive Data")
+try FileManager.default.removeItem(at: fileExportDirectory)
 #if canImport(SwiftUI)
 let shellDocument = TSDExportZIPDocument(package: shellExport)
 check(shellDocument.fileName == shellExport.fileName, "System exporter document should preserve export file name")
@@ -693,14 +737,14 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 82;"), "Xcode project build settings should carry v82 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 83;"), "Xcode project build settings should carry v83 build number")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
 check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mount TSDNativeShellView")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>82</string>"), "Info.plist should carry v82 build number")
+check(infoPlistText.contains("<string>83</string>"), "Info.plist should carry v83 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -711,6 +755,8 @@ check(privacyManifestText.contains("<false/>"), "Privacy manifest should keep tr
 check(privacyManifestText.contains("<key>NSPrivacyTrackingDomains</key>"), "Privacy manifest should declare tracking domains")
 check(privacyManifestText.contains("<key>NSPrivacyCollectedDataTypes</key>"), "Privacy manifest should declare collected data types")
 check(privacyManifestText.contains("<key>NSPrivacyAccessedAPITypes</key>"), "Privacy manifest should declare accessed API types")
+check(privacyManifestText.contains("NSPrivacyAccessedAPICategoryDiskSpace"), "Privacy manifest should declare the shipping disk-space API category")
+check(privacyManifestText.contains("E174.1"), "Privacy manifest should declare the export preflight disk-space reason")
 check(privacyManifestText.filter { $0 == "<" }.count >= 12, "Privacy manifest should remain a structured plist, not a loose note")
 
 func pngMetadata(at url: URL) throws -> (width: Int, height: Int, colorType: UInt8) {
@@ -2043,7 +2089,10 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "82", "TestFlight build notes should match v82")
+check(buildNotes.buildNumber == "83", "TestFlight build notes should match v83")
+check(buildNotes.summary.localizedCaseInsensitiveContains("URL-backed temporary file"), "TestFlight build notes should describe the URL-backed export path")
+check(buildNotes.summary.localizedCaseInsensitiveContains("bounded chunks"), "TestFlight build notes should describe bounded thumbnail streaming")
+check(buildNotes.summary.localizedCaseInsensitiveContains("E174.1"), "TestFlight build notes should disclose the approved disk-space reason")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Schema v3"), "TestFlight build notes should mention the domain-only schema v3 payload")
 check(buildNotes.summary.localizedCaseInsensitiveContains("monotonic vault revision"), "TestFlight build notes should mention revision-keyed persistence")
 check(buildNotes.summary.localizedCaseInsensitiveContains("current tab"), "TestFlight build notes should disclose that session navigation is excluded from the vault")
@@ -2414,9 +2463,13 @@ check(privacyManifestAuditPacket.sourceReferences.count == 5, "Privacy Manifest 
 check(privacyManifestAuditPacket.privacyManifestPath == XcodeProjectContract.privacyManifestPath, "Privacy Manifest required reason audit packet should point at the bundled privacy manifest")
 check(privacyManifestAuditPacket.requiredReasonItems.count == PrivacyManifestRequiredReasonAPIKind.allCases.count, "Privacy Manifest audit packet should cover every required reason API category")
 check(privacyManifestAuditPacket.requiredKindsCovered, "Privacy Manifest audit packet should cover all known required reason API kinds")
-check(!privacyManifestAuditPacket.shippingTargetUsesRequiredReasonAPIs, "Current shipping target audit should not claim required reason API use")
+check(privacyManifestAuditPacket.shippingTargetUsesRequiredReasonAPIs, "Current shipping target audit should disclose disk-space API use")
 check(privacyManifestAuditPacket.requiredAPIUsagesHaveApprovedReasons, "Privacy Manifest audit packet should require approved reasons whenever a category is used")
-check(privacyManifestAuditPacket.canKeepAccessedAPITypesEmpty, "Current shipping target audit should justify keeping NSPrivacyAccessedAPITypes empty")
+check(!privacyManifestAuditPacket.canKeepAccessedAPITypesEmpty, "Current shipping target audit should forbid an empty NSPrivacyAccessedAPITypes array")
+let diskSpaceAuditItem = privacyManifestAuditPacket.requiredReasonItems.first { $0.kind == .diskSpace }
+check(diskSpaceAuditItem?.usedByShippingTarget == true, "Disk-space audit item should match the shipping export preflight")
+check(diskSpaceAuditItem?.approvedReasonIDs == ["E174.1"], "Disk-space audit item should use only the write-preflight reason E174.1")
+check(diskSpaceAuditItem?.observedSymbols.contains { $0.contains("volumeAvailableCapacityForImportantUsageKey") } == true, "Disk-space audit item should name the observed production symbol")
 check(privacyManifestAuditPacket.canSatisfyRequiredReasonShapeGate, "Privacy Manifest required reason audit packet should satisfy the local shape gate")
 check(!privacyManifestAuditPacket.canSatisfyFinalPrivacyManifestGate, "Privacy Manifest audit packet should not satisfy final gate before Xcode privacy report, dependency review, and release review")
 
@@ -2500,8 +2553,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "82", "App Store submission gate should track v82")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v82 domain/session separation")
+check(appStoreSubmissionGate.buildNumber == "83", "App Store submission gate should track v83")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v83 URL-backed export")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2777,4 +2830,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, and v82 domain/session state separation are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, and v83 URL-backed streaming export are aligned.")

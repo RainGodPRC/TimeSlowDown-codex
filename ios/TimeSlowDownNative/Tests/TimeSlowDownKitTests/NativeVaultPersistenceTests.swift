@@ -373,6 +373,130 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertNil(NativeMediaThumbnailStore.data(fileName: fileName, directory: thumbnailDirectory))
         XCTAssertEqual(finalReceipt.mediaGarbageCollection.removedFileNames, [fileName])
     }
+
+    func testFileExportWritesAValidZIPArtifactWithoutReturningArchiveData() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-file-export-tests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "写入文件而不是堆在内存里的记忆")
+        let request = store.memoryExportRequest(now: Date(timeIntervalSince1970: 1_700_000_000))
+
+        let artifact = try await NativeMemoryExportFileBuilder.export(
+            request,
+            to: directory,
+            availableCapacityBytes: 10_000_000
+        )
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: artifact.fileURL.path))
+        XCTAssertEqual(artifact.fileName, request.plan.fileName)
+        XCTAssertGreaterThan(artifact.fileSizeBytes, 22)
+        XCTAssertGreaterThanOrEqual(artifact.entries.count, 6)
+        XCTAssertTrue(artifact.isMemorySafeDefault)
+        let handle = try FileHandle(forReadingFrom: artifact.fileURL)
+        defer { try? handle.close() }
+        XCTAssertEqual(try handle.read(upToCount: 4), Data([0x50, 0x4B, 0x03, 0x04]))
+        try handle.seek(toOffset: UInt64(artifact.fileSizeBytes - 22))
+        XCTAssertEqual(try handle.read(upToCount: 4), Data([0x50, 0x4B, 0x05, 0x06]))
+        XCTAssertEqual(NativeExportSummary.from(artifact).fileSizeBytes, artifact.fileSizeBytes)
+    }
+
+    func testFileExportRejectsInsufficientSpaceWithoutLeavingPartialFiles() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-file-export-space-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "空间不足时不能留下半个导出包")
+
+        await XCTAssertThrowsErrorAsync(
+            try await NativeMemoryExportFileBuilder.export(
+                store.memoryExportRequest(),
+                to: directory,
+                availableCapacityBytes: 1
+            )
+        ) { error in
+            guard case .insufficientDiskSpace(let required, let available) = error as? ExportZIPBuilderError else {
+                return XCTFail("Expected an insufficient-disk-space error")
+            }
+            XCTAssertGreaterThan(required, available)
+            XCTAssertEqual(available, 1)
+        }
+
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        XCTAssertTrue(leftovers.isEmpty)
+    }
+
+    func testCancelledFileExportLeavesNoPartialFiles() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-file-export-cancel-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "取消导出也不能留下垃圾")
+
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await NativeMemoryExportFileBuilder.export(
+                store.memoryExportRequest(),
+                to: directory,
+                availableCapacityBytes: 10_000_000
+            )
+        }
+        do {
+            _ = try await task.value
+            XCTFail("A pre-cancelled export should throw CancellationError")
+        } catch is CancellationError {
+            // Expected.
+        }
+
+        let leftovers = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        XCTAssertTrue(leftovers.isEmpty)
+    }
+
+    func testFileExportReportsMonotonicProgressEndingAtOne() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-file-export-progress-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "看得见进度的导出")
+        let recorder = ThreadSafeProgressRecorder()
+
+        _ = try await NativeMemoryExportFileBuilder.export(
+            store.memoryExportRequest(),
+            to: directory,
+            availableCapacityBytes: 10_000_000,
+            progress: { recorder.append($0) }
+        )
+
+        let values = recorder.values
+        XCTAssertFalse(values.isEmpty)
+        XCTAssertEqual(values.last, 1)
+        XCTAssertTrue(zip(values, values.dropFirst()).allSatisfy { $0 <= $1 })
+    }
+
+    func testOwnedExportArtifactCleanupPreservesUnrelatedFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-file-export-cleanup-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let ownedNames = [
+            ".tsd-export-abcd.partial",
+            "tsd-export-efgh.zip"
+        ]
+        let unrelatedNames = [
+            "family-memories.zip",
+            ".tsd-export-not-partial.tmp",
+            "tsd-export-not-zip.json"
+        ]
+        for name in ownedNames + unrelatedNames {
+            try Data(name.utf8).write(to: directory.appendingPathComponent(name))
+        }
+
+        let removed = try NativeMemoryExportFileBuilder.removeOwnedArtifacts(in: directory)
+
+        XCTAssertEqual(removed, ownedNames.sorted())
+        let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+        XCTAssertEqual(remaining, unrelatedNames.sorted())
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(
@@ -403,4 +527,21 @@ private func testChecksum(_ data: Data) -> String {
 #else
     data.base64EncodedString()
 #endif
+}
+
+private final class ThreadSafeProgressRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [Double] = []
+
+    func append(_ value: Double) {
+        lock.lock()
+        storage.append(value)
+        lock.unlock()
+    }
+
+    var values: [Double] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
 }
