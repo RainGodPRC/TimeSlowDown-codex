@@ -123,6 +123,7 @@ public enum NativeShellPersistenceSource: Equatable, Sendable {
     case newVault
     case restored
     case migratedLegacy
+    case migratedVersioned(Int)
     case restoredLastKnownGood(String)
     case recoveredCorruptBackup(String)
 }
@@ -141,14 +142,48 @@ public enum NativeVaultPersistenceError: Error, Equatable, Sendable {
     case unsupportedSchema(Int)
 }
 
+public struct NativeVaultPayload: Codable, Equatable, Sendable {
+    public var slices: [MemorySlice]
+    public var revisits: [MemoryRevisit]
+    public var privacyBoundary: PrivacyBoundary
+
+    public init(
+        slices: [MemorySlice],
+        revisits: [MemoryRevisit],
+        privacyBoundary: PrivacyBoundary
+    ) {
+        self.slices = slices
+        self.revisits = revisits
+        self.privacyBoundary = privacyBoundary
+    }
+
+    public init(store: NativeShellStore) {
+        self.init(
+            slices: store.slices,
+            revisits: store.revisits,
+            privacyBoundary: store.privacyBoundary
+        )
+    }
+
+    public var store: NativeShellStore {
+        NativeShellStore(
+            slices: slices,
+            revisits: revisits,
+            privacyBoundary: privacyBoundary
+        )
+    }
+}
+
 public struct NativeVaultEnvelope: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 2
+    public static let currentSchemaVersion = 3
 
     public var schemaVersion: Int
     public var createdAt: Date
     public var updatedAt: Date
     public var payloadChecksum: String
-    public var store: NativeShellStore
+    public var payload: NativeVaultPayload
+
+    public var store: NativeShellStore { payload.store }
 
     public init(
         schemaVersion: Int = Self.currentSchemaVersion,
@@ -161,8 +196,22 @@ public struct NativeVaultEnvelope: Codable, Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.payloadChecksum = payloadChecksum
-        self.store = store
+        self.payload = NativeVaultPayload(store: store)
     }
+}
+
+private struct NativeVaultEnvelopeV2: Codable {
+    var schemaVersion: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var payloadChecksum: String
+    var store: NativeShellStore
+}
+
+private struct DecodedNativeVault {
+    var schemaVersion: Int
+    var createdAt: Date
+    var store: NativeShellStore
 }
 
 public struct NativeDeletedMemorySlice: Equatable, Sendable {
@@ -197,8 +246,15 @@ public enum NativeShellPersistence {
            schemaVersion > NativeVaultEnvelope.currentSchemaVersion {
             throw NativeVaultPersistenceError.unsupportedSchema(schemaVersion)
         }
-        if let envelope = decodeEnvelope(data) {
-            return NativeShellPersistenceLoadResult(store: envelope.store, source: .restored)
+        if let decodedVault = decodeSupportedEnvelope(data) {
+            if decodedVault.schemaVersion < NativeVaultEnvelope.currentSchemaVersion {
+                try save(decodedVault.store, to: url)
+                return NativeShellPersistenceLoadResult(
+                    store: decodedVault.store,
+                    source: .migratedVersioned(decodedVault.schemaVersion)
+                )
+            }
+            return NativeShellPersistenceLoadResult(store: decodedVault.store, source: .restored)
         }
         if looksLikeLegacyStore(data), let store = decodeLegacyStore(data) {
             try save(store, to: url)
@@ -209,10 +265,10 @@ public enum NativeShellPersistence {
         try fileManager.moveItem(at: url, to: backupURL)
         let lastKnownGoodURL = lastKnownGoodURL(for: url)
         if fileManager.fileExists(atPath: lastKnownGoodURL.path),
-           let lastKnownGoodEnvelope = decodeEnvelope(try Data(contentsOf: lastKnownGoodURL)) {
-            try save(lastKnownGoodEnvelope.store, to: url)
+           let lastKnownGoodVault = decodeSupportedEnvelope(try Data(contentsOf: lastKnownGoodURL)) {
+            try save(lastKnownGoodVault.store, to: url)
             return NativeShellPersistenceLoadResult(
-                store: lastKnownGoodEnvelope.store,
+                store: lastKnownGoodVault.store,
                 source: .restoredLastKnownGood(backupURL.lastPathComponent)
             )
         }
@@ -232,23 +288,24 @@ public enum NativeShellPersistence {
             at: url.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        var currentEnvelope: NativeVaultEnvelope?
+        var currentVault: DecodedNativeVault?
         if fileManager.fileExists(atPath: url.path) {
             let currentData = try Data(contentsOf: url)
             if let schemaVersion = envelopeSchemaVersion(in: currentData),
                schemaVersion > NativeVaultEnvelope.currentSchemaVersion {
                 throw NativeVaultPersistenceError.unsupportedSchema(schemaVersion)
             }
-            currentEnvelope = decodeEnvelope(currentData)
-            if currentEnvelope != nil {
+            currentVault = decodeSupportedEnvelope(currentData)
+            if currentVault != nil {
                 try write(currentData, to: lastKnownGoodURL(for: url))
             }
         }
         let now = Date()
+        let payload = NativeVaultPayload(store: store)
         let envelope = NativeVaultEnvelope(
-            createdAt: currentEnvelope?.createdAt ?? now,
+            createdAt: currentVault?.createdAt ?? now,
             updatedAt: now,
-            payloadChecksum: try checksum(for: store),
+            payloadChecksum: try checksum(for: payload),
             store: store
         )
         let data = try encoder().encode(envelope)
@@ -275,8 +332,8 @@ public enum NativeShellPersistence {
         return encoder
     }
 
-    private static func checksum(for store: NativeShellStore) throws -> String {
-        let payload = try encoder().encode(store)
+    private static func checksum<T: Encodable>(for value: T) throws -> String {
+        let payload = try encoder().encode(value)
 #if canImport(CryptoKit)
         return SHA256.hash(data: payload).map { String(format: "%02x", $0) }.joined()
 #else
@@ -284,16 +341,35 @@ public enum NativeShellPersistence {
 #endif
     }
 
-    private static func decodeEnvelope(_ data: Data) -> NativeVaultEnvelope? {
+    private static func decodeSupportedEnvelope(_ data: Data) -> DecodedNativeVault? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let envelope = try? decoder.decode(NativeVaultEnvelope.self, from: data),
-              envelope.schemaVersion == NativeVaultEnvelope.currentSchemaVersion,
-              let expectedChecksum = try? checksum(for: envelope.store),
-              envelope.payloadChecksum == expectedChecksum else {
+        switch envelopeSchemaVersion(in: data) {
+        case NativeVaultEnvelope.currentSchemaVersion:
+            guard let envelope = try? decoder.decode(NativeVaultEnvelope.self, from: data),
+                  let expectedChecksum = try? checksum(for: envelope.payload),
+                  envelope.payloadChecksum == expectedChecksum else {
+                return nil
+            }
+            return DecodedNativeVault(
+                schemaVersion: envelope.schemaVersion,
+                createdAt: envelope.createdAt,
+                store: envelope.store
+            )
+        case 2:
+            guard let envelope = try? decoder.decode(NativeVaultEnvelopeV2.self, from: data),
+                  let expectedChecksum = try? checksum(for: envelope.store),
+                  envelope.payloadChecksum == expectedChecksum else {
+                return nil
+            }
+            return DecodedNativeVault(
+                schemaVersion: envelope.schemaVersion,
+                createdAt: envelope.createdAt,
+                store: NativeVaultPayload(store: envelope.store).store
+            )
+        default:
             return nil
         }
-        return envelope
     }
 
     private static func looksLikeLegacyStore(_ data: Data) -> Bool {
@@ -323,14 +399,24 @@ public enum NativeShellPersistence {
 
 public struct NativeShellStore: Codable, Equatable, Sendable {
     public var selectedRoute: NativeShellRoute
-    public var slices: [MemorySlice]
-    public var revisits: [MemoryRevisit]
-    public var privacyBoundary: PrivacyBoundary
-    public var latestExportSummary: NativeExportSummary?
-    public var latestExportError: String?
+    public private(set) var slices: [MemorySlice]
+    public private(set) var revisits: [MemoryRevisit]
+    public private(set) var privacyBoundary: PrivacyBoundary
+    public private(set) var latestExportSummary: NativeExportSummary?
+    public private(set) var latestExportError: String?
+    public private(set) var vaultRevision: UInt64
 
     public var referencedThumbnailFileNames: Set<String> {
         Set(slices.compactMap { $0.media?.thumbnailFileName })
+    }
+
+    public static func == (lhs: NativeShellStore, rhs: NativeShellStore) -> Bool {
+        lhs.selectedRoute == rhs.selectedRoute &&
+        lhs.slices == rhs.slices &&
+        lhs.revisits == rhs.revisits &&
+        lhs.privacyBoundary == rhs.privacyBoundary &&
+        lhs.latestExportSummary == rhs.latestExportSummary &&
+        lhs.latestExportError == rhs.latestExportError
     }
 
     public init(
@@ -347,6 +433,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         self.privacyBoundary = privacyBoundary
         self.latestExportSummary = latestExportSummary
         self.latestExportError = latestExportError
+        self.vaultRevision = 0
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -366,6 +453,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         privacyBoundary = try container.decodeIfPresent(PrivacyBoundary.self, forKey: .privacyBoundary) ?? PrivacyBoundary()
         latestExportSummary = try container.decodeIfPresent(NativeExportSummary.self, forKey: .latestExportSummary)
         latestExportError = try container.decodeIfPresent(String.self, forKey: .latestExportError)
+        vaultRevision = 0
     }
 
     public static func seeded(now: Date = Date()) -> NativeShellStore {
@@ -431,6 +519,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         guard let echo = SliceFactory.yesterdayEcho(from: slices, revisits: revisits, now: now) else { return nil }
         let revisit = SliceFactory.revisit(echo, reflection: reflection, now: now)
         revisits.append(revisit)
+        markVaultChanged()
         selectedRoute = .now
         return revisit
     }
@@ -442,6 +531,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             media: media
         )
         slices.insert(slice, at: 0)
+        markVaultChanged()
         selectedRoute = .slices
         return slice
     }
@@ -458,6 +548,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             now: now
         )
         slices.insert(slice, at: 0)
+        markVaultChanged()
         selectedRoute = .now
         return slice
     }
@@ -482,6 +573,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             guard next != slices[index] else { return false }
             slices[index] = next
         }
+        markVaultChanged()
         selectedRoute = .now
         return true
     }
@@ -511,6 +603,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         if !slices[index].sources.contains("用户编辑") {
             slices[index].sources.append("用户编辑")
         }
+        markVaultChanged()
         return true
     }
 
@@ -518,6 +611,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public mutating func attachMedia(_ media: MediaAnchor, to sliceID: UUID) -> Bool {
         guard let index = slices.firstIndex(where: { $0.id == sliceID }) else { return false }
         slices[index] = SliceFactory.attach(media, to: slices[index])
+        markVaultChanged()
         return true
     }
 
@@ -530,6 +624,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         if !slices[index].sources.contains("用户移除影像") {
             slices[index].sources.append("用户移除影像")
         }
+        markVaultChanged()
         return media
     }
 
@@ -539,6 +634,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         let slice = slices.remove(at: index)
         let relatedRevisits = revisits.filter { $0.sliceID == id }
         revisits.removeAll { $0.sliceID == id }
+        markVaultChanged()
         selectedRoute = .slices
         return NativeDeletedMemorySlice(slice: slice, index: index, revisits: relatedRevisits)
     }
@@ -550,7 +646,16 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         for revisit in deleted.revisits where !revisits.contains(where: { $0.id == revisit.id }) {
             revisits.append(revisit)
         }
+        markVaultChanged()
         selectedRoute = .slices
+        return true
+    }
+
+    @discardableResult
+    public mutating func updatePrivacyBoundary(_ boundary: PrivacyBoundary) -> Bool {
+        guard boundary != privacyBoundary else { return false }
+        privacyBoundary = boundary
+        markVaultChanged()
         return true
     }
 
@@ -610,6 +715,10 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public mutating func recordExportError(_ message: String) {
         latestExportError = message
         selectedRoute = .account
+    }
+
+    private mutating func markVaultChanged() {
+        vaultRevision &+= 1
     }
 
     public func weeklyPreviewTitle() -> String {

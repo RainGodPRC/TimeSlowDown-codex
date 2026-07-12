@@ -1,5 +1,8 @@
 import Foundation
 import XCTest
+#if canImport(CryptoKit)
+import CryptoKit
+#endif
 @testable import TimeSlowDownKit
 
 final class NativeVaultPersistenceTests: XCTestCase {
@@ -20,15 +23,84 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        XCTAssertEqual(object["schemaVersion"] as? Int, 2)
+        XCTAssertEqual(object["schemaVersion"] as? Int, NativeVaultEnvelope.currentSchemaVersion)
         XCTAssertNotNil(object["createdAt"] as? String)
         XCTAssertNotNil(object["updatedAt"] as? String)
         XCTAssertNotNil(object["payloadChecksum"] as? String)
-        XCTAssertNotNil(object["store"] as? [String: Any])
+        XCTAssertNotNil(object["payload"] as? [String: Any])
 
         let restored = try NativeShellPersistence.loadRecovering(from: url)
         XCTAssertEqual(restored.source, .restored)
         XCTAssertEqual(restored.store.slices.map(\.title), ["版本化仓库中的第一刻"])
+    }
+
+    func testSchemaThreePersistsOnlyDomainPayloadAndResetsSessionState() throws {
+        let url = temporaryVaultURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "只属于记忆领域的数据")
+        store.selectedRoute = .account
+        store.recordExportError("一次临时导出错误")
+
+        try NativeShellPersistence.save(store, to: url)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        XCTAssertEqual(object["schemaVersion"] as? Int, 3)
+        XCTAssertNil(object["store"])
+        let payload = try XCTUnwrap(object["payload"] as? [String: Any])
+        XCTAssertNotNil(payload["slices"])
+        XCTAssertNotNil(payload["revisits"])
+        XCTAssertNotNil(payload["privacyBoundary"])
+        XCTAssertNil(payload["selectedRoute"])
+        XCTAssertNil(payload["latestExportSummary"])
+        XCTAssertNil(payload["latestExportError"])
+
+        let restored = try NativeShellPersistence.loadRecovering(from: url)
+        XCTAssertEqual(restored.store.slices.map(\.title), ["只属于记忆领域的数据"])
+        XCTAssertEqual(restored.store.selectedRoute, .now)
+        XCTAssertNil(restored.store.latestExportSummary)
+        XCTAssertNil(restored.store.latestExportError)
+    }
+
+    func testDomainRevisionAdvancesOnlyForPersistedMemoryMutations() throws {
+        var store = NativeShellStore()
+        XCTAssertEqual(store.vaultRevision, 0)
+
+        store.selectedRoute = .meadow
+        store.recordExportError("只属于当前界面的错误")
+        XCTAssertEqual(store.vaultRevision, 0)
+
+        let slice = try XCTUnwrap(store.captureQuickMark(title: "真正改变仓库的记忆"))
+        XCTAssertEqual(store.vaultRevision, 1)
+
+        XCTAssertFalse(
+            store.updateSlice(
+                id: UUID(),
+                title: "不存在的切片",
+                body: "",
+                peopleText: "",
+                meaning: ""
+            )
+        )
+        XCTAssertEqual(store.vaultRevision, 1)
+
+        XCTAssertTrue(
+            store.updateSlice(
+                id: slice.id,
+                title: "被认真命名的记忆",
+                body: "今天真的发生过。",
+                peopleText: "家人",
+                meaning: "以后还想讲起"
+            )
+        )
+        XCTAssertEqual(store.vaultRevision, 2)
+
+        let deleted = try XCTUnwrap(store.deleteSlice(id: slice.id))
+        XCTAssertEqual(store.vaultRevision, 3)
+        XCTAssertTrue(store.restoreDeletedSlice(deleted))
+        XCTAssertEqual(store.vaultRevision, 4)
     }
 
     func testLoadMigratesLegacyBareStoreInPlace() throws {
@@ -48,8 +120,43 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        XCTAssertEqual(object["schemaVersion"] as? Int, 2)
+        XCTAssertEqual(object["schemaVersion"] as? Int, NativeVaultEnvelope.currentSchemaVersion)
         XCTAssertNotNil(object["payloadChecksum"] as? String)
+    }
+
+    func testLoadMigratesSchemaTwoEnvelopeToDomainOnlySchemaThree() throws {
+        let url = temporaryVaultURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var schemaTwoStore = NativeShellStore()
+        _ = schemaTwoStore.captureQuickMark(title: "v2 仓库中的真实记忆")
+        schemaTwoStore.recordExportError("不应迁移的 session 错误")
+        let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let storeData = try encoder.encode(schemaTwoStore)
+        let envelope = TestNativeVaultEnvelopeV2(
+            schemaVersion: 2,
+            createdAt: createdAt,
+            updatedAt: createdAt,
+            payloadChecksum: testChecksum(storeData),
+            store: schemaTwoStore
+        )
+        try encoder.encode(envelope).write(to: url, options: .atomic)
+
+        let migrated = try NativeShellPersistence.loadRecovering(from: url)
+
+        XCTAssertEqual(migrated.source, .migratedVersioned(2))
+        XCTAssertEqual(migrated.store.slices.map(\.title), ["v2 仓库中的真实记忆"])
+        XCTAssertEqual(migrated.store.selectedRoute, .now)
+        XCTAssertNil(migrated.store.latestExportError)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let schemaThreeEnvelope = try decoder.decode(NativeVaultEnvelope.self, from: Data(contentsOf: url))
+        XCTAssertEqual(schemaThreeEnvelope.schemaVersion, 3)
+        XCTAssertEqual(schemaThreeEnvelope.createdAt, createdAt)
+        XCTAssertEqual(schemaThreeEnvelope.payload.slices.map(\.title), ["v2 仓库中的真实记忆"])
     }
 
     func testCorruptPrimaryRestoresThePreviousLastKnownGoodVault() throws {
@@ -280,4 +387,20 @@ private func XCTAssertThrowsErrorAsync<T>(
     } catch {
         errorHandler(error)
     }
+}
+
+private struct TestNativeVaultEnvelopeV2: Codable {
+    var schemaVersion: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var payloadChecksum: String
+    var store: NativeShellStore
+}
+
+private func testChecksum(_ data: Data) -> String {
+#if canImport(CryptoKit)
+    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+#else
+    data.base64EncodedString()
+#endif
 }

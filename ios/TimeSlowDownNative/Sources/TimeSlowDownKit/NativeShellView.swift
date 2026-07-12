@@ -109,7 +109,7 @@ public struct TSDNativeShellView: View {
                 }
             }
         }
-        .task(id: store) {
+        .task(id: store.vaultRevision) {
             guard persistenceEnabled, let persistenceCoordinator else { return }
             let snapshot = store
             do {
