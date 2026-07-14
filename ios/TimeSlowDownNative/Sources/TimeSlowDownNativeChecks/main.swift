@@ -390,6 +390,26 @@ let meadowRevisit = MemoryRevisit(
     revisitedAt: meadowDate(2026, 7, 20),
     reflection: "现在还记得风的声音。"
 )
+let memoryTimeline = MemoryTimelineFactory.snapshot(
+    from: meadowSlices,
+    revisits: [meadowRevisit],
+    calendar: meadowCalendar
+)
+check(memoryTimeline.months.map(\.id) == ["2026-07", "2026-06", "2021-04"], "Timeline should group source slices into stable reverse-chronological months")
+check(memoryTimeline.months.first?.days.map(\.id) == ["2026-07-15", "2026-07-02"], "Timeline should group source slices into stable reverse-chronological days")
+let timelineJulySecond = memoryTimeline.months.first?.days.first { $0.id == "2026-07-02" }
+check(timelineJulySecond?.slices.map(\.id) == [julyOrdinary.id, julyPhoto.id], "Same-day Timeline slices should retain deterministic newest-first source order")
+check(timelineJulySecond?.prominentSliceID == julyPhoto.id, "Timeline should give the day's real media anchor visual prominence without changing source order")
+check(memoryTimeline.sliceCount == 5 && memoryTimeline.mediaAnchorCount == 1 && memoryTimeline.revisitCount == 1, "Timeline summary should preserve slice, media, and revisit counts")
+check(memoryTimeline.isSourceBacked, "Timeline should project every source slice exactly once without invented memories")
+check(
+    MemoryTimelineFactory.snapshot(
+        from: [olderMemory, julyRain, julyOrdinary, juneMemory, julyPhoto],
+        revisits: [meadowRevisit],
+        calendar: meadowCalendar
+    ) == memoryTimeline,
+    "Timeline projection should remain deterministic when source input order changes"
+)
 let monthMeadow = LifeMeadowFactory.snapshot(
     from: meadowSlices,
     revisits: [meadowRevisit],
@@ -857,7 +877,7 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 88;"), "Xcode project build settings should carry v88 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 89;"), "Xcode project build settings should carry v89 build number")
 check(projectText.contains("TimeSlowDownUITests"), "Xcode project should contain the formal UI testing target")
 check(projectText.contains("com.apple.product-type.bundle.ui-testing"), "Xcode UI testing target should use the UI testing product type")
 check(projectText.contains("PBXTargetDependency"), "Xcode UI testing target should depend on the app runner")
@@ -875,6 +895,7 @@ check(appSourceText.contains("persistenceURL: nil"), "UI testing must not persis
 check(appSourceText.contains("TimeSlowDownUITests"), "UI testing diagnostics should use an isolated temporary directory")
 check(appSourceText.contains("requiresOnboarding"), "Debug fixtures should support the real first-run route")
 check(appSourceText.contains("onboardingMode:"), "The app target should explicitly isolate UI-test onboarding state")
+check(appSourceText.contains("case \"timeline\":"), "Debug fixtures should expose the grouped Timeline without entering the production vault")
 
 let sharedSchemeText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.sharedSchemePath), encoding: .utf8)
 check(sharedSchemeText.contains("TimeSlowDownUITests.xctest"), "Shared scheme should execute the formal UI testing target")
@@ -888,10 +909,14 @@ check(uiTestSourceText.contains("testFirstRunCreatesASourceBackedMemoryBeforeEnt
 check(uiTestSourceText.contains("testFirstRunChoicesRemainReachableAtAccessibilityTextSize"), "UI suite should keep first-run choices reachable at accessibility text size")
 check(uiTestSourceText.contains("testLifeMarkOpensItsPersistedSourceEvidence"), "UI suite should prove a Life Mark opens its persisted source evidence")
 check(uiTestSourceText.contains("testLifeMarkSourceRemainsReadableAtAccessibilityTextSize"), "UI suite should keep Life Mark source evidence readable at Accessibility XXL")
+check(uiTestSourceText.contains("testTimelineGroupsMonthsAndDaysAndOpensTheRealSlice"), "UI suite should cover grouped Timeline navigation into the real source slice")
+check(uiTestSourceText.contains("testTimelineRemainsNavigableAtAccessibilityTextSize"), "UI suite should keep older Timeline months reachable at Accessibility XXL")
+check(uiTestSourceText.contains("timeline.month.2026-07"), "UI suite should assert the native Timeline month identifier")
+check(uiTestSourceText.contains("timeline.day.2026-07-02"), "UI suite should assert the native Timeline day identifier")
 check(uiTestSourceText.contains("UICTContentSizeCategoryAccessibilityXXL"), "Account UI path should exercise an accessibility Dynamic Type category")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>88</string>"), "Info.plist should carry v88 build number")
+check(infoPlistText.contains("<string>89</string>"), "Info.plist should carry v89 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -2240,8 +2265,10 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "88", "TestFlight build notes should match v88")
-check(buildNotes.summary.localizedCaseInsensitiveContains("deterministic active recall"), "TestFlight build notes should describe the v88 active-recall scheduler")
+check(buildNotes.buildNumber == "89", "TestFlight build notes should match v89")
+check(buildNotes.summary.localizedCaseInsensitiveContains("month and day grouped native Timeline"), "TestFlight build notes should describe the v89 grouped native Timeline")
+check(buildNotes.summary.localizedCaseInsensitiveContains("eleven user-observable paths"), "TestFlight build notes should disclose all eleven simulator paths")
+check(buildNotes.summary.localizedCaseInsensitiveContains("deterministic active recall"), "TestFlight build notes should retain the v88 active-recall scheduler")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Schema v5"), "TestFlight build notes should mention the recall-interaction schema v5 payload")
 check(buildNotes.summary.localizedCaseInsensitiveContains("recall-interactions.json"), "TestFlight build notes should disclose the portable recall-interaction ledger")
 check(buildNotes.summary.localizedCaseInsensitiveContains("seven-day local anti-nag cooldown"), "TestFlight build notes should preserve quiet-skip anti-nag semantics")
@@ -2724,8 +2751,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "88", "App Store submission gate should track v88")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v88 deterministic active recall")
+check(appStoreSubmissionGate.buildNumber == "89", "App Store submission gate should track v89")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v89 grouped native Timeline")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -3001,4 +3028,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, deterministic active recall, source concealment, cue-vs-remembered provenance, quiet-skip anti-nag cooldown, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, recall/revisit export, branded native Memory Camera home, persistent source-backed Life Marks provenance ledger, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, v83 URL-backed streaming export, v84 privacy-safe runtime diagnostics, v85 deterministic native XCUITest infrastructure, v86 progressive source-backed onboarding, v87 persistent Life Marks provenance, and v88 deterministic active recall are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, deterministic active recall, source concealment, cue-vs-remembered provenance, quiet-skip anti-nag cooldown, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, month/day grouped native Timeline, chronological river, recall/revisit export, branded native Memory Camera home, persistent source-backed Life Marks provenance ledger, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, v83 URL-backed streaming export, v84 privacy-safe runtime diagnostics, v85 deterministic native XCUITest infrastructure, v86 progressive source-backed onboarding, v87 persistent Life Marks provenance, v88 deterministic active recall, and v89 grouped native Timeline are aligned.")

@@ -1303,6 +1303,11 @@ private struct NativeWeekendWorkbench: View {
 private struct NativeSliceListView: View {
     @Binding var store: NativeShellStore
     @State private var pendingDeletion: NativePendingSliceDeletion?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var timeline: MemoryTimelineSnapshot {
+        store.memoryTimeline()
+    }
 
     var body: some View {
         NavigationStack {
@@ -1317,41 +1322,42 @@ private struct NativeSliceListView: View {
                         store.selectedRoute = .now
                     }
                 } else {
-                    List(store.slices) { slice in
-                        NavigationLink {
-                            NativeSliceDetailView(store: $store, sliceID: slice.id) {
-                                delete(sliceID: slice.id)
-                            }
-                        } label: {
-                            HStack(spacing: 12) {
-                                if let media = slice.media {
-                                    NativeMediaPreview(media: media, height: 72, cornerRadius: 14)
-                                        .frame(width: 72)
-                                }
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(slice.title).font(.headline)
-                                    Text(slice.body).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                                    if let media = slice.media {
-                                        Label(media.label, systemImage: media.kind == .video ? "video" : "photo")
-                                            .font(.caption.weight(.semibold))
+                    ScrollView {
+                        LazyVStack(
+                            spacing: 0,
+                            pinnedViews: dynamicTypeSize.isAccessibilitySize ? [] : [.sectionHeaders]
+                        ) {
+                            NativeTimelineSummary(snapshot: timeline)
+                                .padding(.horizontal, 18)
+                                .padding(.top, 8)
+                                .padding(.bottom, 12)
+
+                            ForEach(timeline.months) { month in
+                                Section {
+                                    VStack(spacing: 22) {
+                                        ForEach(month.days) { day in
+                                            NativeTimelineDayGroup(
+                                                store: $store,
+                                                day: day,
+                                                onDelete: delete
+                                            )
+                                        }
                                     }
+                                    .padding(.horizontal, 18)
+                                    .padding(.top, 14)
+                                    .padding(.bottom, 24)
+                                } header: {
+                                    NativeTimelineMonthHeader(month: month)
                                 }
-                            }
-                        }
-                        .padding(.vertical, 4)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) {
-                                delete(sliceID: slice.id)
-                            } label: {
-                                Label("删除", systemImage: "trash")
                             }
                         }
                     }
-                    .scrollContentBackground(.hidden)
+                    .scrollIndicators(.hidden)
+                    .accessibilityIdentifier("timeline.scroll")
                     .background(TSDPalette.canvas)
                 }
             }
-            .navigationTitle("切片")
+            .navigationTitle("时间轴")
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let pendingDeletion {
                     HStack(spacing: 12) {
@@ -1402,6 +1408,261 @@ private struct NativeSliceListView: View {
         }
         _ = store.restoreDeletedSlice(deleted)
         pendingDeletion = nil
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeTimelineSummary: View {
+    var snapshot: MemoryTimelineSnapshot
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("走过的日子")
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                Text("\(snapshot.sliceCount) 个瞬间 · \(snapshot.mediaAnchorCount) 个影像")
+                    .font(.subheadline)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .monospacedDigit()
+            }
+            Spacer(minLength: 12)
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.title2)
+                .foregroundStyle(TSDPalette.moss)
+                .frame(width: 44, height: 44)
+                .background(TSDPalette.sage.opacity(0.24), in: Circle())
+                .accessibilityHidden(true)
+        }
+        .padding(18)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .shadow(color: TSDPalette.mossDeep.opacity(0.08), radius: 18, y: 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("timeline.summary")
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeTimelineMonthHeader: View {
+    var month: MemoryTimelineMonth
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月"
+        return formatter
+    }()
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 3) {
+                    monthTitle
+                    monthCount
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    monthTitle
+                    Spacer()
+                    monthCount
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .frame(minHeight: 46)
+        .background(TSDPalette.canvas.opacity(0.96))
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("timeline.month.\(month.id)")
+    }
+
+    private var monthTitle: some View {
+        Text(Self.formatter.string(from: month.monthStart))
+            .font(.headline)
+            .foregroundStyle(TSDPalette.ink)
+    }
+
+    private var monthCount: some View {
+        Text("\(month.sliceCount) 个瞬间")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(TSDPalette.moss)
+            .monospacedDigit()
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeTimelineDayGroup: View {
+    @Binding var store: NativeShellStore
+    var day: MemoryTimelineDay
+    var onDelete: (UUID) -> Void
+
+    private static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "d"
+        return formatter
+    }()
+
+    private static let weekdayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "EEE"
+        return formatter
+    }()
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 4) {
+                Text(Self.dayFormatter.string(from: day.date))
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                    .monospacedDigit()
+                Text(Self.weekdayFormatter.string(from: day.date))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(TSDPalette.inkSoft)
+                Circle()
+                    .fill(day.mediaAnchorCount > 0 ? TSDPalette.amber : TSDPalette.moss)
+                    .frame(width: 8, height: 8)
+                    .padding(.top, 3)
+                Rectangle()
+                    .fill(TSDPalette.moss.opacity(0.14))
+                    .frame(width: 1)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(width: 48)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(Self.dayFormatter.string(from: day.date))日，\(Self.weekdayFormatter.string(from: day.date))")
+
+            VStack(spacing: 10) {
+                ForEach(day.slices) { slice in
+                    NavigationLink {
+                        NativeSliceDetailView(store: $store, sliceID: slice.id) {
+                            onDelete(slice.id)
+                        }
+                    } label: {
+                        NativeTimelineSliceCard(
+                            slice: slice,
+                            revisitCount: store.revisits.filter { $0.sliceID == slice.id }.count,
+                            isProminent: day.prominentSliceID == slice.id
+                        )
+                        .accessibilityElement(children: .combine)
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityIdentifier("timeline.slice.\(slice.id.uuidString)")
+                    }
+                    .buttonStyle(NativeTimelineCardButtonStyle())
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            onDelete(slice.id)
+                        } label: {
+                            Label("删除", systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .accessibilityIdentifier("timeline.day.\(day.id)")
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeTimelineSliceCard: View {
+    var slice: MemorySlice
+    var revisitCount: Int
+    var isProminent: Bool
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize, let media = slice.media {
+                VStack(alignment: .leading, spacing: 12) {
+                    NativeMediaPreview(media: media, height: 172, cornerRadius: 18)
+                    textContent
+                }
+            } else {
+                HStack(alignment: .top, spacing: 12) {
+                    if let media = slice.media {
+                        NativeMediaPreview(
+                            media: media,
+                            height: isProminent ? 104 : 86,
+                            cornerRadius: 18
+                        )
+                        .frame(width: isProminent ? 112 : 92)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(.white.opacity(0.38), lineWidth: 1)
+                        }
+                    }
+                    textContent
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: TSDPalette.mossDeep.opacity(0.08), radius: 14, y: 6)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+    }
+
+    private var textContent: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(slice.title)
+                    .font(.headline)
+                    .foregroundStyle(TSDPalette.ink)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 6)
+                Text(Self.timeFormatter.string(from: slice.capturedAt))
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .monospacedDigit()
+            }
+
+            if !slice.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(slice.body)
+                    .font(.subheadline)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+                    .multilineTextAlignment(.leading)
+            }
+
+            HStack(spacing: 10) {
+                if slice.media != nil {
+                    Label("现场", systemImage: "photo")
+                }
+                if slice.people?.isEmpty == false {
+                    Label("人物", systemImage: "person.2")
+                }
+                if revisitCount > 0 {
+                    Label("\(revisitCount) 次回望", systemImage: "clock.arrow.2.circlepath")
+                }
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(TSDPalette.moss)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct NativeTimelineCardButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: 0.16),
+                value: configuration.isPressed
+            )
     }
 }
 

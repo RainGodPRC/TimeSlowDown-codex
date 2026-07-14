@@ -122,6 +122,47 @@ private enum NativeUITestBootstrap {
                     )
                 ]
             )
+        case "timeline":
+            let morning = MemorySlice(
+                id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000089")!,
+                title: "清晨窗边的光",
+                body: "光落在杯子旁边，屋里很安静。",
+                tags: ["日常", "影像"],
+                capturedAt: date(2026, 7, 2, 8),
+                media: MediaAnchor(kind: .image, label: "morning.jpg"),
+                meaning: "普通的一天也有自己的光。",
+                sources: ["ui-test-fixture"]
+            )
+            let evening = MemorySlice(
+                id: UUID(uuidString: "B3A42E2F-ADE4-41D4-BE3B-000000000089")!,
+                title: "同一天的晚风",
+                body: "下楼走了一圈，风比早上凉。",
+                tags: ["日常", "变化"],
+                capturedAt: date(2026, 7, 2, 19),
+                people: ["自己"],
+                sources: ["ui-test-fixture"]
+            )
+            let june = MemorySlice(
+                id: UUID(uuidString: "C3A42E2F-ADE4-41D4-BE3B-000000000089")!,
+                title: "六月最后一次长谈",
+                body: "回家以后，仍然记得他说话时停顿了一下。",
+                tags: ["家人"],
+                capturedAt: date(2026, 6, 28, 21),
+                people: ["家人"],
+                meaning: "后来还想再讲起。",
+                sources: ["ui-test-fixture"]
+            )
+            return NativeShellStore(
+                selectedRoute: .slices,
+                slices: [morning, evening, june],
+                revisits: [
+                    MemoryRevisit(
+                        sliceID: june.id,
+                        revisitedAt: date(2026, 7, 10, 12),
+                        reflection: "后来又想起那晚。"
+                    )
+                ]
+            )
         default:
             return NativeShellStore(selectedRoute: .now)
         }
@@ -135,6 +176,19 @@ private enum NativeUITestBootstrap {
         guard let index = arguments.firstIndex(of: flag),
               arguments.indices.contains(index + 1) else { return nil }
         return arguments[index + 1]
+    }
+
+    private static func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return calendar.date(from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour
+        ))!
     }
 }
 #endif

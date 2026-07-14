@@ -82,6 +82,168 @@ public struct MemorySlice: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct MemoryTimelineDay: Equatable, Identifiable, Sendable {
+    public var id: String
+    public var date: Date
+    public var slices: [MemorySlice]
+    public var mediaAnchorCount: Int
+    public var revisitCount: Int
+    public var prominentSliceID: UUID?
+
+    public init(
+        id: String,
+        date: Date,
+        slices: [MemorySlice],
+        mediaAnchorCount: Int,
+        revisitCount: Int,
+        prominentSliceID: UUID?
+    ) {
+        self.id = id
+        self.date = date
+        self.slices = slices
+        self.mediaAnchorCount = mediaAnchorCount
+        self.revisitCount = revisitCount
+        self.prominentSliceID = prominentSliceID
+    }
+}
+
+public struct MemoryTimelineMonth: Equatable, Identifiable, Sendable {
+    public var id: String
+    public var monthStart: Date
+    public var days: [MemoryTimelineDay]
+    public var sliceCount: Int
+    public var mediaAnchorCount: Int
+    public var revisitCount: Int
+
+    public init(
+        id: String,
+        monthStart: Date,
+        days: [MemoryTimelineDay],
+        sliceCount: Int,
+        mediaAnchorCount: Int,
+        revisitCount: Int
+    ) {
+        self.id = id
+        self.monthStart = monthStart
+        self.days = days
+        self.sliceCount = sliceCount
+        self.mediaAnchorCount = mediaAnchorCount
+        self.revisitCount = revisitCount
+    }
+}
+
+public struct MemoryTimelineSnapshot: Equatable, Sendable {
+    public var months: [MemoryTimelineMonth]
+    public var sliceCount: Int
+    public var mediaAnchorCount: Int
+    public var revisitCount: Int
+    public var sourceSliceIDs: [UUID]
+
+    public init(
+        months: [MemoryTimelineMonth],
+        sliceCount: Int,
+        mediaAnchorCount: Int,
+        revisitCount: Int,
+        sourceSliceIDs: [UUID]
+    ) {
+        self.months = months
+        self.sliceCount = sliceCount
+        self.mediaAnchorCount = mediaAnchorCount
+        self.revisitCount = revisitCount
+        self.sourceSliceIDs = sourceSliceIDs
+    }
+
+    public var isSourceBacked: Bool {
+        let projectedSlices = months.flatMap(\.days).flatMap(\.slices)
+        return projectedSlices.count == sliceCount &&
+            projectedSlices.map(\.id) == sourceSliceIDs &&
+            Set(sourceSliceIDs).count == sliceCount &&
+            months.reduce(0) { $0 + $1.sliceCount } == sliceCount &&
+            months.reduce(0) { $0 + $1.mediaAnchorCount } == mediaAnchorCount &&
+            months.reduce(0) { $0 + $1.revisitCount } == revisitCount
+    }
+}
+
+public enum MemoryTimelineFactory {
+    public static func snapshot(
+        from slices: [MemorySlice],
+        revisits: [MemoryRevisit],
+        calendar: Calendar = .current
+    ) -> MemoryTimelineSnapshot {
+        let sortedSlices = slices.sorted(by: isNewer)
+        let revisitsBySlice = Dictionary(grouping: revisits, by: \.sliceID)
+        let days = Dictionary(grouping: sortedSlices) { slice in
+            calendar.startOfDay(for: slice.capturedAt)
+        }.map { dayStart, daySlices in
+            let orderedSlices = daySlices.sorted(by: isNewer)
+            return MemoryTimelineDay(
+                id: dayIdentifier(for: dayStart, calendar: calendar),
+                date: dayStart,
+                slices: orderedSlices,
+                mediaAnchorCount: orderedSlices.filter(\.hasMediaAnchor).count,
+                revisitCount: orderedSlices.reduce(0) {
+                    $0 + revisitsBySlice[$1.id, default: []].count
+                },
+                prominentSliceID: orderedSlices.first(where: \.hasMediaAnchor)?.id ?? orderedSlices.first?.id
+            )
+        }.sorted { lhs, rhs in
+            if lhs.date != rhs.date { return lhs.date > rhs.date }
+            return lhs.id < rhs.id
+        }
+
+        let months = Dictionary(grouping: days) { day in
+            monthStart(for: day.date, calendar: calendar)
+        }.map { monthStart, monthDays in
+            let orderedDays = monthDays.sorted { lhs, rhs in
+                if lhs.date != rhs.date { return lhs.date > rhs.date }
+                return lhs.id < rhs.id
+            }
+            return MemoryTimelineMonth(
+                id: monthIdentifier(for: monthStart, calendar: calendar),
+                monthStart: monthStart,
+                days: orderedDays,
+                sliceCount: orderedDays.reduce(0) { $0 + $1.slices.count },
+                mediaAnchorCount: orderedDays.reduce(0) { $0 + $1.mediaAnchorCount },
+                revisitCount: orderedDays.reduce(0) { $0 + $1.revisitCount }
+            )
+        }.sorted { lhs, rhs in
+            if lhs.monthStart != rhs.monthStart { return lhs.monthStart > rhs.monthStart }
+            return lhs.id < rhs.id
+        }
+
+        return MemoryTimelineSnapshot(
+            months: months,
+            sliceCount: sortedSlices.count,
+            mediaAnchorCount: sortedSlices.filter(\.hasMediaAnchor).count,
+            revisitCount: sortedSlices.reduce(0) {
+                $0 + revisitsBySlice[$1.id, default: []].count
+            },
+            sourceSliceIDs: months.flatMap(\.days).flatMap(\.slices).map(\.id)
+        )
+    }
+
+    private static func isNewer(_ lhs: MemorySlice, _ rhs: MemorySlice) -> Bool {
+        if lhs.capturedAt != rhs.capturedAt { return lhs.capturedAt > rhs.capturedAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private static func monthStart(for date: Date, calendar: Calendar) -> Date {
+        var components = calendar.dateComponents([.era, .year, .month], from: date)
+        components.day = 1
+        return calendar.date(from: components) ?? calendar.startOfDay(for: date)
+    }
+
+    private static func dayIdentifier(for date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    }
+
+    private static func monthIdentifier(for date: Date, calendar: Calendar) -> String {
+        let components = calendar.dateComponents([.year, .month], from: date)
+        return String(format: "%04d-%02d", components.year ?? 0, components.month ?? 0)
+    }
+}
+
 public struct WeeklyChapter: Codable, Equatable, Sendable {
     public var title: String
     public var claimedSliceIDs: [UUID]

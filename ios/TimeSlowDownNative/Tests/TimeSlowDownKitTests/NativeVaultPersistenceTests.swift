@@ -412,6 +412,70 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(spacedReturn.reason, .spacedReturn)
     }
 
+    func testMemoryTimelineGroupsMonthsAndDaysWithoutLosingSourceOrder() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int) -> Date {
+            calendar.date(from: DateComponents(
+                calendar: calendar,
+                timeZone: calendar.timeZone,
+                year: year,
+                month: month,
+                day: day,
+                hour: hour
+            ))!
+        }
+
+        let june = MemorySlice(
+            id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000189")!,
+            title: "六月最后一次长谈",
+            body: "回家以后仍然记得。",
+            capturedAt: date(2026, 6, 28, 21)
+        )
+        let julyMorning = MemorySlice(
+            id: UUID(uuidString: "B3A42E2F-ADE4-41D4-BE3B-000000000189")!,
+            title: "清晨的第一张照片",
+            body: "光落在窗边。",
+            capturedAt: date(2026, 7, 2, 8),
+            media: MediaAnchor(kind: .image, label: "morning.jpg")
+        )
+        let julyEvening = MemorySlice(
+            id: UUID(uuidString: "C3A42E2F-ADE4-41D4-BE3B-000000000189")!,
+            title: "同一天的晚风",
+            body: "一天里可以有不止一个瞬间。",
+            capturedAt: date(2026, 7, 2, 19)
+        )
+        let revisit = MemoryRevisit(
+            sliceID: june.id,
+            revisitedAt: date(2026, 7, 10, 12),
+            reflection: "后来又讲起那晚。"
+        )
+
+        let snapshot = MemoryTimelineFactory.snapshot(
+            from: [june, julyMorning, julyEvening],
+            revisits: [revisit],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(snapshot.months.map(\.id), ["2026-07", "2026-06"])
+        XCTAssertEqual(snapshot.months.first?.days.map(\.id), ["2026-07-02"])
+        XCTAssertEqual(snapshot.months.first?.days.first?.slices.map(\.id), [julyEvening.id, julyMorning.id])
+        XCTAssertEqual(snapshot.months.first?.days.first?.prominentSliceID, julyMorning.id)
+        XCTAssertEqual(snapshot.sourceSliceIDs, [julyEvening.id, julyMorning.id, june.id])
+        XCTAssertEqual(snapshot.sliceCount, 3)
+        XCTAssertEqual(snapshot.mediaAnchorCount, 1)
+        XCTAssertEqual(snapshot.revisitCount, 1)
+        XCTAssertTrue(snapshot.isSourceBacked)
+        XCTAssertEqual(
+            snapshot,
+            MemoryTimelineFactory.snapshot(
+                from: [julyEvening, june, julyMorning],
+                revisits: [revisit],
+                calendar: calendar
+            )
+        )
+    }
+
     func testActiveRecallCadenceCompletionAndSkipRemainNonPunitive() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

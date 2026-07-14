@@ -47,6 +47,52 @@ final class TimeSlowDownUITests: XCTestCase {
         XCTAssertTrue(editedRow.waitForExistence(timeout: 3))
     }
 
+    func testTimelineGroupsMonthsAndDaysAndOpensTheRealSlice() {
+        let app = launchApp(fixture: "timeline")
+
+        XCTAssertTrue(app.scrollViews["timeline.scroll"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["timeline.summary"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["timeline.month.2026-07"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["timeline.day.2026-07-02"].exists)
+        XCTAssertTrue(app.staticTexts["清晨窗边的光"].exists)
+        XCTAssertTrue(app.staticTexts["同一天的晚风"].exists)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Month and day grouped native Timeline"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+
+        let slice = app.staticTexts["同一天的晚风"]
+        XCTAssertTrue(slice.exists)
+        XCTAssertTrue(slice.isHittable)
+        slice.tap()
+        XCTAssertTrue(app.textFields["sliceDetail.title"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.textFields["sliceDetail.title"].value as? String, "同一天的晚风")
+    }
+
+    func testTimelineRemainsNavigableAtAccessibilityTextSize() {
+        let app = launchApp(
+            fixture: "timeline",
+            preferredContentSizeCategory: "UICTContentSizeCategoryAccessibilityXXL"
+        )
+
+        let scrollView = app.scrollViews["timeline.scroll"]
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.descendants(matching: .any)["timeline.month.2026-07"].exists)
+        let olderMonth = app.descendants(matching: .any)["timeline.month.2026-06"]
+        for _ in 0..<5 where !olderMonth.isHittable {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(olderMonth.isHittable)
+        XCTAssertTrue(app.staticTexts["六月最后一次长谈"].exists)
+        XCTAssertNotEqual(app.state, .notRunning)
+
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Native Timeline Accessibility XXL"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     func testAccountExportsRemainReachableAtAccessibilityTextSize() {
         let app = launchApp(
             fixture: "seeded",

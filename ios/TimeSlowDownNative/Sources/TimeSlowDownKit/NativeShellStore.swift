@@ -773,6 +773,14 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         )
     }
 
+    public func memoryTimeline(calendar: Calendar = .current) -> MemoryTimelineSnapshot {
+        MemoryTimelineFactory.snapshot(
+            from: slices,
+            revisits: revisits,
+            calendar: calendar
+        )
+    }
+
     @discardableResult
     public mutating func completeActiveRecall(
         sliceID: UUID,
