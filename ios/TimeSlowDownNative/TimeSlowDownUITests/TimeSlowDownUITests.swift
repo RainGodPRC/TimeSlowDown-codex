@@ -151,6 +151,58 @@ final class TimeSlowDownUITests: XCTestCase {
         add(attachment)
     }
 
+    func testActiveRecallKeepsTheSourceHiddenUntilTheUserRequestsACue() {
+        let app = launchApp(fixture: "seeded")
+        app.tabBars.buttons["此刻"].tap()
+
+        let card = app.buttons["activeRecall.open"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["activeRecall.sourceTitle"].exists)
+        XCTAssertFalse(app.staticTexts["测试切片：雨后散步"].exists)
+        let concealedAttachment = XCTAttachment(screenshot: app.screenshot())
+        concealedAttachment.name = "Active recall concealed source"
+        concealedAttachment.lifetime = .keepAlways
+        add(concealedAttachment)
+        card.tap()
+
+        XCTAssertTrue(app.buttons["给我看看线索"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["测试切片：雨后散步"].exists)
+        app.buttons["给我看看线索"].tap()
+        XCTAssertTrue(app.staticTexts["测试切片：雨后散步"].waitForExistence(timeout: 3))
+        let revealedAttachment = XCTAttachment(screenshot: app.screenshot())
+        revealedAttachment.name = "Active recall revealed source"
+        revealedAttachment.lifetime = .keepAlways
+        add(revealedAttachment)
+        app.buttons["安静放回记忆"].tap()
+
+        XCTAssertFalse(app.buttons["给我看看线索"].waitForExistence(timeout: 1))
+        XCTAssertFalse(card.waitForExistence(timeout: 1))
+    }
+
+    func testActiveRecallQuietSkipRemainsReachableAtAccessibilityTextSize() {
+        let app = launchApp(
+            fixture: "seeded",
+            preferredContentSizeCategory: "UICTContentSizeCategoryAccessibilityXXL"
+        )
+        app.tabBars.buttons["此刻"].tap()
+        app.buttons["activeRecall.open"].tap()
+
+        let scrollView = app.scrollViews["activeRecall.sheet"]
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+        let skip = app.buttons["activeRecall.skip"]
+        for _ in 0..<4 where !skip.isHittable {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(skip.isHittable)
+        let accessibilityAttachment = XCTAttachment(screenshot: app.screenshot())
+        accessibilityAttachment.name = "Active recall quiet skip Accessibility XXL"
+        accessibilityAttachment.lifetime = .keepAlways
+        add(accessibilityAttachment)
+        skip.tap()
+        XCTAssertFalse(app.scrollViews["activeRecall.sheet"].waitForExistence(timeout: 1))
+        XCTAssertFalse(app.buttons["activeRecall.open"].waitForExistence(timeout: 1))
+    }
+
     private func launchApp(
         fixture: String,
         preferredContentSizeCategory: String? = nil

@@ -336,9 +336,11 @@ check(firstSnapshot.dailyDifferenceCandidateCount == 3, "Native shell snapshot s
 check(firstSnapshot.ninetyDayTellableCount >= 3, "Native shell snapshot should expose 90-day tellable progress")
 check(firstSnapshot.ninetyDayMinimumTarget == 5, "Native shell snapshot should expose the 90-day minimum tellable target")
 check(firstSnapshot.yesterdayEchoAvailable, "Native shell snapshot should expose a yesterday echo when an older slice exists")
+check(firstSnapshot.activeRecallAvailable, "Native shell snapshot should expose a source-backed active recall when a slice is due")
 check(firstSnapshot.weeklyStoryClaimedCount == 3, "Native shell snapshot should expose three claimed weekly story slots")
 check(firstSnapshot.weeklyStoryReadyCount >= 1, "Native shell snapshot should expose at least one story-ready seeded slice")
 check(firstSnapshot.revisitCount == 0, "Native shell should start without fabricated revisits")
+check(firstSnapshot.recallInteractionCount == 0, "Native shell should start without fabricated recall interactions")
 check(Set(shell.lifeMarks.map(\.kind)) == [.firstLeaf, .mediaAnchor, .threeMoments], "Seeded Life Marks should come only from real slice and media evidence")
 check(shell.lifeMarks.allSatisfy { shell.lifeMarkEvidence(for: $0.id)?.isComplete == true }, "Every unlocked Life Mark should resolve to complete source evidence")
 
@@ -548,6 +550,37 @@ check(nativeRevisit?.source == "昨日回声", "Yesterday echo revisit should ke
 check(nativeRevisit?.reflection.contains("现在再看") == true, "Yesterday echo should preserve the user's current reflection")
 check(shell.snapshot.revisitCount == 1, "Native shell snapshot should expose the new revisit layer")
 
+var recallCalendar = Calendar(identifier: .gregorian)
+recallCalendar.timeZone = TimeZone(secondsFromGMT: 0)!
+let recallSlice = MemorySlice(
+    title: "四十天前的雨",
+    body: "和家人一起走回家。",
+    capturedAt: recallCalendar.date(byAdding: .day, value: -40, to: fixedDate)!,
+    people: ["家人"],
+    meaning: "后来仍想讲起",
+    sources: ["真实切片"]
+)
+var activeRecallShell = NativeShellStore(slices: [recallSlice])
+let dueRecall = activeRecallShell.activeRecallCandidate(now: fixedDate, calendar: recallCalendar)
+check(dueRecall?.id == recallSlice.id, "Deterministic recall should surface a due real slice")
+check(dueRecall?.reason == .longUnseen, "A long-unseen source should explain why it surfaced")
+let completedRecall = activeRecallShell.completeActiveRecall(
+    sliceID: recallSlice.id,
+    mode: .neededCue,
+    reflection: "",
+    now: fixedDate
+)
+check(completedRecall?.reflection.isEmpty == true, "Active recall should allow a quiet review without forced writing")
+check(completedRecall?.source == ActiveRecallMode.neededCue.sourceLabel, "Active recall should preserve whether a cue was needed")
+check(activeRecallShell.recallInteractions.last?.revisitID == completedRecall?.id, "A completed recall should link its scheduling interaction to the real revisit")
+check(activeRecallShell.activeRecallCandidate(now: recallCalendar.date(byAdding: .day, value: 2, to: fixedDate)!, calendar: recallCalendar) == nil, "Spaced recall should not immediately resurface a completed memory")
+check(activeRecallShell.activeRecallCandidate(now: recallCalendar.date(byAdding: .day, value: 3, to: fixedDate)!, calendar: recallCalendar) != nil, "Spaced recall should become due at the next deterministic interval")
+let skipDate = recallCalendar.date(byAdding: .day, value: 3, to: fixedDate)!
+let quietSkip = activeRecallShell.skipActiveRecall(sliceID: recallSlice.id, now: skipDate, calendar: recallCalendar)
+check(quietSkip?.outcome == .skipped, "Quiet skip should be persisted as an anti-nag interaction")
+check(activeRecallShell.revisits.count == 1, "Quiet skip must not fabricate a completed revisit")
+check(activeRecallShell.activeRecallCandidate(now: skipDate, calendar: recallCalendar) == nil, "Quiet skip should remove the memory from the current recall surface")
+
 let encodedShell = try JSONEncoder().encode(NativeShellStore())
 var legacyShellObject = try JSONSerialization.jsonObject(with: encodedShell) as! [String: Any]
 legacyShellObject.removeValue(forKey: "revisits")
@@ -572,16 +605,24 @@ _ = revisionBoundaryShell.captureQuickMark(title: "domain mutation")
 check(revisionBoundaryShell.vaultRevision == 1, "A real memory mutation should advance the vault revision exactly once")
 
 var persistedShell = NativeShellStore.seeded(now: fixedDate)
-_ = persistedShell.revisitYesterdayEcho(reflection: "重启后也要保留这句话。", now: fixedDate)
+if let persistedRecall = persistedShell.activeRecallCandidate(now: fixedDate) {
+    _ = persistedShell.completeActiveRecall(
+        sliceID: persistedRecall.id,
+        mode: .remembered,
+        reflection: "重启后也要保留这句话。",
+        now: fixedDate
+    )
+}
 try NativeShellPersistence.save(persistedShell, to: persistenceURL)
 let persistedVaultObject = try JSONSerialization.jsonObject(with: Data(contentsOf: persistenceURL)) as! [String: Any]
 let persistedVaultPayload = persistedVaultObject["payload"] as? [String: Any]
-check(persistedVaultObject["schemaVersion"] as? Int == 4, "Native persistence should write the source-backed Life Marks schema v4 envelope")
-check(persistedVaultObject["store"] == nil, "Schema v4 should not retain the old full-store wrapper")
-check(persistedVaultPayload?["slices"] != nil, "Schema v4 should persist memory slices in its domain payload")
-check(persistedVaultPayload?["lifeMarks"] != nil, "Schema v4 should persist the Life Marks provenance ledger")
-check(persistedVaultPayload?["selectedRoute"] == nil, "Schema v4 should exclude the current tab from the vault payload")
-check(persistedVaultPayload?["latestExportError"] == nil, "Schema v4 should exclude transient export errors from the vault payload")
+check(persistedVaultObject["schemaVersion"] as? Int == 5, "Native persistence should write the active-recall schema v5 envelope")
+check(persistedVaultObject["store"] == nil, "Schema v5 should not retain the old full-store wrapper")
+check(persistedVaultPayload?["slices"] != nil, "Schema v5 should persist memory slices in its domain payload")
+check(persistedVaultPayload?["recallInteractions"] != nil, "Schema v5 should persist anti-nag recall interactions")
+check(persistedVaultPayload?["lifeMarks"] != nil, "Schema v5 should persist the Life Marks provenance ledger")
+check(persistedVaultPayload?["selectedRoute"] == nil, "Schema v5 should exclude the current tab from the vault payload")
+check(persistedVaultPayload?["latestExportError"] == nil, "Schema v5 should exclude transient export errors from the vault payload")
 let restoredVault = try NativeShellPersistence.loadRecovering(from: persistenceURL)
 check(restoredVault.source == .restored, "A saved native vault should restore from Application Support")
 check(restoredVault.store == persistedShell, "Persistence should round-trip slices, revisits, and privacy while session defaults remain equivalent")
@@ -712,10 +753,10 @@ check(shell.selectedRoute == .account, "Exporting memory vault should keep users
 check(shellExport.hasZIPMagic, "Native shell export should generate a real ZIP package")
 check(shellExport.isMemorySafeDefault, "Native shell export should preserve TSD memory rights")
 check(shell.latestExportSummary?.fileName == shellExport.fileName, "Native shell should retain the latest export file name")
-check(shell.latestExportSummary?.entryCount == 7, "Native shell export summary should expose seven default documents including Life Marks")
+check(shell.latestExportSummary?.entryCount == 8, "Native shell export summary should expose eight default documents including recall interactions and Life Marks")
 check(shell.latestExportSummary?.isTSDMemoryRightsSafe == true, "Native shell export summary should be memory-rights safe")
 check(shell.snapshot.hasExportPackage, "Native shell snapshot should show that an export package exists after export")
-check(shell.snapshot.lastExportEntryCount == 7, "Native shell snapshot should expose latest export entry count")
+check(shell.snapshot.lastExportEntryCount == 8, "Native shell snapshot should expose latest export entry count")
 check(shell.latestExportError == nil, "Native shell should clear export errors after a successful export")
 let fileExportDirectory = FileManager.default.temporaryDirectory
     .appendingPathComponent("tsd-native-check-export-\(UUID().uuidString)", isDirectory: true)
@@ -735,7 +776,8 @@ let fileArtifact = try await NativeMemoryExportFileBuilder.export(
 )
 check(FileManager.default.fileExists(atPath: fileArtifact.fileURL.path), "URL-backed export should create a completed ZIP file")
 check(fileArtifact.fileSizeBytes > 22, "URL-backed export should contain ZIP headers and payload")
-check(fileArtifact.entries.count == 7, "URL-backed export should contain the seven default documents")
+check(fileArtifact.entries.count == 8, "URL-backed export should contain the eight default documents")
+check(fileArtifact.entries.map(\.path).contains("memories/recall-interactions.json"), "URL-backed export should carry the active-recall interaction ledger")
 check(fileArtifact.entries.map(\.path).contains("memories/life-marks.json"), "URL-backed export should carry the Life Marks provenance ledger")
 check(fileArtifact.isMemorySafeDefault, "URL-backed export should preserve the default memory-rights boundary")
 let fileArtifactData = try Data(contentsOf: fileArtifact.fileURL)
@@ -783,7 +825,7 @@ try FileManager.default.removeItem(at: diagnosticsDirectory)
 let shellDocument = TSDExportZIPDocument(package: shellExport)
 check(shellDocument.fileName == shellExport.fileName, "System exporter document should preserve export file name")
 check(shellDocument.byteCount == shellExport.data.count, "System exporter document should preserve ZIP bytes")
-check(shellDocument.entryCount == 7, "System exporter document should expose the seven default documents")
+check(shellDocument.entryCount == 8, "System exporter document should expose the eight default documents")
 check(shellDocument.isMemoryRightsSafe, "System exporter document should preserve memory-rights boundary")
 check(shellDocument.isReadyForSystemExporter, "System exporter document should be ready for SwiftUI fileExporter")
 check(TSDExportZIPDocument.exportedFilenameExtension == "zip", "System exporter document should use zip extension")
@@ -815,7 +857,7 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 87;"), "Xcode project build settings should carry v87 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 88;"), "Xcode project build settings should carry v88 build number")
 check(projectText.contains("TimeSlowDownUITests"), "Xcode project should contain the formal UI testing target")
 check(projectText.contains("com.apple.product-type.bundle.ui-testing"), "Xcode UI testing target should use the UI testing product type")
 check(projectText.contains("PBXTargetDependency"), "Xcode UI testing target should depend on the app runner")
@@ -849,7 +891,7 @@ check(uiTestSourceText.contains("testLifeMarkSourceRemainsReadableAtAccessibilit
 check(uiTestSourceText.contains("UICTContentSizeCategoryAccessibilityXXL"), "Account UI path should exercise an accessibility Dynamic Type category")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>87</string>"), "Info.plist should carry v87 build number")
+check(infoPlistText.contains("<string>88</string>"), "Info.plist should carry v88 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -924,7 +966,7 @@ if let portableSlice = portableShell.captureQuickMark(title: "可迁移的照片
     }
     let portableExport = try portableShell.exportMemoryVault(now: fixedDate, thumbnailDirectory: thumbnailDirectory)
     let portableThumbnailPath = "media/thumbnails/\(persistedThumbnailAnchor.id.uuidString.lowercased()).jpg"
-    check(portableExport.entries.count == 8, "A shared available thumbnail should be exported once alongside the seven default documents")
+    check(portableExport.entries.count == 9, "A shared available thumbnail should be exported once alongside the eight default documents")
     check(portableExport.entries.contains { $0.path == portableThumbnailPath }, "Default ZIP export should carry the protected thumbnail bytes")
     check(portableExport.entries.first { $0.path == portableThumbnailPath }?.containsRawMedia == false, "Exported thumbnails must remain derived media rather than raw originals")
     check(portableExport.data.range(of: Data(portableThumbnailPath.utf8)) != nil, "ZIP bytes should contain the portable thumbnail path")
@@ -1680,6 +1722,7 @@ check(archivePlan.generatedOnDevice, "Export archive should be generated on devi
 check(archivePlan.canBeGeneratedAfterSubscriptionEnds, "Export archive should remain available after subscription ends")
 check(archivePlan.entries.map(\.kind).contains(.manifest), "Export archive should include manifest")
 check(archivePlan.entries.map(\.kind).contains(.revisits), "Export archive should include revisit layers")
+check(archivePlan.entries.map(\.kind).contains(.recallInteractions), "Export archive should include active-recall interactions")
 check(archivePlan.entries.map(\.kind).contains(.lifeMarks), "Export archive should include the Life Marks provenance ledger")
 check(archivePlan.entries.map(\.kind).contains(.mediaIndex), "Export archive should include media index")
 check(archivePlan.entries.map(\.kind).contains(.deletionRights), "Export archive should include deletion rights")
@@ -1697,6 +1740,7 @@ check(zipPackage.hasEndOfCentralDirectory, "Export ZIP package should include en
 check(zipPackage.centralDirectoryRecordCount == archivePlan.entries.count, "Export ZIP package should include one central-directory record per export entry")
 check(zipPackage.entries.map(\.path).contains("manifest.json"), "Export ZIP package should include manifest.json")
 check(zipPackage.entries.map(\.path).contains("memories/revisits.json"), "Export ZIP package should include revisit layers")
+check(zipPackage.entries.map(\.path).contains("memories/recall-interactions.json"), "Export ZIP package should include active-recall interactions")
 check(zipPackage.entries.map(\.path).contains("memories/life-marks.json"), "Export ZIP package should include Life Marks")
 check(zipPackage.entries.map(\.path).contains("media/index.json"), "Export ZIP package should include media index")
 check(zipPackage.entries.map(\.path).contains("rights/deletion-receipt-template.json"), "Export ZIP package should include deletion rights")
@@ -2196,7 +2240,11 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "87", "TestFlight build notes should match v87")
+check(buildNotes.buildNumber == "88", "TestFlight build notes should match v88")
+check(buildNotes.summary.localizedCaseInsensitiveContains("deterministic active recall"), "TestFlight build notes should describe the v88 active-recall scheduler")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Schema v5"), "TestFlight build notes should mention the recall-interaction schema v5 payload")
+check(buildNotes.summary.localizedCaseInsensitiveContains("recall-interactions.json"), "TestFlight build notes should disclose the portable recall-interaction ledger")
+check(buildNotes.summary.localizedCaseInsensitiveContains("seven-day local anti-nag cooldown"), "TestFlight build notes should preserve quiet-skip anti-nag semantics")
 check(buildNotes.summary.localizedCaseInsensitiveContains("durable, source-backed provenance ledger"), "TestFlight build notes should describe the v87 Life Marks ledger")
 check(buildNotes.summary.localizedCaseInsensitiveContains("Schema v4"), "TestFlight build notes should mention the Life Marks schema v4 payload")
 check(buildNotes.summary.localizedCaseInsensitiveContains("life-marks.json"), "TestFlight build notes should disclose the portable Life Marks ledger")
@@ -2676,8 +2724,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "87", "App Store submission gate should track v87")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v87 source-backed Life Marks")
+check(appStoreSubmissionGate.buildNumber == "88", "App Store submission gate should track v88")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v88 deterministic active recall")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2953,4 +3001,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, persistent source-backed Life Marks provenance ledger, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, v83 URL-backed streaming export, v84 privacy-safe runtime diagnostics, v85 deterministic native XCUITest infrastructure, v86 progressive source-backed onboarding, and v87 persistent Life Marks provenance are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, deterministic active recall, source concealment, cue-vs-remembered provenance, quiet-skip anti-nag cooldown, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, recall/revisit export, branded native Memory Camera home, persistent source-backed Life Marks provenance ledger, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, v83 URL-backed streaming export, v84 privacy-safe runtime diagnostics, v85 deterministic native XCUITest infrastructure, v86 progressive source-backed onboarding, v87 persistent Life Marks provenance, and v88 deterministic active recall are aligned.")

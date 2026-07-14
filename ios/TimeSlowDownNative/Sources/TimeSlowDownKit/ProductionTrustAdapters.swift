@@ -1688,6 +1688,7 @@ public enum ExportArchiveEntryKind: String, Codable, Equatable, Sendable {
     case slices
     case chapters
     case revisits
+    case recallInteractions
     case lifeMarks
     case mediaIndex
     case deletionRights
@@ -1748,6 +1749,7 @@ public struct ExportArchivePlan: Codable, Equatable, Identifiable, Sendable {
             .init(id: "slices", kind: .slices, path: "memories/slices.json"),
             .init(id: "chapters", kind: .chapters, path: "memories/chapters.json"),
             .init(id: "revisits", kind: .revisits, path: "memories/revisits.json"),
+            .init(id: "recall-interactions", kind: .recallInteractions, path: "memories/recall-interactions.json"),
             .init(id: "life-marks", kind: .lifeMarks, path: "memories/life-marks.json"),
             .init(id: "media-index", kind: .mediaIndex, path: "media/index.json"),
             .init(id: "deletion-rights", kind: .deletionRights, path: "rights/deletion-receipt-template.json")
@@ -2149,6 +2151,7 @@ public struct NativeMemoryExportRequest: Equatable, Sendable {
     public var slices: [MemorySlice]
     public var chapters: [WeeklyChapter]
     public var revisits: [MemoryRevisit]
+    public var recallInteractions: [RecallInteraction]
     public var lifeMarks: [LifeMark]
     public var deletionReceipt: DeletionReceipt
     public var thumbnailDirectory: URL
@@ -2158,6 +2161,7 @@ public struct NativeMemoryExportRequest: Equatable, Sendable {
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
         revisits: [MemoryRevisit],
+        recallInteractions: [RecallInteraction],
         lifeMarks: [LifeMark],
         deletionReceipt: DeletionReceipt,
         thumbnailDirectory: URL
@@ -2166,6 +2170,7 @@ public struct NativeMemoryExportRequest: Equatable, Sendable {
         self.slices = slices
         self.chapters = chapters
         self.revisits = revisits
+        self.recallInteractions = recallInteractions
         self.lifeMarks = lifeMarks
         self.deletionReceipt = deletionReceipt
         self.thumbnailDirectory = thumbnailDirectory
@@ -3056,6 +3061,7 @@ public enum OnDeviceExportZIPBuilder {
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
         revisits: [MemoryRevisit] = [],
+        recallInteractions: [RecallInteraction] = [],
         lifeMarks: [LifeMark] = [],
         deletionReceipt: DeletionReceipt,
         thumbnailDataByAnchorID: [String: Data] = [:]
@@ -3067,6 +3073,7 @@ public enum OnDeviceExportZIPBuilder {
             slices: slices,
             chapters: chapters,
             revisits: revisits,
+            recallInteractions: recallInteractions,
             lifeMarks: lifeMarks,
             deletionReceipt: deletionReceipt,
             thumbnailDataByAnchorID: thumbnailDataByAnchorID
@@ -3110,6 +3117,7 @@ public enum OnDeviceExportZIPBuilder {
         slices: [MemorySlice],
         chapters: [WeeklyChapter],
         revisits: [MemoryRevisit],
+        recallInteractions: [RecallInteraction],
         lifeMarks: [LifeMark],
         deletionReceipt: DeletionReceipt,
         thumbnailDataByAnchorID: [String: Data]
@@ -3168,6 +3176,7 @@ public enum OnDeviceExportZIPBuilder {
             ExportFile(path: "memories/slices.json", data: encode(slices, label: "slices")),
             ExportFile(path: "memories/chapters.json", data: encode(chapters, label: "chapters")),
             ExportFile(path: "memories/revisits.json", data: encode(revisits, label: "revisits")),
+            ExportFile(path: "memories/recall-interactions.json", data: encode(recallInteractions, label: "recall-interactions")),
             ExportFile(path: "memories/life-marks.json", data: encode(lifeMarks, label: "life-marks")),
             ExportFile(path: "media/index.json", data: encode(mediaIndex, label: "media-index")),
             ExportFile(path: "rights/deletion-receipt-template.json", data: encode(deletionRights, label: "deletion-rights"))
@@ -3487,6 +3496,7 @@ public enum NativeMemoryExportFileBuilder {
             StreamingExportFile(path: "memories/slices.json", source: .data(encode(request.slices, label: "slices"))),
             StreamingExportFile(path: "memories/chapters.json", source: .data(encode(request.chapters, label: "chapters"))),
             StreamingExportFile(path: "memories/revisits.json", source: .data(encode(request.revisits, label: "revisits"))),
+            StreamingExportFile(path: "memories/recall-interactions.json", source: .data(encode(request.recallInteractions, label: "recall-interactions"))),
             StreamingExportFile(path: "memories/life-marks.json", source: .data(encode(request.lifeMarks, label: "life-marks"))),
             StreamingExportFile(path: "media/index.json", source: .data(encode(mediaIndex, label: "media-index"))),
             StreamingExportFile(path: "rights/deletion-receipt-template.json", source: .data(encode(deletionRights, label: "deletion-rights")))

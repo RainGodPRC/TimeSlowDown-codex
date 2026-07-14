@@ -34,9 +34,11 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
     public var ninetyDayTellableCount: Int
     public var ninetyDayMinimumTarget: Int
     public var yesterdayEchoAvailable: Bool
+    public var activeRecallAvailable: Bool
     public var weeklyStoryClaimedCount: Int
     public var weeklyStoryReadyCount: Int
     public var revisitCount: Int
+    public var recallInteractionCount: Int
 
     public init(
         routeCount: Int,
@@ -51,9 +53,11 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
         ninetyDayTellableCount: Int = 0,
         ninetyDayMinimumTarget: Int = 5,
         yesterdayEchoAvailable: Bool = false,
+        activeRecallAvailable: Bool = false,
         weeklyStoryClaimedCount: Int = 0,
         weeklyStoryReadyCount: Int = 0,
-        revisitCount: Int = 0
+        revisitCount: Int = 0,
+        recallInteractionCount: Int = 0
     ) {
         self.routeCount = routeCount
         self.sliceCount = sliceCount
@@ -67,9 +71,11 @@ public struct NativeShellSnapshot: Codable, Equatable, Sendable {
         self.ninetyDayTellableCount = ninetyDayTellableCount
         self.ninetyDayMinimumTarget = ninetyDayMinimumTarget
         self.yesterdayEchoAvailable = yesterdayEchoAvailable
+        self.activeRecallAvailable = activeRecallAvailable
         self.weeklyStoryClaimedCount = weeklyStoryClaimedCount
         self.weeklyStoryReadyCount = weeklyStoryReadyCount
         self.revisitCount = revisitCount
+        self.recallInteractionCount = recallInteractionCount
     }
 }
 
@@ -158,17 +164,20 @@ public enum NativeVaultPersistenceError: Error, Equatable, Sendable {
 public struct NativeVaultPayload: Codable, Equatable, Sendable {
     public var slices: [MemorySlice]
     public var revisits: [MemoryRevisit]
+    public var recallInteractions: [RecallInteraction]
     public var lifeMarks: [LifeMark]
     public var privacyBoundary: PrivacyBoundary
 
     public init(
         slices: [MemorySlice],
         revisits: [MemoryRevisit],
+        recallInteractions: [RecallInteraction],
         lifeMarks: [LifeMark],
         privacyBoundary: PrivacyBoundary
     ) {
         self.slices = slices
         self.revisits = revisits
+        self.recallInteractions = recallInteractions
         self.lifeMarks = lifeMarks
         self.privacyBoundary = privacyBoundary
     }
@@ -177,6 +186,7 @@ public struct NativeVaultPayload: Codable, Equatable, Sendable {
         self.init(
             slices: store.slices,
             revisits: store.revisits,
+            recallInteractions: store.recallInteractions,
             lifeMarks: store.lifeMarks,
             privacyBoundary: store.privacyBoundary
         )
@@ -186,6 +196,7 @@ public struct NativeVaultPayload: Codable, Equatable, Sendable {
         NativeShellStore(
             slices: slices,
             revisits: revisits,
+            recallInteractions: recallInteractions,
             lifeMarks: lifeMarks,
             privacyBoundary: privacyBoundary
         )
@@ -193,7 +204,7 @@ public struct NativeVaultPayload: Codable, Equatable, Sendable {
 }
 
 public struct NativeVaultEnvelope: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 4
+    public static let currentSchemaVersion = 5
 
     public var schemaVersion: Int
     public var createdAt: Date
@@ -218,12 +229,32 @@ public struct NativeVaultEnvelope: Codable, Equatable, Sendable {
     }
 }
 
+private struct NativeShellStoreV2: Codable {
+    var selectedRoute: NativeShellRoute
+    var slices: [MemorySlice]
+    var revisits: [MemoryRevisit]
+    var privacyBoundary: PrivacyBoundary
+    var latestExportSummary: NativeExportSummary?
+    var latestExportError: String?
+
+    var store: NativeShellStore {
+        NativeShellStore(
+            selectedRoute: selectedRoute,
+            slices: slices,
+            revisits: revisits,
+            privacyBoundary: privacyBoundary,
+            latestExportSummary: latestExportSummary,
+            latestExportError: latestExportError
+        )
+    }
+}
+
 private struct NativeVaultEnvelopeV2: Codable {
     var schemaVersion: Int
     var createdAt: Date
     var updatedAt: Date
     var payloadChecksum: String
-    var store: NativeShellStore
+    var store: NativeShellStoreV2
 }
 
 private struct NativeVaultPayloadV3: Codable {
@@ -248,6 +279,30 @@ private struct NativeVaultEnvelopeV3: Codable {
     var payload: NativeVaultPayloadV3
 }
 
+private struct NativeVaultPayloadV4: Codable {
+    var slices: [MemorySlice]
+    var revisits: [MemoryRevisit]
+    var lifeMarks: [LifeMark]
+    var privacyBoundary: PrivacyBoundary
+
+    var store: NativeShellStore {
+        NativeShellStore(
+            slices: slices,
+            revisits: revisits,
+            lifeMarks: lifeMarks,
+            privacyBoundary: privacyBoundary
+        )
+    }
+}
+
+private struct NativeVaultEnvelopeV4: Codable {
+    var schemaVersion: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var payloadChecksum: String
+    var payload: NativeVaultPayloadV4
+}
+
 private struct DecodedNativeVault {
     var schemaVersion: Int
     var createdAt: Date
@@ -258,11 +313,18 @@ public struct NativeDeletedMemorySlice: Equatable, Sendable {
     public var slice: MemorySlice
     public var index: Int
     public var revisits: [MemoryRevisit]
+    public var recallInteractions: [RecallInteraction]
 
-    public init(slice: MemorySlice, index: Int, revisits: [MemoryRevisit]) {
+    public init(
+        slice: MemorySlice,
+        index: Int,
+        revisits: [MemoryRevisit],
+        recallInteractions: [RecallInteraction] = []
+    ) {
         self.slice = slice
         self.index = index
         self.revisits = revisits
+        self.recallInteractions = recallInteractions
     }
 }
 
@@ -396,6 +458,17 @@ public enum NativeShellPersistence {
                 createdAt: envelope.createdAt,
                 store: envelope.store
             )
+        case 4:
+            guard let envelope = try? decoder.decode(NativeVaultEnvelopeV4.self, from: data),
+                  let expectedChecksum = try? checksum(for: envelope.payload),
+                  envelope.payloadChecksum == expectedChecksum else {
+                return nil
+            }
+            return DecodedNativeVault(
+                schemaVersion: envelope.schemaVersion,
+                createdAt: envelope.createdAt,
+                store: envelope.payload.store
+            )
         case 3:
             guard let envelope = try? decoder.decode(NativeVaultEnvelopeV3.self, from: data),
                   let expectedChecksum = try? checksum(for: envelope.payload),
@@ -416,7 +489,7 @@ public enum NativeShellPersistence {
             return DecodedNativeVault(
                 schemaVersion: envelope.schemaVersion,
                 createdAt: envelope.createdAt,
-                store: NativeVaultPayload(store: envelope.store).store
+                store: NativeVaultPayload(store: envelope.store.store).store
             )
         default:
             return nil
@@ -554,6 +627,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public var selectedRoute: NativeShellRoute
     public private(set) var slices: [MemorySlice]
     public private(set) var revisits: [MemoryRevisit]
+    public private(set) var recallInteractions: [RecallInteraction]
     public private(set) var lifeMarks: [LifeMark]
     public private(set) var privacyBoundary: PrivacyBoundary
     public private(set) var latestExportSummary: NativeExportSummary?
@@ -568,6 +642,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         lhs.selectedRoute == rhs.selectedRoute &&
         lhs.slices == rhs.slices &&
         lhs.revisits == rhs.revisits &&
+        lhs.recallInteractions == rhs.recallInteractions &&
         lhs.lifeMarks == rhs.lifeMarks &&
         lhs.privacyBoundary == rhs.privacyBoundary &&
         lhs.latestExportSummary == rhs.latestExportSummary &&
@@ -578,6 +653,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         selectedRoute: NativeShellRoute = .now,
         slices: [MemorySlice] = [],
         revisits: [MemoryRevisit] = [],
+        recallInteractions: [RecallInteraction] = [],
         lifeMarks: [LifeMark] = [],
         privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
         latestExportSummary: NativeExportSummary? = nil,
@@ -586,6 +662,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         self.selectedRoute = selectedRoute
         self.slices = slices
         self.revisits = revisits
+        self.recallInteractions = recallInteractions
         self.lifeMarks = lifeMarks
         self.privacyBoundary = privacyBoundary
         self.latestExportSummary = latestExportSummary
@@ -598,6 +675,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         case selectedRoute
         case slices
         case revisits
+        case recallInteractions
         case privacyBoundary
         case latestExportSummary
         case latestExportError
@@ -608,6 +686,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         selectedRoute = try container.decodeIfPresent(NativeShellRoute.self, forKey: .selectedRoute) ?? .now
         slices = try container.decodeIfPresent([MemorySlice].self, forKey: .slices) ?? []
         revisits = try container.decodeIfPresent([MemoryRevisit].self, forKey: .revisits) ?? []
+        recallInteractions = try container.decodeIfPresent([RecallInteraction].self, forKey: .recallInteractions) ?? []
         lifeMarks = []
         privacyBoundary = try container.decodeIfPresent(PrivacyBoundary.self, forKey: .privacyBoundary) ?? PrivacyBoundary()
         latestExportSummary = try container.decodeIfPresent(NativeExportSummary.self, forKey: .latestExportSummary)
@@ -655,6 +734,11 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             claimedSliceIDs: Array(slices.prefix(3)).map(\.id)
         )
         let echo = SliceFactory.yesterdayEcho(from: slices, revisits: revisits)
+        let activeRecall = ActiveRecallScheduler.next(
+            from: slices,
+            revisits: revisits,
+            interactions: recallInteractions
+        )
         return NativeShellSnapshot(
             routeCount: NativeShellRoute.allCases.count,
             sliceCount: slices.count,
@@ -668,10 +752,74 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             ninetyDayTellableCount: progress.tellableCount,
             ninetyDayMinimumTarget: progress.minimumTarget,
             yesterdayEchoAvailable: echo != nil,
+            activeRecallAvailable: activeRecall != nil,
             weeklyStoryClaimedCount: weekly.claimedCount,
             weeklyStoryReadyCount: weekly.readyCount,
-            revisitCount: revisits.count
+            revisitCount: revisits.count,
+            recallInteractionCount: recallInteractions.count
         )
+    }
+
+    public func activeRecallCandidate(
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ActiveRecallCandidate? {
+        ActiveRecallScheduler.next(
+            from: slices,
+            revisits: revisits,
+            interactions: recallInteractions,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    @discardableResult
+    public mutating func completeActiveRecall(
+        sliceID: UUID,
+        mode: ActiveRecallMode,
+        reflection: String = "",
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> MemoryRevisit? {
+        guard activeRecallCandidate(now: now, calendar: calendar)?.id == sliceID else { return nil }
+        let revisit = MemoryRevisit(
+            sliceID: sliceID,
+            revisitedAt: now,
+            reflection: reflection.trimmingCharacters(in: .whitespacesAndNewlines),
+            source: mode.sourceLabel
+        )
+        revisits.append(revisit)
+        recallInteractions.append(
+            RecallInteraction(
+                sliceID: sliceID,
+                occurredAt: now,
+                outcome: .revisited,
+                mode: mode,
+                revisitID: revisit.id
+            )
+        )
+        reconcileLifeMarks()
+        markVaultChanged()
+        selectedRoute = .now
+        return revisit
+    }
+
+    @discardableResult
+    public mutating func skipActiveRecall(
+        sliceID: UUID,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> RecallInteraction? {
+        guard activeRecallCandidate(now: now, calendar: calendar)?.id == sliceID else { return nil }
+        let interaction = RecallInteraction(
+            sliceID: sliceID,
+            occurredAt: now,
+            outcome: .skipped
+        )
+        recallInteractions.append(interaction)
+        markVaultChanged()
+        selectedRoute = .now
+        return interaction
     }
 
     @discardableResult
@@ -842,11 +990,18 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         guard let index = slices.firstIndex(where: { $0.id == id }) else { return nil }
         let slice = slices.remove(at: index)
         let relatedRevisits = revisits.filter { $0.sliceID == id }
+        let relatedRecallInteractions = recallInteractions.filter { $0.sliceID == id }
         revisits.removeAll { $0.sliceID == id }
+        recallInteractions.removeAll { $0.sliceID == id }
         reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .slices
-        return NativeDeletedMemorySlice(slice: slice, index: index, revisits: relatedRevisits)
+        return NativeDeletedMemorySlice(
+            slice: slice,
+            index: index,
+            revisits: relatedRevisits,
+            recallInteractions: relatedRecallInteractions
+        )
     }
 
     @discardableResult
@@ -855,6 +1010,9 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         slices.insert(deleted.slice, at: min(max(0, deleted.index), slices.count))
         for revisit in deleted.revisits where !revisits.contains(where: { $0.id == revisit.id }) {
             revisits.append(revisit)
+        }
+        for interaction in deleted.recallInteractions where !recallInteractions.contains(where: { $0.id == interaction.id }) {
+            recallInteractions.append(interaction)
         }
         reconcileLifeMarks()
         markVaultChanged()
@@ -899,6 +1057,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             slices: slices,
             chapters: [chapter],
             revisits: revisits,
+            recallInteractions: recallInteractions,
             lifeMarks: lifeMarks,
             deletionReceipt: deletionReceipt,
             thumbnailDirectory: thumbnailDirectory
@@ -930,6 +1089,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             slices: request.slices,
             chapters: request.chapters,
             revisits: request.revisits,
+            recallInteractions: request.recallInteractions,
             lifeMarks: request.lifeMarks,
             deletionReceipt: request.deletionReceipt,
             thumbnailDataByAnchorID: thumbnailDataByAnchorID

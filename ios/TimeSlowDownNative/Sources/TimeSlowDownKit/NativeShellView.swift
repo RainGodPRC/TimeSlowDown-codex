@@ -574,8 +574,8 @@ private struct NativeNowView: View {
     @State private var activeSheet: NativeNowSheet?
     @State private var mediaIssue: String?
 
-    private var echo: YesterdayEcho? {
-        SliceFactory.yesterdayEcho(from: store.slices, revisits: store.revisits)
+    private var activeRecall: ActiveRecallCandidate? {
+        store.activeRecallCandidate()
     }
 
     private var weeklyProgress: WeeklyStoryProgress {
@@ -611,19 +611,16 @@ private struct NativeNowView: View {
                         if store.slices.isEmpty {
                             NativeFirstMemoryCard()
                         } else {
-                            if let echo {
-                                NativeYesterdayEchoCard(
-                                    echo: echo,
-                                    latestRevisit: store.revisits
-                                        .filter { $0.sliceID == echo.sliceID }
-                                        .sorted { $0.revisitedAt > $1.revisitedAt }
-                                        .first,
+                            if let activeRecall {
+                                NativeActiveRecallCard(
+                                    candidate: activeRecall,
                                     onRevisit: { activeSheet = .revisit }
                                 )
                             }
 
                             NativeWeeklyStoryCard(
                                 progress: weeklyProgress,
+                                concealedSliceID: activeRecall?.id,
                                 onOpen: { activeSheet = .weekend }
                             )
                         }
@@ -649,8 +646,8 @@ private struct NativeNowView: View {
                 case .quickMark:
                     NativeQuickMarkComposer(store: $store)
                 case .revisit:
-                    if let echo {
-                        NativeRevisitComposer(store: $store, echo: echo)
+                    if let activeRecall {
+                        NativeActiveRecallComposer(store: $store, candidate: activeRecall)
                     }
                 case .weekend:
                     NativeWeekendWorkbench(store: $store)
@@ -836,68 +833,54 @@ private struct NativeMemoryCameraCard: View {
 }
 
 @available(iOS 17.0, macOS 14.0, *)
-private struct NativeYesterdayEchoCard: View {
-    var echo: YesterdayEcho
-    var latestRevisit: MemoryRevisit?
+private struct NativeActiveRecallCard: View {
+    var candidate: ActiveRecallCandidate
     var onRevisit: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack {
-                Label("昨日回声", systemImage: "clock.arrow.circlepath")
+                Label("今日回望", systemImage: "clock.arrow.2.circlepath")
                     .font(.headline)
                     .foregroundStyle(TSDPalette.ink)
                 Spacer()
-                if echo.previousRevisitCount > 0 {
-                    Text("已回望 (echo.previousRevisitCount) 次")
+                if candidate.previousRevisitCount > 0 {
+                    Text("曾见过 \(candidate.previousRevisitCount) 次")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(TSDPalette.moss)
                 }
             }
 
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .fill(TSDPalette.sage.opacity(0.30))
-                    Image(systemName: echo.media == nil ? "text.quote" : (echo.media?.kind == .video ? "video.fill" : "photo.fill"))
-                        .foregroundStyle(TSDPalette.moss)
-                }
-                .frame(width: 58, height: 58)
-                .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(echo.title)
-                        .font(.headline)
-                        .foregroundStyle(TSDPalette.ink)
-                        .lineLimit(1)
-                    Text(echo.body)
-                        .font(.subheadline)
-                        .foregroundStyle(TSDPalette.inkSoft)
-                        .lineLimit(2)
-                }
+            VStack(alignment: .leading, spacing: 7) {
+                Text("先别看原文")
+                    .font(.title3.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                Text(
+                    candidate.previousRevisitCount == 0
+                        ? "\(candidate.daysSinceLastReview) 天前的一刻到了回望时机。先想十秒，再决定要不要揭开线索。"
+                        : "离上次回望已经 \(candidate.daysSinceLastReview) 天。先想十秒，再决定要不要揭开线索。"
+                )
+                    .font(.subheadline)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            if let latestRevisit, !latestRevisit.reflection.isEmpty {
-                Text("“\(latestRevisit.reflection)”")
-                    .font(.subheadline.italic())
-                    .foregroundStyle(TSDPalette.moss)
-                    .padding(.leading, 8)
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(TSDPalette.amber).frame(width: 3)
-                    }
-            }
+            .padding(15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(TSDPalette.sage.opacity(0.20), in: RoundedRectangle(cornerRadius: 17, style: .continuous))
 
             Button(action: onRevisit) {
                 HStack {
-                    Text("现在再看")
+                    Text("开始一次回望")
                     Spacer()
                     Image(systemName: "arrow.right")
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(TSDPalette.moss)
-                .frame(minHeight: 44)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("activeRecall.open")
         }
         .padding(18)
         .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -911,6 +894,7 @@ private struct NativeYesterdayEchoCard: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeWeeklyStoryCard: View {
     var progress: WeeklyStoryProgress
+    var concealedSliceID: UUID?
     var onOpen: () -> Void
 
     var body: some View {
@@ -939,7 +923,7 @@ private struct NativeWeeklyStoryCard: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Image(systemName: candidate.isReady ? "checkmark.circle.fill" : "circle.dotted")
                             .foregroundStyle(candidate.isReady ? TSDPalette.moss : TSDPalette.amber)
-                        Text(candidate.title)
+                        Text(candidate.id == concealedSliceID ? "一处待回望的瞬间" : candidate.title)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(TSDPalette.ink)
                             .lineLimit(2)
@@ -1009,45 +993,173 @@ private struct NativeQuickMarkComposer: View {
 }
 
 @available(iOS 17.0, macOS 14.0, *)
-private struct NativeRevisitComposer: View {
+private struct NativeActiveRecallComposer: View {
     @Binding var store: NativeShellStore
-    var echo: YesterdayEcho
+    var candidate: ActiveRecallCandidate
     @Environment(\.dismiss) private var dismiss
+    @State private var mode: ActiveRecallMode?
     @State private var reflection = ""
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                Text(echo.title)
-                    .font(.title2.bold())
-                    .foregroundStyle(TSDPalette.ink)
-                Text(echo.body)
-                    .foregroundStyle(TSDPalette.inkSoft)
-                TextField(echo.prompt, text: $reflection, axis: .vertical)
-                    .lineLimit(3...7)
-                    .padding(14)
-                    .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                Text("新的感受会叠在原记忆上，不会改写当时的你。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            ZStack {
+                TSDPalette.canvas.ignoresSafeArea()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if let mode {
+                            revealedSource(mode: mode)
+                        } else {
+                            recallPrompt
+                        }
+                    }
+                    .padding(20)
+                    .padding(.bottom, 20)
+                }
+                .scrollIndicators(.hidden)
+                .accessibilityIdentifier("activeRecall.sheet")
             }
-            .padding(20)
-            .background(TSDPalette.canvas.ignoresSafeArea())
-            .navigationTitle("现在再看")
+            .navigationTitle(mode == nil ? "先想起" : "原声回来了")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("叠进记忆") {
-                        if store.revisitYesterdayEcho(reflection: reflection) != nil { dismiss() }
-                    }
-                    .disabled(reflection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button("关闭") { dismiss() }
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
+    }
+
+    private var recallPrompt: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [TSDPalette.mossDeep, TSDPalette.moss],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                VStack(alignment: .leading, spacing: 12) {
+                    Image(systemName: "eyes")
+                        .font(.title)
+                    Text("先不给答案")
+                        .font(.title2.bold())
+                    Text(
+                        candidate.previousRevisitCount == 0
+                            ? "这是一段 \(candidate.daysSinceLastReview) 天前的真实记忆。停一下，看看脑海里先浮出什么。"
+                            : "你已经 \(candidate.daysSinceLastReview) 天没回来看这段真实记忆。停一下，看看脑海里先浮出什么。"
+                    )
+                        .font(.body)
+                        .foregroundStyle(.white.opacity(0.82))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(22)
+            }
+
+            Text("不评分，也不用证明自己记得。")
+                .font(.subheadline)
+                .foregroundStyle(TSDPalette.inkSoft)
+
+            Button {
+                mode = .remembered
+            } label: {
+                Label("我想起了一点", systemImage: "sparkles")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TSDPalette.moss)
+            .accessibilityIdentifier("activeRecall.remembered")
+
+            Button {
+                mode = .neededCue
+            } label: {
+                Label("给我看看线索", systemImage: "photo.on.rectangle.angled")
+                    .frame(maxWidth: .infinity, minHeight: 48)
+            }
+            .buttonStyle(.bordered)
+            .tint(TSDPalette.moss)
+            .accessibilityIdentifier("activeRecall.cue")
+
+            Button("这次先跳过") {
+                _ = store.skipActiveRecall(sliceID: candidate.id)
+                dismiss()
+            }
+            .font(.subheadline)
+            .foregroundStyle(TSDPalette.inkSoft)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityIdentifier("activeRecall.skip")
+        }
+    }
+
+    private func revealedSource(mode: ActiveRecallMode) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(spacing: 9) {
+                Image(systemName: mode == .remembered ? "sparkles" : "eye")
+                Text(mode == .remembered ? "你先想起了一点" : "线索把这一刻带回来了")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(TSDPalette.moss)
+
+            if let media = candidate.slice.media {
+                NativeMediaPreview(media: media, height: 210, cornerRadius: 24)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(candidate.slice.title)
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                    .accessibilityIdentifier("activeRecall.sourceTitle")
+                Text(candidate.slice.body)
+                    .font(.body)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let people = candidate.slice.people, !people.isEmpty {
+                    Label(people.joined(separator: "、"), systemImage: "person.2")
+                        .font(.subheadline)
+                        .foregroundStyle(TSDPalette.inkSoft)
+                }
+                if let meaning = candidate.slice.meaning, !meaning.isEmpty {
+                    Label(meaning, systemImage: "bookmark")
+                        .font(.subheadline)
+                        .foregroundStyle(TSDPalette.inkSoft)
+                }
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("现在再看，我想补一句……")
+                    .font(.headline)
+                    .foregroundStyle(TSDPalette.ink)
+                TextField("可以留空", text: $reflection, axis: .vertical)
+                    .lineLimit(3...7)
+                    .padding(14)
+                    .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityIdentifier("activeRecall.reflection")
+                Text("不写也可以。重看本身就是一次回望；原话永远不会被改写。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Button {
+                if store.completeActiveRecall(
+                    sliceID: candidate.id,
+                    mode: mode,
+                    reflection: reflection
+                ) != nil {
+                    dismiss()
+                }
+            } label: {
+                Text(reflection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "安静放回记忆" : "把这一层叠进记忆")
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TSDPalette.moss)
+            .accessibilityIdentifier("activeRecall.complete")
+        }
     }
 }
 

@@ -34,7 +34,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(restored.store.slices.map(\.title), ["版本化仓库中的第一刻"])
     }
 
-    func testSchemaFourPersistsOnlyDomainPayloadAndResetsSessionState() throws {
+    func testSchemaFivePersistsOnlyDomainPayloadAndResetsSessionState() throws {
         let url = temporaryVaultURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         var store = NativeShellStore()
@@ -47,11 +47,12 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 5)
         XCTAssertNil(object["store"])
         let payload = try XCTUnwrap(object["payload"] as? [String: Any])
         XCTAssertNotNil(payload["slices"])
         XCTAssertNotNil(payload["revisits"])
+        XCTAssertNotNil(payload["recallInteractions"])
         XCTAssertNotNil(payload["lifeMarks"])
         XCTAssertNotNil(payload["privacyBoundary"])
         XCTAssertNil(payload["selectedRoute"])
@@ -183,7 +184,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertTrue(store.lifeMarks.allSatisfy { store.lifeMarkEvidence(for: $0.id)?.isComplete == true })
     }
 
-    func testSchemaFourPersistsTheLifeMarkLedger() throws {
+    func testSchemaFivePersistsTheLifeMarkLedger() throws {
         let url = temporaryVaultURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         let capturedAt = Date(timeIntervalSince1970: 1_783_684_800)
@@ -195,7 +196,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 5)
         let payload = try XCTUnwrap(object["payload"] as? [String: Any])
         let marks = try XCTUnwrap(payload["lifeMarks"] as? [[String: Any]])
         XCTAssertEqual(marks.count, 1)
@@ -206,6 +207,26 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(mark.unlockedAt, capturedAt)
         XCTAssertEqual(mark.evidence.sliceIDs, [slice.id])
         XCTAssertEqual(restored.source, .restored)
+    }
+
+    func testSchemaFivePersistsRecallInteractionsWithoutCreatingStreakDebt() throws {
+        let url = temporaryVaultURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let now = Date(timeIntervalSince1970: 1_783_958_400)
+        let slice = MemorySlice(
+            title: "这次先不回望",
+            body: "跳过只代表今天想安静一点。",
+            capturedAt: now.addingTimeInterval(-864_000)
+        )
+        var store = NativeShellStore(slices: [slice])
+        let skip = try XCTUnwrap(store.skipActiveRecall(sliceID: slice.id, now: now))
+
+        try NativeShellPersistence.save(store, to: url)
+        let restored = try NativeShellPersistence.loadRecovering(from: url)
+
+        XCTAssertEqual(restored.store.recallInteractions, [skip])
+        XCTAssertTrue(restored.store.revisits.isEmpty)
+        XCTAssertEqual(restored.store.lifeMarks.map(\.kind), [.firstLeaf])
     }
 
     func testSchemaThreeMigratesInPlaceAndBackfillsSourceBackedLifeMarks() throws {
@@ -245,8 +266,221 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 5)
         XCTAssertNotNil((object["payload"] as? [String: Any])?["lifeMarks"])
+    }
+
+    func testSchemaFourMigratesInPlaceAndStartsWithNoRecallInteractionDebt() throws {
+        let url = temporaryVaultURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let slice = MemorySlice(
+            id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000084")!,
+            title: "v4 仓库里的真实一刻",
+            body: "它应该继续被完整保留。",
+            capturedAt: createdAt
+        )
+        let mark = LifeMark(
+            kind: .firstLeaf,
+            unlockedAt: createdAt,
+            evidence: LifeMarkEvidence(sliceIDs: [slice.id])
+        )
+        let payload = TestNativeVaultPayloadV4(
+            slices: [slice],
+            revisits: [],
+            lifeMarks: [mark],
+            privacyBoundary: PrivacyBoundary()
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let envelope = TestNativeVaultEnvelopeV4(
+            schemaVersion: 4,
+            createdAt: createdAt,
+            updatedAt: createdAt,
+            payloadChecksum: testChecksum(try encoder.encode(payload)),
+            payload: payload
+        )
+        try encoder.encode(envelope).write(to: url, options: .atomic)
+
+        let migrated = try NativeShellPersistence.loadRecovering(from: url)
+
+        XCTAssertEqual(migrated.source, .migratedVersioned(4))
+        XCTAssertEqual(migrated.store.slices, [slice])
+        XCTAssertEqual(migrated.store.lifeMarks, [mark])
+        XCTAssertTrue(migrated.store.recallInteractions.isEmpty)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        XCTAssertEqual(object["schemaVersion"] as? Int, 5)
+        XCTAssertNotNil((object["payload"] as? [String: Any])?["recallInteractions"])
+    }
+
+    func testActiveRecallSchedulerIsDeterministicAndHonorsQuietSkipCooldown() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_783_958_400)
+        let oldest = MemorySlice(
+            id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000188")!,
+            title: "四十天前的雨",
+            body: "和家人一起走回家。",
+            capturedAt: calendar.date(byAdding: .day, value: -40, to: now)!,
+            people: ["家人"],
+            meaning: "后来仍想讲起",
+            sources: ["真实切片"]
+        )
+        let recent = MemorySlice(
+            id: UUID(uuidString: "B3A42E2F-ADE4-41D4-BE3B-000000000188")!,
+            title: "五天前的一顿饭",
+            body: "普通但值得。",
+            capturedAt: calendar.date(byAdding: .day, value: -5, to: now)!
+        )
+
+        let first = try XCTUnwrap(
+            ActiveRecallScheduler.next(
+                from: [recent, oldest],
+                revisits: [],
+                interactions: [],
+                now: now,
+                calendar: calendar
+            )
+        )
+        XCTAssertEqual(first.id, oldest.id)
+        XCTAssertEqual(first.reason, .longUnseen)
+
+        let skip = RecallInteraction(
+            sliceID: oldest.id,
+            occurredAt: now,
+            outcome: .skipped
+        )
+        XCTAssertNil(
+            ActiveRecallScheduler.next(
+                from: [oldest, recent],
+                revisits: [],
+                interactions: [skip],
+                now: now,
+                calendar: calendar
+            )
+        )
+        let afterSkip = try XCTUnwrap(
+            ActiveRecallScheduler.next(
+                from: [oldest, recent],
+                revisits: [],
+                interactions: [skip],
+                now: calendar.date(byAdding: .day, value: 1, to: now)!,
+                calendar: calendar
+            )
+        )
+        XCTAssertEqual(afterSkip.id, recent.id)
+
+        let afterCooldown = try XCTUnwrap(
+            ActiveRecallScheduler.next(
+                from: [recent, oldest],
+                revisits: [],
+                interactions: [skip],
+                now: calendar.date(byAdding: .day, value: 7, to: now)!,
+                calendar: calendar
+            )
+        )
+        XCTAssertEqual(afterCooldown.id, oldest.id)
+
+        let newlyDue = MemorySlice(
+            title: "昨天的新记忆",
+            body: "刚刚到第一次回望时间。",
+            capturedAt: calendar.date(byAdding: .day, value: -1, to: now)!
+        )
+        let previouslyReviewed = MemorySlice(
+            title: "需要第二次回望的旧记忆",
+            body: "不能被每天新增的内容永久饿死。",
+            capturedAt: calendar.date(byAdding: .day, value: -20, to: now)!
+        )
+        let earlierReview = MemoryRevisit(
+            sliceID: previouslyReviewed.id,
+            revisitedAt: calendar.date(byAdding: .day, value: -4, to: now)!
+        )
+        let spacedReturn = try XCTUnwrap(
+            ActiveRecallScheduler.next(
+                from: [newlyDue, previouslyReviewed],
+                revisits: [earlierReview],
+                interactions: [],
+                now: now,
+                calendar: calendar
+            )
+        )
+        XCTAssertEqual(spacedReturn.id, previouslyReviewed.id)
+        XCTAssertEqual(spacedReturn.reason, .spacedReturn)
+    }
+
+    func testActiveRecallCadenceCompletionAndSkipRemainNonPunitive() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let now = Date(timeIntervalSince1970: 1_783_958_400)
+        let slice = MemorySlice(
+            title: "那天的晚风",
+            body: "回家路上风突然变凉。",
+            capturedAt: calendar.date(byAdding: .day, value: -20, to: now)!
+        )
+        let notDue = MemorySlice(
+            title: "今天刚发生的事",
+            body: "它还没到需要回望的时候。",
+            capturedAt: now
+        )
+        var notDueStore = NativeShellStore(slices: [notDue])
+        XCTAssertNil(
+            notDueStore.completeActiveRecall(
+                sliceID: notDue.id,
+                mode: .remembered,
+                now: now,
+                calendar: calendar
+            )
+        )
+        XCTAssertNil(notDueStore.skipActiveRecall(sliceID: notDue.id, now: now, calendar: calendar))
+
+        var store = NativeShellStore(slices: [slice])
+
+        let firstCandidate = try XCTUnwrap(store.activeRecallCandidate(now: now, calendar: calendar))
+        XCTAssertEqual(firstCandidate.id, slice.id)
+        let revisit = try XCTUnwrap(
+            store.completeActiveRecall(
+                sliceID: slice.id,
+                mode: .neededCue,
+                reflection: "",
+                now: now,
+                calendar: calendar
+            )
+        )
+        XCTAssertTrue(revisit.reflection.isEmpty)
+        XCTAssertEqual(revisit.source, ActiveRecallMode.neededCue.sourceLabel)
+        XCTAssertEqual(store.recallInteractions.last?.revisitID, revisit.id)
+        XCTAssertEqual(store.recallInteractions.last?.outcome, .revisited)
+        XCTAssertNil(
+            store.completeActiveRecall(
+                sliceID: slice.id,
+                mode: .remembered,
+                now: now,
+                calendar: calendar
+            )
+        )
+        XCTAssertNil(
+            store.activeRecallCandidate(
+                now: calendar.date(byAdding: .day, value: 2, to: now)!,
+                calendar: calendar
+            )
+        )
+        XCTAssertNotNil(
+            store.activeRecallCandidate(
+                now: calendar.date(byAdding: .day, value: 3, to: now)!,
+                calendar: calendar
+            )
+        )
+
+        let secondNow = calendar.date(byAdding: .day, value: 3, to: now)!
+        let skip = try XCTUnwrap(store.skipActiveRecall(sliceID: slice.id, now: secondNow, calendar: calendar))
+        XCTAssertEqual(skip.outcome, .skipped)
+        XCTAssertEqual(store.revisits.count, 1)
+        XCTAssertNil(store.skipActiveRecall(sliceID: slice.id, now: secondNow, calendar: calendar))
+        XCTAssertNil(store.activeRecallCandidate(now: secondNow, calendar: calendar))
     }
 
     func testDeletingAndUndoingASourceNeverLeavesOrphanedLifeMarkEvidence() throws {
@@ -260,7 +494,18 @@ final class NativeVaultPersistenceTests: XCTestCase {
             revisitedAt: firstDate.addingTimeInterval(180),
             reflection: "现在再看"
         )
-        var store = NativeShellStore(slices: [third, second, first], revisits: [revisit])
+        let interaction = RecallInteraction(
+            sliceID: first.id,
+            occurredAt: revisit.revisitedAt,
+            outcome: .revisited,
+            mode: .remembered,
+            revisitID: revisit.id
+        )
+        var store = NativeShellStore(
+            slices: [third, second, first],
+            revisits: [revisit],
+            recallInteractions: [interaction]
+        )
         let originalMarks = store.lifeMarks
 
         let deleted = try XCTUnwrap(store.deleteSlice(id: first.id))
@@ -268,10 +513,12 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertFalse(store.lifeMarks.flatMap(\.evidence.sliceIDs).contains(first.id))
         XCTAssertFalse(store.lifeMarks.flatMap(\.evidence.mediaAnchorIDs).contains(media.id))
         XCTAssertFalse(store.lifeMarks.flatMap(\.evidence.revisitIDs).contains(revisit.id))
+        XCTAssertTrue(store.recallInteractions.isEmpty)
         XCTAssertTrue(store.lifeMarks.allSatisfy { store.lifeMarkEvidence(for: $0.id)?.isComplete == true })
 
         XCTAssertTrue(store.restoreDeletedSlice(deleted))
         XCTAssertEqual(store.lifeMarks, originalMarks)
+        XCTAssertEqual(store.recallInteractions, [interaction])
         XCTAssertTrue(store.lifeMarks.allSatisfy { store.lifeMarkEvidence(for: $0.id)?.isComplete == true })
     }
 
@@ -359,13 +606,18 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertNotNil(object["payloadChecksum"] as? String)
     }
 
-    func testLoadMigratesSchemaTwoEnvelopeToDomainOnlySchemaFour() throws {
+    func testLoadMigratesSchemaTwoEnvelopeToDomainOnlySchemaFive() throws {
         let url = temporaryVaultURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        var schemaTwoStore = NativeShellStore()
-        _ = schemaTwoStore.captureQuickMark(title: "v2 仓库中的真实记忆")
-        schemaTwoStore.recordExportError("不应迁移的 session 错误")
+        let schemaTwoStore = TestNativeShellStoreV2(
+            selectedRoute: .account,
+            slices: [MemorySlice(title: "v2 仓库中的真实记忆", body: "")],
+            revisits: [],
+            privacyBoundary: PrivacyBoundary(),
+            latestExportSummary: nil,
+            latestExportError: "不应迁移的 session 错误"
+        )
         let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -388,11 +640,12 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertNil(migrated.store.latestExportError)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let schemaFourEnvelope = try decoder.decode(NativeVaultEnvelope.self, from: Data(contentsOf: url))
-        XCTAssertEqual(schemaFourEnvelope.schemaVersion, 4)
-        XCTAssertEqual(schemaFourEnvelope.createdAt, createdAt)
-        XCTAssertEqual(schemaFourEnvelope.payload.slices.map(\.title), ["v2 仓库中的真实记忆"])
-        XCTAssertEqual(schemaFourEnvelope.payload.lifeMarks.map(\.kind), [.firstLeaf])
+        let schemaFiveEnvelope = try decoder.decode(NativeVaultEnvelope.self, from: Data(contentsOf: url))
+        XCTAssertEqual(schemaFiveEnvelope.schemaVersion, 5)
+        XCTAssertEqual(schemaFiveEnvelope.createdAt, createdAt)
+        XCTAssertEqual(schemaFiveEnvelope.payload.slices.map(\.title), ["v2 仓库中的真实记忆"])
+        XCTAssertEqual(schemaFiveEnvelope.payload.lifeMarks.map(\.kind), [.firstLeaf])
+        XCTAssertTrue(schemaFiveEnvelope.payload.recallInteractions.isEmpty)
     }
 
     func testCorruptPrimaryRestoresThePreviousLastKnownGoodVault() throws {
@@ -627,7 +880,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: artifact.fileURL.path))
         XCTAssertEqual(artifact.fileName, request.plan.fileName)
         XCTAssertGreaterThan(artifact.fileSizeBytes, 22)
-        XCTAssertGreaterThanOrEqual(artifact.entries.count, 7)
+        XCTAssertGreaterThanOrEqual(artifact.entries.count, 8)
         XCTAssertTrue(artifact.isMemorySafeDefault)
         let handle = try FileHandle(forReadingFrom: artifact.fileURL)
         defer { try? handle.close() }
@@ -653,6 +906,31 @@ final class NativeVaultPersistenceTests: XCTestCase {
 
         XCTAssertEqual(request.lifeMarks, store.lifeMarks)
         XCTAssertTrue(artifact.entries.map(\.path).contains("memories/life-marks.json"))
+        XCTAssertTrue(artifact.isMemorySafeDefault)
+    }
+
+    func testMemoryExportCarriesActiveRecallInteractions() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-recall-export-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 1_783_958_400)
+        let slice = MemorySlice(
+            title: "导出里也保留回望选择",
+            body: "用户的跳过与完成都属于可携带数据。",
+            capturedAt: now.addingTimeInterval(-864_000)
+        )
+        var store = NativeShellStore(slices: [slice])
+        _ = store.skipActiveRecall(sliceID: slice.id, now: now)
+
+        let request = store.memoryExportRequest(now: now)
+        let artifact = try await NativeMemoryExportFileBuilder.export(
+            request,
+            to: directory,
+            availableCapacityBytes: 10_000_000
+        )
+
+        XCTAssertEqual(request.recallInteractions, store.recallInteractions)
+        XCTAssertTrue(artifact.entries.map(\.path).contains("memories/recall-interactions.json"))
         XCTAssertTrue(artifact.isMemorySafeDefault)
     }
 
@@ -917,7 +1195,16 @@ private struct TestNativeVaultEnvelopeV2: Codable {
     var createdAt: Date
     var updatedAt: Date
     var payloadChecksum: String
-    var store: NativeShellStore
+    var store: TestNativeShellStoreV2
+}
+
+private struct TestNativeShellStoreV2: Codable {
+    var selectedRoute: NativeShellRoute
+    var slices: [MemorySlice]
+    var revisits: [MemoryRevisit]
+    var privacyBoundary: PrivacyBoundary
+    var latestExportSummary: NativeExportSummary?
+    var latestExportError: String?
 }
 
 private struct TestNativeVaultPayloadV3: Codable {
@@ -932,6 +1219,21 @@ private struct TestNativeVaultEnvelopeV3: Codable {
     var updatedAt: Date
     var payloadChecksum: String
     var payload: TestNativeVaultPayloadV3
+}
+
+private struct TestNativeVaultPayloadV4: Codable {
+    var slices: [MemorySlice]
+    var revisits: [MemoryRevisit]
+    var lifeMarks: [LifeMark]
+    var privacyBoundary: PrivacyBoundary
+}
+
+private struct TestNativeVaultEnvelopeV4: Codable {
+    var schemaVersion: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var payloadChecksum: String
+    var payload: TestNativeVaultPayloadV4
 }
 
 private func testChecksum(_ data: Data) -> String {

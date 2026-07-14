@@ -214,6 +214,186 @@ public struct MemoryRevisit: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum ActiveRecallMode: String, Codable, Equatable, Sendable {
+    case remembered
+    case neededCue
+
+    public var sourceLabel: String {
+        switch self {
+        case .remembered: "主动回访·主动想起"
+        case .neededCue: "主动回访·线索唤回"
+        }
+    }
+}
+
+public enum RecallInteractionOutcome: String, Codable, Equatable, Sendable {
+    case revisited
+    case skipped
+}
+
+public struct RecallInteraction: Codable, Equatable, Identifiable, Sendable {
+    public let id: UUID
+    public var sliceID: UUID
+    public var occurredAt: Date
+    public var outcome: RecallInteractionOutcome
+    public var mode: ActiveRecallMode?
+    public var revisitID: UUID?
+    public var source: String
+
+    public init(
+        id: UUID = UUID(),
+        sliceID: UUID,
+        occurredAt: Date = Date(),
+        outcome: RecallInteractionOutcome,
+        mode: ActiveRecallMode? = nil,
+        revisitID: UUID? = nil,
+        source: String = "今日回望"
+    ) {
+        self.id = id
+        self.sliceID = sliceID
+        self.occurredAt = occurredAt
+        self.outcome = outcome
+        self.mode = mode
+        self.revisitID = revisitID
+        self.source = source
+    }
+}
+
+public enum ActiveRecallReason: String, Codable, Equatable, Sendable {
+    case firstReturn
+    case spacedReturn
+    case longUnseen
+}
+
+public struct ActiveRecallCandidate: Equatable, Identifiable, Sendable {
+    public var id: UUID { slice.id }
+    public var slice: MemorySlice
+    public var previousRevisitCount: Int
+    public var dueAfterDays: Int
+    public var daysSinceLastReview: Int
+    public var reason: ActiveRecallReason
+
+    public init(
+        slice: MemorySlice,
+        previousRevisitCount: Int,
+        dueAfterDays: Int,
+        daysSinceLastReview: Int,
+        reason: ActiveRecallReason
+    ) {
+        self.slice = slice
+        self.previousRevisitCount = previousRevisitCount
+        self.dueAfterDays = dueAfterDays
+        self.daysSinceLastReview = daysSinceLastReview
+        self.reason = reason
+    }
+
+    public var daysOverdue: Int {
+        max(0, daysSinceLastReview - dueAfterDays)
+    }
+}
+
+public enum ActiveRecallScheduler {
+    public static let revisitIntervalsInDays = [1, 3, 7, 30, 90, 180]
+    public static let quietSkipCooldownInDays = 7
+    public static let maximumInteractionsPerDay = 1
+
+    public static func next(
+        from slices: [MemorySlice],
+        revisits: [MemoryRevisit],
+        interactions: [RecallInteraction],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> ActiveRecallCandidate? {
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday) ?? now
+        guard !interactions.contains(where: {
+            $0.occurredAt >= startOfToday && $0.occurredAt < startOfTomorrow
+        }) else {
+            return nil
+        }
+        let recentSkippedSliceIDs = Set(
+            interactions.lazy
+                .filter {
+                    guard $0.outcome == .skipped else { return false }
+                    let cooldownEnds = calendar.date(
+                        byAdding: .day,
+                        value: quietSkipCooldownInDays,
+                        to: $0.occurredAt
+                    ) ?? $0.occurredAt
+                    return cooldownEnds > now
+                }
+                .map(\.sliceID)
+        )
+        let revisitsBySlice = Dictionary(grouping: revisits, by: \.sliceID)
+
+        return slices.compactMap { slice -> ActiveRecallCandidate? in
+            guard slice.capturedAt < startOfToday,
+                  !recentSkippedSliceIDs.contains(slice.id) else {
+                return nil
+            }
+            let sourceRevisits = revisitsBySlice[slice.id, default: []]
+            let revisitCount = sourceRevisits.count
+            let dueAfterDays = revisitIntervalsInDays[min(revisitCount, revisitIntervalsInDays.count - 1)]
+            let lastReview = sourceRevisits.map(\.revisitedAt).max() ?? slice.capturedAt
+            let daysSinceLastReview = max(
+                0,
+                calendar.dateComponents(
+                    [.day],
+                    from: calendar.startOfDay(for: lastReview),
+                    to: startOfToday
+                ).day ?? 0
+            )
+            guard daysSinceLastReview >= dueAfterDays else { return nil }
+            let reason: ActiveRecallReason
+            if revisitCount == 0 {
+                reason = daysSinceLastReview >= 30 ? .longUnseen : .firstReturn
+            } else {
+                reason = dueAfterDays >= 30 ? .longUnseen : .spacedReturn
+            }
+            return ActiveRecallCandidate(
+                slice: slice,
+                previousRevisitCount: revisitCount,
+                dueAfterDays: dueAfterDays,
+                daysSinceLastReview: daysSinceLastReview,
+                reason: reason
+            )
+        }.sorted(by: isHigherPriority).first
+    }
+
+    private static func isHigherPriority(_ lhs: ActiveRecallCandidate, _ rhs: ActiveRecallCandidate) -> Bool {
+        let lhsUrgency = lhs.daysSinceLastReview * rhs.dueAfterDays
+        let rhsUrgency = rhs.daysSinceLastReview * lhs.dueAfterDays
+        if lhsUrgency != rhsUrgency {
+            return lhsUrgency > rhsUrgency
+        }
+        if lhs.previousRevisitCount != rhs.previousRevisitCount {
+            return lhs.previousRevisitCount < rhs.previousRevisitCount
+        }
+        if lhs.daysSinceLastReview != rhs.daysSinceLastReview {
+            return lhs.daysSinceLastReview > rhs.daysSinceLastReview
+        }
+        let lhsStrength = sourceStrength(lhs.slice)
+        let rhsStrength = sourceStrength(rhs.slice)
+        if lhsStrength != rhsStrength {
+            return lhsStrength > rhsStrength
+        }
+        if lhs.slice.capturedAt != rhs.slice.capturedAt {
+            return lhs.slice.capturedAt < rhs.slice.capturedAt
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private static func sourceStrength(_ slice: MemorySlice) -> Int {
+        var score = 0
+        if slice.media != nil { score += 2 }
+        if slice.people?.isEmpty == false { score += 1 }
+        if slice.meaning?.isEmpty == false { score += 1 }
+        if !slice.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { score += 1 }
+        if !slice.sources.isEmpty { score += 1 }
+        return score
+    }
+}
+
 public enum LifeMarkKind: String, Codable, CaseIterable, Equatable, Sendable {
     case firstLeaf
     case mediaAnchor
