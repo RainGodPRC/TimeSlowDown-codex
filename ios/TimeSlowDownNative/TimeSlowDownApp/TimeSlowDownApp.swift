@@ -46,12 +46,14 @@ private final class NativeMetricKitSubscriber: NSObject, MXMetricManagerSubscrib
 @main
 struct TimeSlowDownApp: App {
     private let uiTestStore: NativeShellStore?
+    private let uiTestRequiresOnboarding: Bool
     private let diagnostics: NativeRuntimeDiagnostics
 
     init() {
 #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         self.uiTestStore = NativeUITestBootstrap.store(arguments: arguments)
+        self.uiTestRequiresOnboarding = NativeUITestBootstrap.requiresOnboarding(arguments: arguments)
         if arguments.contains("--ui-testing") {
             let diagnosticsURL = FileManager.default.temporaryDirectory
                 .appendingPathComponent("TimeSlowDownUITests", isDirectory: true)
@@ -69,6 +71,7 @@ struct TimeSlowDownApp: App {
         }
 #else
         self.uiTestStore = nil
+        self.uiTestRequiresOnboarding = false
         self.diagnostics = .shared
 #endif
 #if canImport(MetricKit)
@@ -84,6 +87,8 @@ struct TimeSlowDownApp: App {
                 TSDNativeShellView(
                     store: uiTestStore,
                     persistenceURL: nil,
+                    onboardingMode: uiTestRequiresOnboarding ? .required : .completed,
+                    onboardingURL: nil,
                     diagnostics: diagnostics
                 )
             } else {
@@ -99,7 +104,7 @@ private enum NativeUITestBootstrap {
     static func store(arguments: [String]) -> NativeShellStore? {
         guard arguments.contains("--ui-testing") else { return nil }
         switch value(after: "--ui-test-fixture", in: arguments) ?? "empty" {
-        case "empty":
+        case "empty", "onboarding":
             return NativeShellStore(selectedRoute: .now)
         case "seeded":
             return NativeShellStore(
@@ -120,6 +125,10 @@ private enum NativeUITestBootstrap {
         default:
             return NativeShellStore(selectedRoute: .now)
         }
+    }
+
+    static func requiresOnboarding(arguments: [String]) -> Bool {
+        value(after: "--ui-test-fixture", in: arguments) == "onboarding"
     }
 
     private static func value(after flag: String, in arguments: [String]) -> String? {

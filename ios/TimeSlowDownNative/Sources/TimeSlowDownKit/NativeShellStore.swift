@@ -410,6 +410,108 @@ public enum NativeShellPersistence {
     }
 }
 
+public enum NativeOnboardingOutcome: String, Codable, Equatable, Sendable {
+    case capturedPhoto
+    case capturedVideo
+    case capturedText
+    case skipped
+}
+
+public struct NativeOnboardingState: Codable, Equatable, Sendable {
+    public static let currentSchemaVersion = 1
+
+    public var schemaVersion: Int
+    public var completedAt: Date
+    public var outcome: NativeOnboardingOutcome
+
+    public init(
+        schemaVersion: Int = Self.currentSchemaVersion,
+        completedAt: Date = Date(),
+        outcome: NativeOnboardingOutcome
+    ) {
+        self.schemaVersion = schemaVersion
+        self.completedAt = completedAt
+        self.outcome = outcome
+    }
+}
+
+public enum NativeOnboardingPersistenceError: Error, Equatable, Sendable {
+    case unsupportedSchema(Int)
+}
+
+public enum NativeOnboardingPersistence {
+    public static var defaultURL: URL {
+        NativeShellPersistence.defaultURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("native-onboarding-v1.json", isDirectory: false)
+    }
+
+    public static func load(from url: URL = defaultURL) throws -> NativeOnboardingState? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let state = try decoder.decode(NativeOnboardingState.self, from: Data(contentsOf: url))
+        guard state.schemaVersion <= NativeOnboardingState.currentSchemaVersion else {
+            throw NativeOnboardingPersistenceError.unsupportedSchema(state.schemaVersion)
+        }
+        return state
+    }
+
+    public static func save(
+        _ state: NativeOnboardingState,
+        to url: URL = defaultURL
+    ) throws {
+        guard state.schemaVersion <= NativeOnboardingState.currentSchemaVersion else {
+            throw NativeOnboardingPersistenceError.unsupportedSchema(state.schemaVersion)
+        }
+        if FileManager.default.fileExists(atPath: url.path),
+           let object = try? JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any],
+           let existingSchema = object["schemaVersion"] as? Int,
+           existingSchema > NativeOnboardingState.currentSchemaVersion {
+            throw NativeOnboardingPersistenceError.unsupportedSchema(existingSchema)
+        }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let data = try encoder.encode(state)
+#if os(iOS)
+        try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+#else
+        try data.write(to: url, options: .atomic)
+#endif
+    }
+}
+
+public enum NativeOnboardingMode: Equatable, Sendable {
+    case automatic
+    case required
+    case completed
+}
+
+public enum NativeOnboardingDecision {
+    public static func shouldPresent(
+        mode: NativeOnboardingMode,
+        hasInjectedStore: Bool,
+        vaultSource: NativeShellPersistenceSource?,
+        savedState: NativeOnboardingState?
+    ) -> Bool {
+        switch mode {
+        case .required:
+            return true
+        case .completed:
+            return false
+        case .automatic:
+            guard !hasInjectedStore, savedState == nil else { return false }
+            if case .newVault? = vaultSource { return true }
+            return false
+        }
+    }
+}
+
 public struct NativeShellStore: Codable, Equatable, Sendable {
     public var selectedRoute: NativeShellRoute
     public private(set) var slices: [MemorySlice]
@@ -563,6 +665,33 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         slices.insert(slice, at: 0)
         markVaultChanged()
         selectedRoute = .now
+        return slice
+    }
+
+    @discardableResult
+    public mutating func captureFirstMemory(
+        title: String,
+        body: String = "",
+        tags: [String] = [],
+        media: MediaAnchor? = nil,
+        sources: [String] = [],
+        now: Date = Date()
+    ) -> MemorySlice? {
+        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTitle.isEmpty else { return nil }
+        let provenance = Array(Set(["首次体验"] + sources)).sorted()
+        let slice = SliceFactory.quickMark(
+            title: cleanTitle,
+            body: cleanBody,
+            tags: tags,
+            media: media,
+            now: now,
+            sources: provenance
+        )
+        slices.insert(slice, at: 0)
+        markVaultChanged()
+        selectedRoute = .slices
         return slice
     }
 

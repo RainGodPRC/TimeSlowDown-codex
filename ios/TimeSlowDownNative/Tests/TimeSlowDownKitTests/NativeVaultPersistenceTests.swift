@@ -103,6 +103,88 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(store.vaultRevision, 4)
     }
 
+    func testFirstMemoryPreservesOnboardingAndRadarProvenance() throws {
+        var store = NativeShellStore()
+
+        let slice = try XCTUnwrap(
+            store.captureFirstMemory(
+                title: "晚饭时爸爸讲起年轻时的故事",
+                body: "原来他也有过很莽撞的二十岁。",
+                tags: ["人", "普通但值得"],
+                sources: ["今日差异雷达"]
+            )
+        )
+
+        XCTAssertEqual(store.slices.first?.id, slice.id)
+        XCTAssertEqual(store.selectedRoute, .slices)
+        XCTAssertEqual(store.vaultRevision, 1)
+        XCTAssertTrue(slice.sources.contains("首次体验"))
+        XCTAssertTrue(slice.sources.contains("今日差异雷达"))
+    }
+
+    func testOnboardingCompletionPersistsOutsideTheMemoryVault() throws {
+        let vaultURL = temporaryVaultURL()
+        let onboardingURL = vaultURL.deletingLastPathComponent().appendingPathComponent("onboarding.json")
+        defer { try? FileManager.default.removeItem(at: vaultURL.deletingLastPathComponent()) }
+        let completedAt = Date(timeIntervalSince1970: 1_783_684_800)
+        let state = NativeOnboardingState(
+            completedAt: completedAt,
+            outcome: .capturedText
+        )
+
+        try NativeOnboardingPersistence.save(state, to: onboardingURL)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: vaultURL.path))
+        XCTAssertEqual(try XCTUnwrap(NativeOnboardingPersistence.load(from: onboardingURL)), state)
+        XCTAssertTrue(
+            NativeOnboardingDecision.shouldPresent(
+                mode: .automatic,
+                hasInjectedStore: false,
+                vaultSource: .newVault,
+                savedState: nil
+            )
+        )
+        XCTAssertFalse(
+            NativeOnboardingDecision.shouldPresent(
+                mode: .automatic,
+                hasInjectedStore: false,
+                vaultSource: .restored,
+                savedState: nil
+            )
+        )
+        XCTAssertFalse(
+            NativeOnboardingDecision.shouldPresent(
+                mode: .automatic,
+                hasInjectedStore: false,
+                vaultSource: .newVault,
+                savedState: state
+            )
+        )
+    }
+
+    func testFutureOnboardingSchemaIsNotOverwritten() throws {
+        let url = temporaryVaultURL()
+            .deletingLastPathComponent()
+            .appendingPathComponent("onboarding.json")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let futureData = try JSONSerialization.data(withJSONObject: [
+            "schemaVersion": NativeOnboardingState.currentSchemaVersion + 1,
+            "completedAt": "2026-07-14T15:00:00Z",
+            "outcome": NativeOnboardingOutcome.skipped.rawValue
+        ], options: [.sortedKeys])
+        try futureData.write(to: url, options: .atomic)
+
+        XCTAssertThrowsError(try NativeOnboardingPersistence.load(from: url))
+        XCTAssertThrowsError(
+            try NativeOnboardingPersistence.save(
+                NativeOnboardingState(outcome: .capturedText),
+                to: url
+            )
+        )
+        XCTAssertEqual(try Data(contentsOf: url), futureData)
+    }
+
     func testLoadMigratesLegacyBareStoreInPlace() throws {
         let url = temporaryVaultURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }

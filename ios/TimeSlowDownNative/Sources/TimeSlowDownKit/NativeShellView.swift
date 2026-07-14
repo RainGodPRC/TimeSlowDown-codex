@@ -90,13 +90,17 @@ public struct TSDNativeShellView: View {
     @State private var store: NativeShellStore
     @State private var persistenceMessage: String?
     @State private var persistenceEnabled: Bool
+    @State private var isOnboardingPresented: Bool
     @Environment(\.scenePhase) private var scenePhase
     private let persistenceCoordinator: NativeShellPersistenceCoordinator?
+    private let onboardingURL: URL?
     private let diagnostics: NativeRuntimeDiagnostics
 
     public init(
         store: NativeShellStore? = nil,
         persistenceURL: URL? = NativeShellPersistence.defaultURL,
+        onboardingMode: NativeOnboardingMode = .automatic,
+        onboardingURL: URL? = NativeOnboardingPersistence.defaultURL,
         diagnostics: NativeRuntimeDiagnostics = .shared
     ) {
         let loadStartedAt = ContinuousClock.now
@@ -104,10 +108,12 @@ public struct TSDNativeShellView: View {
         var message: String?
         var canPersist = persistenceURL != nil
         var loadReceipt: NativeRuntimeReceipt?
+        var vaultSource: NativeShellPersistenceSource?
         if store == nil, let persistenceURL {
             do {
                 let result = try NativeShellPersistence.loadRecovering(from: persistenceURL)
                 resolvedStore = result.store
+                vaultSource = result.source
                 loadReceipt = NativeRuntimeReceiptFactory.vaultLoad(
                     source: result.source,
                     store: result.store,
@@ -128,10 +134,22 @@ public struct TSDNativeShellView: View {
                 )
             }
         }
+        var savedOnboarding: NativeOnboardingState?
+        if let onboardingURL {
+            savedOnboarding = try? NativeOnboardingPersistence.load(from: onboardingURL)
+        }
+        let shouldPresentOnboarding = NativeOnboardingDecision.shouldPresent(
+            mode: onboardingMode,
+            hasInjectedStore: store != nil,
+            vaultSource: vaultSource,
+            savedState: savedOnboarding
+        )
         self._store = State(initialValue: resolvedStore)
         self._persistenceMessage = State(initialValue: message)
         self._persistenceEnabled = State(initialValue: canPersist)
+        self._isOnboardingPresented = State(initialValue: shouldPresentOnboarding)
         self.persistenceCoordinator = persistenceURL.map { NativeShellPersistenceCoordinator(url: $0) }
+        self.onboardingURL = onboardingURL
         self.diagnostics = diagnostics
         if let loadReceipt {
             Task { await diagnostics.record(loadReceipt) }
@@ -161,6 +179,12 @@ public struct TSDNativeShellView: View {
                 .tag(NativeShellRoute.account)
         }
         .tint(TSDPalette.moss)
+        .tsdOnboardingCover(isPresented: $isOnboardingPresented) {
+            NativeFirstRunOnboarding(store: $store) { outcome in
+                completeOnboarding(outcome)
+            }
+            .interactiveDismissDisabled()
+        }
         .safeAreaInset(edge: .top, spacing: 0) {
             if let persistenceMessage {
                 NativePersistenceBanner(message: persistenceMessage) {
@@ -223,6 +247,295 @@ public struct TSDNativeShellView: View {
             }
         }
     }
+
+    private func completeOnboarding(_ outcome: NativeOnboardingOutcome) {
+        if let onboardingURL {
+            do {
+                try NativeOnboardingPersistence.save(
+                    NativeOnboardingState(outcome: outcome),
+                    to: onboardingURL
+                )
+            } catch {
+                persistenceMessage = "首次体验状态尚未保存；你的记忆切片不受影响。"
+            }
+        }
+        isOnboardingPresented = false
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeFirstRunOnboarding: View {
+    @Binding var store: NativeShellStore
+    var onFinished: (NativeOnboardingOutcome) -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var step: NativeOnboardingStep = .choose
+    @State private var text = ""
+    @State private var capturedTitle = ""
+    @State private var capturedOutcome: NativeOnboardingOutcome = .capturedText
+    @State private var mediaIssue: String?
+
+    private var radar: DailyDifferenceRadar {
+        SliceFactory.dailyDifferenceRadar(from: store.slices)
+    }
+
+    var body: some View {
+        ZStack {
+            TSDPalette.canvas.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    onboardingHeader
+                    switch step {
+                    case .choose:
+                        sourceChooser
+                    case .write(let kind):
+                        textCapture(kind: kind)
+                    case .success:
+                        successView
+                    }
+                }
+                .frame(maxWidth: 560, alignment: .leading)
+                .padding(.horizontal, 22)
+                .padding(.top, 28)
+                .padding(.bottom, 34)
+            }
+            .scrollIndicators(.hidden)
+            .accessibilityIdentifier("onboarding.container")
+        }
+    }
+
+    private var onboardingHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("TSD", systemImage: "leaf.fill")
+                    .font(.caption.weight(.bold))
+                    .tracking(1.2)
+                    .foregroundStyle(TSDPalette.moss)
+                Spacer()
+                Text("约 60 秒")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TSDPalette.inkSoft)
+            }
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            Text(step == .success ? "这一刻已经留下了" : "让走过的时间，\n长成你的人生。")
+                .font(.largeTitle.bold())
+                .foregroundStyle(TSDPalette.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if step != .success {
+                Text("不用写长日记。先留住今天一个真的瞬间。")
+                    .font(.body)
+                    .foregroundStyle(TSDPalette.inkSoft)
+            }
+        }
+    }
+
+    private var sourceChooser: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
+                Label("用画面开始", systemImage: "viewfinder")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                Text("照片和视频最容易把现场带回来。")
+                    .font(.subheadline)
+                    .foregroundStyle(.white.opacity(0.76))
+                MemoryCameraPicker(accessibilityIdentifier: "onboarding.photo") { selection in
+                    capture(selection)
+                }
+                if let mediaIssue {
+                    Label(mediaIssue, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.86))
+                }
+            }
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: [TSDPalette.mossDeep, TSDPalette.moss],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 26, style: .continuous)
+            )
+
+            Text("或者，只留一句")
+                .font(.headline)
+                .foregroundStyle(TSDPalette.ink)
+
+            Group {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 12) { onboardingChoices }
+                } else {
+                    HStack(spacing: 12) { onboardingChoices }
+                }
+            }
+
+            Button("暂时先看看") {
+                store.selectedRoute = .now
+                onFinished(.skipped)
+            }
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(TSDPalette.inkSoft)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityIdentifier("onboarding.skip")
+        }
+    }
+
+    @ViewBuilder
+    private var onboardingChoices: some View {
+        onboardingChoice(
+            title: "想到一个人",
+            note: "一句话、一顿饭、一个表情",
+            symbol: "person.2.fill",
+            identifier: "onboarding.person"
+        ) {
+            step = .write(.relationship)
+        }
+        onboardingChoice(
+            title: "一个小转弯",
+            note: "第一次、完成，或情绪变化",
+            symbol: "arrow.triangle.turn.up.right.diamond.fill",
+            identifier: "onboarding.turn"
+        ) {
+            step = .write(.turningPoint)
+        }
+    }
+
+    private func onboardingChoice(
+        title: String,
+        note: String,
+        symbol: String,
+        identifier: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.title3)
+                    .foregroundStyle(TSDPalette.moss)
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(TSDPalette.ink)
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+            .padding(16)
+            .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func textCapture(kind: DailyDifferenceCandidateKind) -> some View {
+        let candidate = radar.candidates.first { $0.kind == kind }
+        return VStack(alignment: .leading, spacing: 16) {
+            Button {
+                text = ""
+                step = .choose
+            } label: {
+                Label("换一种方式", systemImage: "chevron.left")
+                    .font(.subheadline.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(TSDPalette.moss)
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text(kind == .relationship ? "今天，谁变得更清晰？" : "今天，哪里有一点不一样？")
+                    .font(.title2.bold())
+                    .foregroundStyle(TSDPalette.ink)
+                Text(candidate?.prompt ?? "写一句就够了。")
+                    .font(.subheadline)
+                    .foregroundStyle(TSDPalette.inkSoft)
+                TextField("写一句就够了", text: $text, axis: .vertical)
+                    .lineLimit(2...5)
+                    .textFieldStyle(.plain)
+                    .padding(16)
+                    .background(TSDPalette.canvas, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityIdentifier("onboarding.text")
+                Button("留下这一刻") {
+                    guard let candidate,
+                          let slice = store.captureFirstMemory(
+                            title: text,
+                            tags: candidate.tags,
+                            sources: [candidate.source]
+                          ) else { return }
+                    capturedTitle = slice.title
+                    capturedOutcome = .capturedText
+                    step = .success
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TSDPalette.moss)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("onboarding.save")
+            }
+            .padding(20)
+            .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        }
+    }
+
+    private var successView: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            ZStack {
+                Circle().fill(TSDPalette.sage.opacity(0.30))
+                Image(systemName: "leaf.fill")
+                    .font(.system(size: 42, weight: .semibold))
+                    .foregroundStyle(TSDPalette.moss)
+            }
+            .frame(width: 92, height: 92)
+            .accessibilityHidden(true)
+
+            Text("第一片草地已经长出来了")
+                .font(.title2.bold())
+                .foregroundStyle(TSDPalette.ink)
+            Text("“\(capturedTitle)”")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(TSDPalette.moss)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("明天回来时，它仍会在这里。以后可以再补照片、人物或为什么值得记。")
+                .font(.body)
+                .foregroundStyle(TSDPalette.inkSoft)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("进入我的切片") {
+                onFinished(capturedOutcome)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TSDPalette.moss)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .accessibilityIdentifier("onboarding.enter")
+        }
+        .padding(22)
+        .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("onboarding.success")
+    }
+
+    private func capture(_ selection: MemoryCameraSelection) {
+        do {
+            let anchor = try NativeMediaThumbnailStore.persist(selection)
+            let title = anchor.kind == .video ? "今天的一段视频" : "今天的一张照片"
+            guard let slice = store.captureFirstMemory(
+                title: title,
+                tags: ["影像", "普通但值得"],
+                media: anchor,
+                sources: ["今日差异雷达"]
+            ) else { return }
+            capturedTitle = slice.title
+            capturedOutcome = anchor.kind == .video ? .capturedVideo : .capturedPhoto
+            mediaIssue = nil
+            step = .success
+        } catch {
+            mediaIssue = "画面没有安全保存，请重新选择。"
+        }
+    }
+}
+
+private enum NativeOnboardingStep: Equatable {
+    case choose
+    case write(DailyDifferenceCandidateKind)
+    case success
 }
 
 @available(iOS 17.0, macOS 14.0, *)
@@ -380,6 +693,18 @@ private struct NativeFirstMemoryCard: View {
 }
 
 private extension View {
+    @ViewBuilder
+    func tsdOnboardingCover<Content: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+#if os(iOS)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+#else
+        self.sheet(isPresented: isPresented, content: content)
+#endif
+    }
+
     @ViewBuilder
     func tsdHideNavigationChrome() -> some View {
 #if os(iOS)

@@ -71,6 +71,43 @@ final class TimeSlowDownUITests: XCTestCase {
         XCTAssertNotEqual(app.state, .notRunning)
     }
 
+    func testFirstRunCreatesASourceBackedMemoryBeforeEnteringTheApp() {
+        let app = launchApp(fixture: "onboarding")
+
+        let onboarding = app.descendants(matching: .any)["onboarding.container"]
+        XCTAssertTrue(onboarding.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["onboarding.photo"].exists)
+        app.buttons["onboarding.person"].tap()
+
+        let text = app.textFields["onboarding.text"]
+        XCTAssertTrue(text.waitForExistence(timeout: 3))
+        text.tap()
+        text.typeText("晚饭时爸爸讲起年轻时的故事")
+        app.buttons["onboarding.save"].tap()
+
+        XCTAssertTrue(app.descendants(matching: .any)["onboarding.success"].waitForExistence(timeout: 3))
+        app.buttons["onboarding.enter"].tap()
+        XCTAssertFalse(onboarding.exists)
+        XCTAssertTrue(app.staticTexts["晚饭时爸爸讲起年轻时的故事"].waitForExistence(timeout: 3))
+    }
+
+    func testFirstRunChoicesRemainReachableAtAccessibilityTextSize() {
+        let app = launchApp(
+            fixture: "onboarding",
+            preferredContentSizeCategory: "UICTContentSizeCategoryAccessibilityXXL"
+        )
+
+        let scrollView = app.scrollViews["onboarding.container"]
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+        let person = app.buttons["onboarding.person"]
+        for _ in 0..<5 where !person.isHittable {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(person.isHittable)
+        XCTAssertTrue(app.buttons["onboarding.turn"].exists)
+        XCTAssertTrue(app.buttons["onboarding.skip"].exists)
+    }
+
     private func launchApp(
         fixture: String,
         preferredContentSizeCategory: String? = nil

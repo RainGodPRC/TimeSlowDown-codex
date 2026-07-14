@@ -954,11 +954,16 @@ public enum PhotosPickerMediaBridge {
 @available(iOS 17.0, macOS 14.0, *)
 public struct MemoryCameraPicker: View {
     private let onPicked: (MemoryCameraSelection) -> Void
+    private let accessibilityIdentifier: String
     @State private var selectedItem: PhotosPickerItem?
     @State private var isImporting = false
     @State private var importIssue: String?
 
-    public init(onPicked: @escaping (MemoryCameraSelection) -> Void) {
+    public init(
+        accessibilityIdentifier: String = "memoryCamera.photoPicker",
+        onPicked: @escaping (MemoryCameraSelection) -> Void
+    ) {
+        self.accessibilityIdentifier = accessibilityIdentifier
         self.onPicked = onPicked
     }
 
@@ -989,6 +994,7 @@ public struct MemoryCameraPicker: View {
             }
             .buttonStyle(.plain)
             .disabled(isImporting)
+            .accessibilityIdentifier(accessibilityIdentifier)
 
             if let importIssue {
                 Text(importIssue)
@@ -1054,8 +1060,13 @@ import SwiftUI
 @available(iOS 17.0, macOS 14.0, *)
 public struct MemoryCameraPicker: View {
     private let onPicked: (MemoryCameraSelection) -> Void
+    private let accessibilityIdentifier: String
 
-    public init(onPicked: @escaping (MemoryCameraSelection) -> Void) {
+    public init(
+        accessibilityIdentifier: String = "memoryCamera.photoPicker",
+        onPicked: @escaping (MemoryCameraSelection) -> Void
+    ) {
+        self.accessibilityIdentifier = accessibilityIdentifier
         self.onPicked = onPicked
     }
 
@@ -1088,6 +1099,7 @@ public struct MemoryCameraPicker: View {
             .background(.white.opacity(0.92), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier(accessibilityIdentifier)
     }
 }
 #endif
