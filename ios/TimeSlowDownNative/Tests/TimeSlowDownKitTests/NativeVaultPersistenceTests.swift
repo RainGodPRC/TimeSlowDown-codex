@@ -497,6 +497,150 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let remaining = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
         XCTAssertEqual(remaining, unrelatedNames.sorted())
     }
+
+    func testRuntimeErrorCodesAreTypedAndNeverPreserveErrorDescriptions() throws {
+        XCTAssertEqual(
+            NativeRuntimeErrorCode.from(NativeVaultPersistenceError.unsupportedSchema(99)),
+            .unsupportedSchema
+        )
+        XCTAssertEqual(
+            NativeRuntimeErrorCode.from(MediaThumbnailError.thumbnailTooLarge(9_999_999)),
+            .thumbnailTooLarge
+        )
+        XCTAssertEqual(
+            NativeRuntimeErrorCode.from(ExportZIPBuilderError.insufficientDiskSpace(required: 2, available: 1)),
+            .insufficientDiskSpace
+        )
+        XCTAssertEqual(NativeRuntimeErrorCode.from(CancellationError()), .userCancelled)
+
+        let canary = "PRIVATE-MEMORY-CANARY-ALICE-AT-HOME.jpg"
+        let unknownError = NSError(
+            domain: canary,
+            code: 500,
+            userInfo: [NSLocalizedDescriptionKey: canary]
+        )
+        let receipt = NativeRuntimeReceiptFactory.failure(
+            operation: .vaultCommit,
+            error: unknownError,
+            duration: .milliseconds(25)
+        )
+        let data = try JSONEncoder().encode(receipt)
+
+        XCTAssertEqual(receipt.errorCode, .ioUnknown)
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains(canary))
+        XCTAssertTrue(receipt.isPrivacySafe)
+    }
+
+    func testRuntimeReceiptFactoriesKeepOnlyCountsBucketsAndTypedOutcomes() {
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "A title that must never enter diagnostics")
+        let loadReceipt = NativeRuntimeReceiptFactory.vaultLoad(
+            source: .restoredLastKnownGood("private-backup-name.json"),
+            store: store,
+            duration: .milliseconds(11)
+        )
+        XCTAssertEqual(loadReceipt.outcome, .recovered)
+        XCTAssertEqual(loadReceipt.vaultLoadSource, .restoredLastKnownGood)
+        XCTAssertEqual(loadReceipt.sourceSchemaVersion, NativeVaultEnvelope.currentSchemaVersion)
+        XCTAssertEqual(loadReceipt.sliceCount, 1)
+        XCTAssertNil(loadReceipt.errorCode)
+
+        let gcReport = NativeMediaGarbageCollectionReport(
+            removedFileNames: ["private-removed.jpg"],
+            failedFileNames: ["private-failed.jpg"]
+        )
+        let commitReceipt = NativeRuntimeReceiptFactory.vaultCommit(
+            NativeShellPersistenceCommitReceipt(revision: 7, mediaGarbageCollection: gcReport),
+            store: store,
+            duration: .milliseconds(13)
+        )
+        XCTAssertEqual(commitReceipt.outcome, .failed)
+        XCTAssertEqual(commitReceipt.garbageCollectedCount, 1)
+        XCTAssertEqual(commitReceipt.garbageCollectionFailureCount, 1)
+        XCTAssertEqual(commitReceipt.revision, 7)
+
+        let metricReceipt = NativeRuntimeReceiptFactory.metricDiagnostics(
+            payloadCount: 2,
+            crashCount: 1,
+            hangCount: 3,
+            diskWriteExceptionCount: 4,
+            cpuExceptionCount: 5
+        )
+        XCTAssertEqual(metricReceipt.diagnosticPayloadCount, 2)
+        XCTAssertEqual(metricReceipt.crashCount, 1)
+        XCTAssertEqual(metricReceipt.hangCount, 3)
+        XCTAssertEqual(metricReceipt.diskWriteExceptionCount, 4)
+        XCTAssertEqual(metricReceipt.cpuExceptionCount, 5)
+    }
+
+    func testRuntimeReceiptStoreIsBoundedAcrossRestarts() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-runtime-receipts-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("runtime-receipts.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NativeRuntimeReceiptStore(
+            url: url,
+            maximumReceiptCount: 3,
+            maximumEncodedBytes: 32_768
+        )
+
+        for count in 0..<5 {
+            try await store.append(NativeRuntimeReceiptFactory.metricPayloads(count))
+        }
+
+        let receipts = try await store.readAll()
+        XCTAssertEqual(receipts.count, 3)
+        XCTAssertEqual(receipts.compactMap(\.metricPayloadCount), [2, 3, 4])
+        let restoredStore = NativeRuntimeReceiptStore(
+            url: url,
+            maximumReceiptCount: 3,
+            maximumEncodedBytes: 32_768
+        )
+        let restoredReceipts = try await restoredStore.readAll()
+        XCTAssertEqual(restoredReceipts, receipts)
+        XCTAssertLessThanOrEqual(try Data(contentsOf: url).count, 32_768)
+
+        try Data("corrupt diagnostics".utf8).write(to: url, options: .atomic)
+        try await restoredStore.append(NativeRuntimeReceiptFactory.metricPayloads(9))
+        let recoveredReceipts = try await restoredStore.readAll()
+        XCTAssertEqual(recoveredReceipts.compactMap(\.metricPayloadCount), [9])
+    }
+
+    func testRuntimeDiagnosticsExportsOnlyItsBoundedSanitizedSnapshot() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-runtime-diagnostics-export-\(UUID().uuidString)", isDirectory: true)
+        let receiptURL = directory.appendingPathComponent("store/runtime-receipts.json")
+        let exportDirectory = directory.appendingPathComponent("exports", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = NativeRuntimeReceiptStore(url: receiptURL, maximumReceiptCount: 10)
+        let diagnostics = NativeRuntimeDiagnostics(store: store)
+        await diagnostics.record(
+            NativeRuntimeReceiptFactory.failure(
+                operation: .memoryExport,
+                error: ExportZIPBuilderError.fileIO("PRIVATE ABSOLUTE PATH /Users/alice/memory.jpg")
+            )
+        )
+        try FileManager.default.createDirectory(at: exportDirectory, withIntermediateDirectories: true)
+        let unrelatedURL = exportDirectory.appendingPathComponent("family-notes.json")
+        try Data("keep".utf8).write(to: unrelatedURL)
+
+        let first = try await store.exportSnapshot(to: exportDirectory)
+        let second = try await store.exportSnapshot(to: exportDirectory)
+        let data = try Data(contentsOf: second.fileURL)
+        let text = String(decoding: data, as: UTF8.self)
+
+        XCTAssertEqual(first.receiptCount, 1)
+        XCTAssertEqual(second.receiptCount, 1)
+        let transferable = TSDDiagnosticsFile(artifact: second)
+        XCTAssertFalse(transferable.fileName.isEmpty)
+        XCTAssertEqual(transferable.fileName, second.fileURL.lastPathComponent)
+        XCTAssertEqual(transferable.fileURL, second.fileURL)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: first.fileURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unrelatedURL.path))
+        XCTAssertTrue(text.contains(NativeRuntimeErrorCode.exportFileIO.rawValue))
+        XCTAssertFalse(text.contains("PRIVATE ABSOLUTE PATH"))
+        XCTAssertFalse(text.contains("/Users/alice"))
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(

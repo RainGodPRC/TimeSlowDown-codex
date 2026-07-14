@@ -62,6 +62,26 @@ public struct TSDExportZIPFile: Transferable, Equatable, Sendable {
         FileRepresentation(exportedContentType: exportedContentType) { file in
             SentTransferredFile(file.fileURL)
         }
+        .suggestedFileName { $0.fileName }
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+public struct TSDDiagnosticsFile: Transferable, Equatable, Sendable {
+    public var artifact: NativeDiagnosticsExportArtifact
+
+    public init(artifact: NativeDiagnosticsExportArtifact) {
+        self.artifact = artifact
+    }
+
+    public var fileName: String { artifact.fileURL.lastPathComponent }
+    public var fileURL: URL { artifact.fileURL }
+
+    public static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(exportedContentType: .json) { file in
+            SentTransferredFile(file.fileURL)
+        }
+        .suggestedFileName { $0.fileName }
     }
 }
 
@@ -72,18 +92,27 @@ public struct TSDNativeShellView: View {
     @State private var persistenceEnabled: Bool
     @Environment(\.scenePhase) private var scenePhase
     private let persistenceCoordinator: NativeShellPersistenceCoordinator?
+    private let diagnostics: NativeRuntimeDiagnostics
 
     public init(
         store: NativeShellStore? = nil,
-        persistenceURL: URL? = NativeShellPersistence.defaultURL
+        persistenceURL: URL? = NativeShellPersistence.defaultURL,
+        diagnostics: NativeRuntimeDiagnostics = .shared
     ) {
+        let loadStartedAt = ContinuousClock.now
         var resolvedStore = store ?? NativeShellStore()
         var message: String?
         var canPersist = persistenceURL != nil
+        var loadReceipt: NativeRuntimeReceipt?
         if store == nil, let persistenceURL {
             do {
                 let result = try NativeShellPersistence.loadRecovering(from: persistenceURL)
                 resolvedStore = result.store
+                loadReceipt = NativeRuntimeReceiptFactory.vaultLoad(
+                    source: result.source,
+                    store: result.store,
+                    duration: loadStartedAt.duration(to: ContinuousClock.now)
+                )
                 if case .restoredLastKnownGood(let fileName) = result.source {
                     message = "最近一次文件异常，已恢复到上一个安全版本；损坏文件已保留为 \(fileName)。"
                 } else if case .recoveredCorruptBackup(let fileName) = result.source {
@@ -92,12 +121,21 @@ public struct TSDNativeShellView: View {
             } catch {
                 message = "本地记忆暂时无法读取。为保护数据，本次启动不会覆盖原文件。"
                 canPersist = false
+                loadReceipt = NativeRuntimeReceiptFactory.failure(
+                    operation: .vaultLoad,
+                    error: error,
+                    duration: loadStartedAt.duration(to: ContinuousClock.now)
+                )
             }
         }
         self._store = State(initialValue: resolvedStore)
         self._persistenceMessage = State(initialValue: message)
         self._persistenceEnabled = State(initialValue: canPersist)
         self.persistenceCoordinator = persistenceURL.map { NativeShellPersistenceCoordinator(url: $0) }
+        self.diagnostics = diagnostics
+        if let loadReceipt {
+            Task { await diagnostics.record(loadReceipt) }
+        }
     }
 
     public var body: some View {
@@ -118,7 +156,7 @@ public struct TSDNativeShellView: View {
                 .tabItem { Label(NativeShellRoute.launch.title, systemImage: "seal") }
                 .tag(NativeShellRoute.launch)
 
-            NativeAccountView(store: $store)
+            NativeAccountView(store: $store, diagnostics: diagnostics)
                 .tabItem { Label(NativeShellRoute.account.title, systemImage: "person.crop.circle") }
                 .tag(NativeShellRoute.account)
         }
@@ -133,11 +171,26 @@ public struct TSDNativeShellView: View {
         .task(id: store.vaultRevision) {
             guard persistenceEnabled, let persistenceCoordinator else { return }
             let snapshot = store
+            let startedAt = ContinuousClock.now
             do {
-                _ = try await persistenceCoordinator.saveDebounced(snapshot)
+                let receipt = try await persistenceCoordinator.saveDebounced(snapshot)
+                await diagnostics.record(
+                    NativeRuntimeReceiptFactory.vaultCommit(
+                        receipt,
+                        store: snapshot,
+                        duration: startedAt.duration(to: ContinuousClock.now)
+                    )
+                )
             } catch is CancellationError {
                 return
             } catch {
+                await diagnostics.record(
+                    NativeRuntimeReceiptFactory.failure(
+                        operation: .vaultCommit,
+                        error: error,
+                        duration: startedAt.duration(to: ContinuousClock.now)
+                    )
+                )
                 persistenceMessage = "这次改动尚未保存到本机，请稍后重试。"
             }
         }
@@ -147,9 +200,24 @@ public struct TSDNativeShellView: View {
                   let persistenceCoordinator else { return }
             let snapshot = store
             Task {
+                let startedAt = ContinuousClock.now
                 do {
-                    _ = try await persistenceCoordinator.flush(snapshot)
+                    let receipt = try await persistenceCoordinator.flush(snapshot)
+                    await diagnostics.record(
+                        NativeRuntimeReceiptFactory.vaultCommit(
+                            receipt,
+                            store: snapshot,
+                            duration: startedAt.duration(to: ContinuousClock.now)
+                        )
+                    )
                 } catch {
+                    await diagnostics.record(
+                        NativeRuntimeReceiptFactory.failure(
+                            operation: .vaultCommit,
+                            error: error,
+                            duration: startedAt.duration(to: ContinuousClock.now)
+                        )
+                    )
                     persistenceMessage = "进入后台前未能保存最后一次改动，请重新打开确认。"
                 }
             }
@@ -1818,63 +1886,90 @@ private struct NativeMysteryAchievement: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeAccountView: View {
     @Binding var store: NativeShellStore
+    var diagnostics: NativeRuntimeDiagnostics
     @State private var exportFile: TSDExportZIPFile?
     @State private var isFileExporterPresented = false
     @State private var isPreparingExport = false
     @State private var exportProgress = 0.0
     @State private var exportTask: Task<Void, Never>?
+    @State private var diagnosticsFile: TSDDiagnosticsFile?
+    @State private var isDiagnosticsExporterPresented = false
+    @State private var diagnosticsMessage: String?
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("账号是钥匙，不是牢笼。")
-                    .font(.title.weight(.bold))
-                Label("不上传原始影像", systemImage: store.privacyBoundary.allowsRawMediaUpload ? "xmark.circle" : "checkmark.circle")
-                Label("不读取通讯录/GPS/人脸", systemImage: store.privacyBoundary.isAppStoreSafeDefault ? "checkmark.circle" : "exclamationmark.triangle")
-                Label("订阅不得扣留导出", systemImage: store.privacyBoundary.subscriptionCanBlockExport ? "xmark.circle" : "checkmark.circle")
-                Button(isPreparingExport ? "取消导出" : "导出我的记忆 ZIP") {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("账号是钥匙，不是牢笼。")
+                        .font(.title.weight(.bold))
+                    Label("不上传原始影像", systemImage: store.privacyBoundary.allowsRawMediaUpload ? "xmark.circle" : "checkmark.circle")
+                    Label("不读取通讯录/GPS/人脸", systemImage: store.privacyBoundary.isAppStoreSafeDefault ? "checkmark.circle" : "exclamationmark.triangle")
+                    Label("订阅不得扣留导出", systemImage: store.privacyBoundary.subscriptionCanBlockExport ? "xmark.circle" : "checkmark.circle")
+                    Button(isPreparingExport ? "取消导出" : "导出我的记忆 ZIP") {
+                        if isPreparingExport {
+                            exportTask?.cancel()
+                        } else {
+                            startExport()
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("account.memoryExport")
+
                     if isPreparingExport {
-                        exportTask?.cancel()
-                    } else {
-                        startExport()
+                        VStack(alignment: .leading, spacing: 8) {
+                            ProgressView(value: exportProgress)
+                            Text("正在设备本地写入临时 ZIP · \(Int(exportProgress * 100))%")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("正在导出记忆，进度百分之 \(Int(exportProgress * 100))")
                     }
-                }
-                .buttonStyle(.borderedProminent)
 
-                if isPreparingExport {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ProgressView(value: exportProgress)
-                        Text("正在设备本地写入临时 ZIP · \(Int(exportProgress * 100))%")
+                    if let summary = store.latestExportSummary {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label(summary.fileName, systemImage: "archivebox")
+                                .font(.headline)
+                            Text("\(summary.entryCount) 个文档 · \(summary.fileSizeBytes) bytes")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Label("设备本地生成，退订后仍可导出", systemImage: summary.isTSDMemoryRightsSafe ? "checkmark.seal" : "exclamationmark.triangle")
+                                .font(.caption.weight(.semibold))
+                        }
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                    }
+
+                    if let exportError = store.latestExportError {
+                        Text(exportError)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(.red)
                     }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("正在导出记忆，进度百分之 \(Int(exportProgress * 100))")
-                }
 
-                if let summary = store.latestExportSummary {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(summary.fileName, systemImage: "archivebox")
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("诊断与支持")
                             .font(.headline)
-                        Text("\(summary.entryCount) 个文档 · \(summary.fileSizeBytes) bytes")
+                        Text("诊断收据只包含操作结果、耗时和数量，不包含记忆文字、姓名、照片、文件名或路径。")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Label("设备本地生成，退订后仍可导出", systemImage: summary.isTSDMemoryRightsSafe ? "checkmark.seal" : "exclamationmark.triangle")
-                            .font(.caption.weight(.semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("导出脱敏诊断收据") {
+                            prepareDiagnosticsExport()
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityIdentifier("account.diagnosticsExport")
+                        if let diagnosticsMessage {
+                            Text(diagnosticsMessage)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                    .padding()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
                 }
-
-                if let exportError = store.latestExportError {
-                    Text(exportError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-                Spacer()
+                .padding()
             }
-            .padding()
             .navigationTitle("我的")
             .fileExporter(
                 isPresented: $isFileExporterPresented,
@@ -1882,10 +1977,26 @@ private struct NativeAccountView: View {
                 contentTypes: [TSDExportZIPFile.exportedContentType],
                 defaultFilename: exportFile?.fileName ?? "timeslowdown-export.zip"
             ) { result in
+                let receipt: NativeRuntimeReceipt
                 if case .failure(let error) = result {
                     store.recordExportError("系统导出失败：\(error.localizedDescription)")
+                    receipt = NativeRuntimeReceiptFactory.systemExport(error: error)
+                } else {
+                    receipt = NativeRuntimeReceiptFactory.systemExport()
                 }
+                Task { await diagnostics.record(receipt) }
                 cleanupExportFile()
+            }
+            .fileExporter(
+                isPresented: $isDiagnosticsExporterPresented,
+                item: diagnosticsFile,
+                contentTypes: [.json],
+                defaultFilename: "timeslowdown-diagnostics.json"
+            ) { result in
+                diagnosticsMessage = result.isSuccess
+                    ? "诊断收据已交给系统导出。"
+                    : "诊断收据未导出，你可以稍后重试。"
+                cleanupDiagnosticsFile()
             }
         }
     }
@@ -1899,6 +2010,7 @@ private struct NativeAccountView: View {
         exportProgress = 0
         store.beginExport()
         exportTask = Task { @MainActor in
+            let startedAt = ContinuousClock.now
             do {
                 _ = try NativeMemoryExportFileBuilder.removeOwnedArtifacts(in: outputDirectory)
                 let artifact = try await NativeMemoryExportFileBuilder.export(
@@ -1911,15 +2023,39 @@ private struct NativeAccountView: View {
                     }
                 )
                 try Task.checkCancellation()
+                let runtimeReceipt = NativeRuntimeReceiptFactory.memoryExport(
+                    artifact,
+                    duration: startedAt.duration(to: ContinuousClock.now)
+                )
                 store.recordExportSuccess(artifact)
                 exportFile = TSDExportZIPFile(artifact: artifact)
                 isFileExporterPresented = true
+                Task { await diagnostics.record(runtimeReceipt) }
             } catch is CancellationError {
+                let runtimeReceipt = NativeRuntimeReceiptFactory.failure(
+                    operation: .memoryExport,
+                    error: CancellationError(),
+                    duration: startedAt.duration(to: ContinuousClock.now)
+                )
                 store.recordExportError("导出已取消，没有留下未完成文件。")
+                Task { await diagnostics.record(runtimeReceipt) }
             } catch ExportZIPBuilderError.insufficientDiskSpace(let required, let available) {
+                let error = ExportZIPBuilderError.insufficientDiskSpace(required: required, available: available)
+                let runtimeReceipt = NativeRuntimeReceiptFactory.failure(
+                    operation: .memoryExport,
+                    error: error,
+                    duration: startedAt.duration(to: ContinuousClock.now)
+                )
                 store.recordExportError("设备空间不足：需要约 \(required) bytes，可用 \(available) bytes。")
+                Task { await diagnostics.record(runtimeReceipt) }
             } catch {
+                let runtimeReceipt = NativeRuntimeReceiptFactory.failure(
+                    operation: .memoryExport,
+                    error: error,
+                    duration: startedAt.duration(to: ContinuousClock.now)
+                )
                 store.recordExportError("导出失败：\(error.localizedDescription)")
+                Task { await diagnostics.record(runtimeReceipt) }
             }
             isPreparingExport = false
             exportTask = nil
@@ -1931,6 +2067,37 @@ private struct NativeAccountView: View {
             try? FileManager.default.removeItem(at: fileURL)
         }
         exportFile = nil
+    }
+
+    private func prepareDiagnosticsExport() {
+        cleanupDiagnosticsFile()
+        diagnosticsMessage = "正在准备脱敏诊断收据…"
+        Task { @MainActor in
+            do {
+                let artifact = try await diagnostics.exportSnapshot()
+                diagnosticsFile = TSDDiagnosticsFile(artifact: artifact)
+                diagnosticsMessage = artifact.receiptCount == 0
+                    ? "目前没有诊断事件，仍可导出空收据供支持确认。"
+                    : "已准备 \(artifact.receiptCount) 条脱敏诊断事件。"
+                isDiagnosticsExporterPresented = true
+            } catch {
+                diagnosticsMessage = "诊断收据暂时无法生成，请稍后重试。"
+            }
+        }
+    }
+
+    private func cleanupDiagnosticsFile() {
+        if let fileURL = diagnosticsFile?.artifact.fileURL {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        diagnosticsFile = nil
+    }
+}
+
+private extension Result {
+    var isSuccess: Bool {
+        if case .success = self { return true }
+        return false
     }
 }
 
