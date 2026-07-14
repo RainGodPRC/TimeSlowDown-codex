@@ -760,7 +760,9 @@ let requiredXcodePaths = [
     XcodeProjectContract.accentColorPath,
     XcodeProjectContract.infoPlistPath,
     XcodeProjectContract.privacyManifestPath,
-    XcodeProjectContract.entitlementsPath
+    XcodeProjectContract.entitlementsPath,
+    XcodeProjectContract.sharedSchemePath,
+    XcodeProjectContract.uiTestSourcePath
 ]
 for path in requiredXcodePaths {
     let url = packageRoot.appendingPathComponent(path)
@@ -771,7 +773,10 @@ let projectText = try String(contentsOf: packageRoot.appendingPathComponent(Xcod
 for token in XcodeProjectContract.requiredProjectTokens {
     check(projectText.contains(token), "Xcode project should contain required token: \(token)")
 }
-check(projectText.contains("CURRENT_PROJECT_VERSION = 84;"), "Xcode project build settings should carry v84 build number")
+check(projectText.contains("CURRENT_PROJECT_VERSION = 85;"), "Xcode project build settings should carry v85 build number")
+check(projectText.contains("TimeSlowDownUITests"), "Xcode project should contain the formal UI testing target")
+check(projectText.contains("com.apple.product-type.bundle.ui-testing"), "Xcode UI testing target should use the UI testing product type")
+check(projectText.contains("PBXTargetDependency"), "Xcode UI testing target should depend on the app runner")
 
 let appSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.appSourcePath), encoding: .utf8)
 check(appSourceText.contains("@main"), "Xcode app source should declare @main")
@@ -779,9 +784,24 @@ check(appSourceText.contains("TSDNativeShellView"), "Xcode app source should mou
 check(appSourceText.contains("NativeMetricKitSubscriber"), "Shipping app should subscribe to MetricKit")
 check(appSourceText.contains("MXMetricManager.shared.add"), "Shipping app should register its MetricKit subscriber")
 check(appSourceText.contains("NativeRuntimeDiagnostics.shared.record"), "MetricKit callbacks should enter the sanitized runtime diagnostics path")
+check(appSourceText.contains("#if DEBUG"), "UI test fixtures should be compiled only in Debug")
+check(appSourceText.contains("--ui-testing"), "Debug app bootstrap should recognize the UI testing launch contract")
+check(appSourceText.contains("--ui-test-fixture"), "Debug app bootstrap should support deterministic fixture selection")
+check(appSourceText.contains("persistenceURL: nil"), "UI testing must not persist fixtures into the production vault")
+check(appSourceText.contains("TimeSlowDownUITests"), "UI testing diagnostics should use an isolated temporary directory")
+
+let sharedSchemeText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.sharedSchemePath), encoding: .utf8)
+check(sharedSchemeText.contains("TimeSlowDownUITests.xctest"), "Shared scheme should execute the formal UI testing target")
+check(sharedSchemeText.contains("BlueprintName = \"TimeSlowDownUITests\""), "Shared scheme should reference the UI testing target by blueprint name")
+
+let uiTestSourceText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.uiTestSourcePath), encoding: .utf8)
+check(uiTestSourceText.contains("testEmptyVaultCanCreateAQuickMark"), "UI suite should cover empty vault to Quick Mark to Slices")
+check(uiTestSourceText.contains("testSeededSliceCanBeEditedDeletedAndUndone"), "UI suite should cover edit, delete, and undo")
+check(uiTestSourceText.contains("testAccountExportsRemainReachableAtAccessibilityTextSize"), "UI suite should cover Account exports at accessibility text size")
+check(uiTestSourceText.contains("UICTContentSizeCategoryAccessibilityXXL"), "Account UI path should exercise an accessibility Dynamic Type category")
 
 let infoPlistText = try String(contentsOf: packageRoot.appendingPathComponent(XcodeProjectContract.infoPlistPath), encoding: .utf8)
-check(infoPlistText.contains("<string>84</string>"), "Info.plist should carry v84 build number")
+check(infoPlistText.contains("<string>85</string>"), "Info.plist should carry v85 build number")
 check(infoPlistText.contains("UILaunchStoryboardName"), "Info.plist should point at LaunchScreen")
 check(infoPlistText.contains("ITSAppUsesNonExemptEncryption"), "Info.plist should declare encryption export compliance posture")
 check(infoPlistText.contains("<true/>"), "Info.plist should conservatively declare encryption use before final legal classification")
@@ -2126,7 +2146,12 @@ check(ProductionImplementationChecklist.rows.count == 7, "Production Implementat
 check(ProductionImplementationChecklist.rows.allSatisfy { $0.status == .poc }, "Implementation adapter rows should remain PoC, not falsely ready")
 
 let buildNotes = TestFlightBuildNotes()
-check(buildNotes.buildNumber == "84", "TestFlight build notes should match v84")
+check(buildNotes.buildNumber == "85", "TestFlight build notes should match v85")
+check(buildNotes.summary.localizedCaseInsensitiveContains("formal XCUITest target"), "TestFlight build notes should describe the formal v85 UI testing target")
+check(buildNotes.summary.localizedCaseInsensitiveContains("Debug-only deterministic fixtures"), "TestFlight build notes should describe deterministic Debug-only fixtures")
+check(buildNotes.summary.localizedCaseInsensitiveContains("production vault"), "TestFlight build notes should disclose production-vault isolation")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("real PhotosPicker"), "TestFlight limitations should not claim real PhotosPicker automation")
+check(buildNotes.knownLimitations.joined(separator: " ").localizedCaseInsensitiveContains("signed-device"), "TestFlight limitations should preserve signed-device evidence boundaries")
 check(buildNotes.summary.localizedCaseInsensitiveContains("operational diagnostics"), "TestFlight build notes should describe the v84 diagnostics loop")
 check(buildNotes.summary.localizedCaseInsensitiveContains("200 entries and 256KB"), "TestFlight build notes should disclose the bounded local receipt ring")
 check(buildNotes.summary.localizedCaseInsensitiveContains("never uploaded"), "TestFlight build notes should disclose the local-only diagnostics boundary")
@@ -2594,8 +2619,8 @@ let appStoreSubmissionGate = AppStoreSubmissionGate.current(
     deepSeekReceipt: providerPassReceipt,
     deletionReceipt: deletionLiveProbeReceipt
 )
-check(appStoreSubmissionGate.buildNumber == "84", "App Store submission gate should track v84")
-check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v84 runtime diagnostics")
+check(appStoreSubmissionGate.buildNumber == "85", "App Store submission gate should track v85")
+check(appStoreSubmissionGate.rows.count == 30, "App Store submission gate should keep thirty release gates after v85 UI test infrastructure")
 check(!appStoreSubmissionGate.canSubmitToTestFlight, "Current host should not be allowed to submit to TestFlight")
 check(!appStoreSubmissionGate.canSubmitToAppStore, "Current host should not be allowed to submit to App Store")
 check(appStoreSubmissionGate.blockerIDs.contains("full-xcode"), "Submission gate should block without full Xcode")
@@ -2871,4 +2896,4 @@ check(AppStoreLaunchAssetChecklist.rows.count == 4, "App Store launch checklist 
 check(AppStoreLaunchAssetChecklist.rows.allSatisfy { $0.status == .poc }, "App Store launch checklist rows should remain PoC, not falsely ready")
 check(NativeHandoffLedger.rows.first { $0.id == "testflight-packet" }?.status == .poc, "TestFlight packet should be PoC after v40 contracts, not ready")
 
-print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, v83 URL-backed streaming export, and v84 privacy-safe runtime diagnostics are aligned.")
+print("TimeSlowDownNativeChecks passed: slices, media anchors, weekly chapter, Daily Difference Radar, 90-day tellable progress, Yesterday Echo, revisit layers, weekly story progress, non-punitive weekend completion, source-backed Life Meadow semantic zoom, chronological river, revisit export, branded native Memory Camera home, private Life Marks gallery, coordinated atomic persistence, background flush, legacy migration, corrupt backup recovery, honest first-launch empty vault, metadata-stripped protected image thumbnails, protected video poster extraction, portable thumbnail export, media invalidation, editable slice detail, media replacement/removal, delete and undo with revisit restoration, ledgers, privacy boundary, SwiftUI shell state, app target config, Xcode project skeleton, v38 production trust contracts, v39 implementation adapters, v40 App Store launch assets, v41 Keychain adapter, v42 export ZIP builder, v43 native export UI state, v44 system file exporter bridge, v45 deletion API audit envelope, v46 DeepSeek server gateway envelope, v47 deletion service integration boundary, v48 raw media export policy envelope, v49 raw media staged export builder, v50 Photos-library byte import adapter, v51 E2EE media vault adapter, v52 CryptoKit media vault envelope contract, v53 Secure Enclave device-key contract, v54 signed-device Keychain validation scaffold, v55 DeepSeek provider validation scaffold, v56 DeepSeek integration test runner contract, v57 DeepSeek backend endpoint/provider proxy contract, v58 DeepSeek endpoint execution harness, v59 DeepSeek live backend probe, v60 deletion service live probe, v61 App Store submission gate, v62 public URL packet, v63 backend release manifest, v64 App Privacy questionnaire packet, v65 Age Rating review packet, v66 signed-device media validation packet, v67 archive/signing readiness packet, v68 App Store metadata/legal review packet, v69 Privacy Manifest required reason API audit packet, v70 encryption export compliance review packet, v71 screenshot/App Preview creative packet, v72 P0 daily loop, v73 first-week return loop, v74 native product home, v75 native persistence, v76 media editing, v77 protected video posters, v78 persistence/media portability hardening, v79 native Life Meadow, v80 versioned last-known-good vault recovery, v81 post-commit media garbage collection, v82 domain/session state separation, v83 URL-backed streaming export, v84 privacy-safe runtime diagnostics, and v85 deterministic native XCUITest infrastructure are aligned.")

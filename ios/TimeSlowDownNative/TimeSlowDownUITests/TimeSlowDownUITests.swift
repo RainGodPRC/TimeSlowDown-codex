@@ -1,0 +1,93 @@
+import XCTest
+
+@MainActor
+final class TimeSlowDownUITests: XCTestCase {
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+    }
+
+    func testEmptyVaultCanCreateAQuickMark() {
+        let app = launchApp(fixture: "empty")
+
+        let emptyState = app.descendants(matching: .any)["now.emptyState"]
+        XCTAssertTrue(emptyState.waitForExistence(timeout: 5))
+
+        app.buttons["now.quickMark"].tap()
+        let title = app.textFields["quickMark.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        title.tap()
+        title.typeText("UI 测试第一刻")
+        app.buttons["quickMark.save"].tap()
+
+        XCTAssertFalse(emptyState.exists)
+        app.tabBars.buttons["切片"].tap()
+        XCTAssertTrue(app.staticTexts["UI 测试第一刻"].waitForExistence(timeout: 3))
+    }
+
+    func testSeededSliceCanBeEditedDeletedAndUndone() {
+        let app = launchApp(fixture: "seeded")
+        let originalTitle = app.staticTexts["测试切片：雨后散步"]
+        XCTAssertTrue(originalTitle.waitForExistence(timeout: 5))
+
+        originalTitle.tap()
+        let title = app.textFields["sliceDetail.title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        title.tap()
+        title.typeText(" · 已编辑")
+        app.buttons["sliceDetail.save"].tap()
+        app.buttons["sliceDetail.delete"].tap()
+
+        let editedRow = app.buttons
+            .matching(NSPredicate(format: "label CONTAINS %@", "已编辑"))
+            .firstMatch
+        XCTAssertFalse(editedRow.exists)
+        let undo = app.buttons["sliceList.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3))
+        undo.tap()
+        XCTAssertTrue(editedRow.waitForExistence(timeout: 3))
+    }
+
+    func testAccountExportsRemainReachableAtAccessibilityTextSize() {
+        let app = launchApp(
+            fixture: "seeded",
+            preferredContentSizeCategory: "UICTContentSizeCategoryAccessibilityXXL"
+        )
+        app.tabBars.buttons["我的"].tap()
+
+        let scrollView = app.scrollViews["account.scroll"]
+        XCTAssertTrue(scrollView.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["account.memoryExport"].exists)
+
+        let diagnosticsExport = app.buttons["account.diagnosticsExport"]
+        XCTAssertTrue(diagnosticsExport.exists)
+        for _ in 0..<4 where !diagnosticsExport.isHittable {
+            scrollView.swipeUp()
+        }
+        XCTAssertTrue(diagnosticsExport.isHittable)
+        diagnosticsExport.tap()
+
+        let diagnosticsStatus = app.staticTexts["account.diagnosticsStatus"]
+        XCTAssertTrue(diagnosticsStatus.waitForExistence(timeout: 5))
+        XCTAssertNotEqual(app.state, .notRunning)
+    }
+
+    private func launchApp(
+        fixture: String,
+        preferredContentSizeCategory: String? = nil
+    ) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-testing",
+            "--ui-test-fixture", fixture,
+            "--ui-test-disable-animations"
+        ]
+        if let preferredContentSizeCategory {
+            app.launchArguments += [
+                "-UIPreferredContentSizeCategoryName",
+                preferredContentSizeCategory
+            ]
+        }
+        app.launch()
+        return app
+    }
+}

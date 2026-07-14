@@ -45,6 +45,8 @@ public enum XcodeProjectContract {
     public static let infoPlistPath = "AppStore/Info.plist"
     public static let privacyManifestPath = "AppStore/PrivacyInfo.xcprivacy"
     public static let entitlementsPath = "AppStore/TimeSlowDown.entitlements"
+    public static let sharedSchemePath = "TimeSlowDown.xcodeproj/xcshareddata/xcschemes/TimeSlowDown.xcscheme"
+    public static let uiTestSourcePath = "TimeSlowDownUITests/TimeSlowDownUITests.swift"
 
     public static let requiredProjectTokens = [
         "PBXNativeTarget",

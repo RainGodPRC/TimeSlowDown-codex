@@ -375,6 +375,7 @@ private struct NativeFirstMemoryCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("now.emptyState")
     }
 }
 
@@ -500,6 +501,7 @@ private struct NativeMemoryCameraCard: View {
                         .background(.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("now.quickMark")
             }
             .padding(20)
         }
@@ -652,8 +654,10 @@ private struct NativeQuickMarkComposer: View {
             Form {
                 Section("先占住这个瞬间") {
                     TextField("发生了什么？", text: $title)
+                        .accessibilityIdentifier("quickMark.title")
                     TextField("想多留一句也可以（可选）", text: $note, axis: .vertical)
                         .lineLimit(2...5)
+                        .accessibilityIdentifier("quickMark.note")
                 }
                 Section {
                     Text("不必完整。周末再补照片、人物或为什么值得记。")
@@ -671,6 +675,7 @@ private struct NativeQuickMarkComposer: View {
                         if store.captureQuickMark(title: title, body: note) != nil { dismiss() }
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("quickMark.save")
                 }
             }
         }
@@ -920,6 +925,7 @@ private struct NativeSliceListView: View {
                         Button("撤销") { undo(pendingDeletion) }
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(TSDPalette.moss)
+                            .accessibilityIdentifier("sliceList.undo")
                     }
                     .padding(.horizontal, 16)
                     .frame(minHeight: 52)
@@ -1013,12 +1019,16 @@ private struct NativeSliceDetailView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             TextField("这一刻叫什么？", text: $title)
                                 .font(.title2.bold())
+                                .accessibilityIdentifier("sliceDetail.title")
                             TextField("发生了什么？", text: $bodyText, axis: .vertical)
                                 .lineLimit(3...8)
+                                .accessibilityIdentifier("sliceDetail.body")
                             Divider()
                             TextField("当时和谁在一起？", text: $peopleText)
+                                .accessibilityIdentifier("sliceDetail.people")
                             TextField("为什么还想记得它？", text: $meaning, axis: .vertical)
                                 .lineLimit(2...5)
+                                .accessibilityIdentifier("sliceDetail.meaning")
                         }
                         .padding(18)
                         .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -1055,6 +1065,7 @@ private struct NativeSliceDetailView: View {
                                 .frame(maxWidth: .infinity, minHeight: 48)
                         }
                         .buttonStyle(.bordered)
+                        .accessibilityIdentifier("sliceDetail.delete")
                     }
                     .padding(18)
                     .padding(.bottom, 24)
@@ -1081,6 +1092,7 @@ private struct NativeSliceDetailView: View {
                     )
                 }
                 .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .accessibilityIdentifier("sliceDetail.save")
             }
         }
     }
@@ -1965,11 +1977,13 @@ private struct NativeAccountView: View {
                             Text(diagnosticsMessage)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                                .accessibilityIdentifier("account.diagnosticsStatus")
                         }
                     }
                 }
                 .padding()
             }
+            .accessibilityIdentifier("account.scroll")
             .navigationTitle("我的")
             .fileExporter(
                 isPresented: $isFileExporterPresented,

@@ -1,6 +1,9 @@
 #if canImport(SwiftUI)
 import SwiftUI
 import TimeSlowDownKit
+#if canImport(UIKit)
+import UIKit
+#endif
 #if canImport(MetricKit)
 import MetricKit
 #endif
@@ -42,16 +45,88 @@ private final class NativeMetricKitSubscriber: NSObject, MXMetricManagerSubscrib
 @available(iOS 17.0, *)
 @main
 struct TimeSlowDownApp: App {
+    private let uiTestStore: NativeShellStore?
+    private let diagnostics: NativeRuntimeDiagnostics
+
     init() {
+#if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        self.uiTestStore = NativeUITestBootstrap.store(arguments: arguments)
+        if arguments.contains("--ui-testing") {
+            let diagnosticsURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("TimeSlowDownUITests", isDirectory: true)
+                .appendingPathComponent("runtime-receipts.json", isDirectory: false)
+            self.diagnostics = NativeRuntimeDiagnostics(
+                store: NativeRuntimeReceiptStore(url: diagnosticsURL)
+            )
+#if canImport(UIKit)
+            if arguments.contains("--ui-test-disable-animations") {
+                UIView.setAnimationsEnabled(false)
+            }
+#endif
+        } else {
+            self.diagnostics = .shared
+        }
+#else
+        self.uiTestStore = nil
+        self.diagnostics = .shared
+#endif
 #if canImport(MetricKit)
-        NativeMetricKitSubscriber.shared.start()
+        if uiTestStore == nil {
+            NativeMetricKitSubscriber.shared.start()
+        }
 #endif
     }
 
     var body: some Scene {
         WindowGroup {
-            TSDNativeShellView()
+            if let uiTestStore {
+                TSDNativeShellView(
+                    store: uiTestStore,
+                    persistenceURL: nil,
+                    diagnostics: diagnostics
+                )
+            } else {
+                TSDNativeShellView(diagnostics: diagnostics)
+            }
         }
     }
 }
+
+#if DEBUG
+@available(iOS 17.0, *)
+private enum NativeUITestBootstrap {
+    static func store(arguments: [String]) -> NativeShellStore? {
+        guard arguments.contains("--ui-testing") else { return nil }
+        switch value(after: "--ui-test-fixture", in: arguments) ?? "empty" {
+        case "empty":
+            return NativeShellStore(selectedRoute: .now)
+        case "seeded":
+            return NativeShellStore(
+                selectedRoute: .slices,
+                slices: [
+                    MemorySlice(
+                        id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000085")!,
+                        title: "测试切片：雨后散步",
+                        body: "雨停以后绕着小区走了一圈。",
+                        tags: ["日常", "变化"],
+                        capturedAt: Date(timeIntervalSince1970: 1_783_684_800),
+                        people: ["自己"],
+                        meaning: "普通的一天也值得留下。",
+                        sources: ["ui-test-fixture"]
+                    )
+                ]
+            )
+        default:
+            return NativeShellStore(selectedRoute: .now)
+        }
+    }
+
+    private static func value(after flag: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: flag),
+              arguments.indices.contains(index + 1) else { return nil }
+        return arguments[index + 1]
+    }
+}
+#endif
 #endif
