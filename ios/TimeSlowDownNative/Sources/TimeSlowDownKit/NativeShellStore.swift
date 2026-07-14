@@ -158,15 +158,18 @@ public enum NativeVaultPersistenceError: Error, Equatable, Sendable {
 public struct NativeVaultPayload: Codable, Equatable, Sendable {
     public var slices: [MemorySlice]
     public var revisits: [MemoryRevisit]
+    public var lifeMarks: [LifeMark]
     public var privacyBoundary: PrivacyBoundary
 
     public init(
         slices: [MemorySlice],
         revisits: [MemoryRevisit],
+        lifeMarks: [LifeMark],
         privacyBoundary: PrivacyBoundary
     ) {
         self.slices = slices
         self.revisits = revisits
+        self.lifeMarks = lifeMarks
         self.privacyBoundary = privacyBoundary
     }
 
@@ -174,6 +177,7 @@ public struct NativeVaultPayload: Codable, Equatable, Sendable {
         self.init(
             slices: store.slices,
             revisits: store.revisits,
+            lifeMarks: store.lifeMarks,
             privacyBoundary: store.privacyBoundary
         )
     }
@@ -182,13 +186,14 @@ public struct NativeVaultPayload: Codable, Equatable, Sendable {
         NativeShellStore(
             slices: slices,
             revisits: revisits,
+            lifeMarks: lifeMarks,
             privacyBoundary: privacyBoundary
         )
     }
 }
 
 public struct NativeVaultEnvelope: Codable, Equatable, Sendable {
-    public static let currentSchemaVersion = 3
+    public static let currentSchemaVersion = 4
 
     public var schemaVersion: Int
     public var createdAt: Date
@@ -219,6 +224,28 @@ private struct NativeVaultEnvelopeV2: Codable {
     var updatedAt: Date
     var payloadChecksum: String
     var store: NativeShellStore
+}
+
+private struct NativeVaultPayloadV3: Codable {
+    var slices: [MemorySlice]
+    var revisits: [MemoryRevisit]
+    var privacyBoundary: PrivacyBoundary
+
+    var store: NativeShellStore {
+        NativeShellStore(
+            slices: slices,
+            revisits: revisits,
+            privacyBoundary: privacyBoundary
+        )
+    }
+}
+
+private struct NativeVaultEnvelopeV3: Codable {
+    var schemaVersion: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var payloadChecksum: String
+    var payload: NativeVaultPayloadV3
 }
 
 private struct DecodedNativeVault {
@@ -369,6 +396,17 @@ public enum NativeShellPersistence {
                 createdAt: envelope.createdAt,
                 store: envelope.store
             )
+        case 3:
+            guard let envelope = try? decoder.decode(NativeVaultEnvelopeV3.self, from: data),
+                  let expectedChecksum = try? checksum(for: envelope.payload),
+                  envelope.payloadChecksum == expectedChecksum else {
+                return nil
+            }
+            return DecodedNativeVault(
+                schemaVersion: envelope.schemaVersion,
+                createdAt: envelope.createdAt,
+                store: envelope.payload.store
+            )
         case 2:
             guard let envelope = try? decoder.decode(NativeVaultEnvelopeV2.self, from: data),
                   let expectedChecksum = try? checksum(for: envelope.store),
@@ -516,6 +554,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public var selectedRoute: NativeShellRoute
     public private(set) var slices: [MemorySlice]
     public private(set) var revisits: [MemoryRevisit]
+    public private(set) var lifeMarks: [LifeMark]
     public private(set) var privacyBoundary: PrivacyBoundary
     public private(set) var latestExportSummary: NativeExportSummary?
     public private(set) var latestExportError: String?
@@ -529,6 +568,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         lhs.selectedRoute == rhs.selectedRoute &&
         lhs.slices == rhs.slices &&
         lhs.revisits == rhs.revisits &&
+        lhs.lifeMarks == rhs.lifeMarks &&
         lhs.privacyBoundary == rhs.privacyBoundary &&
         lhs.latestExportSummary == rhs.latestExportSummary &&
         lhs.latestExportError == rhs.latestExportError
@@ -538,6 +578,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         selectedRoute: NativeShellRoute = .now,
         slices: [MemorySlice] = [],
         revisits: [MemoryRevisit] = [],
+        lifeMarks: [LifeMark] = [],
         privacyBoundary: PrivacyBoundary = PrivacyBoundary(),
         latestExportSummary: NativeExportSummary? = nil,
         latestExportError: String? = nil
@@ -545,10 +586,12 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         self.selectedRoute = selectedRoute
         self.slices = slices
         self.revisits = revisits
+        self.lifeMarks = lifeMarks
         self.privacyBoundary = privacyBoundary
         self.latestExportSummary = latestExportSummary
         self.latestExportError = latestExportError
         self.vaultRevision = 0
+        reconcileLifeMarks()
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -565,10 +608,12 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         selectedRoute = try container.decodeIfPresent(NativeShellRoute.self, forKey: .selectedRoute) ?? .now
         slices = try container.decodeIfPresent([MemorySlice].self, forKey: .slices) ?? []
         revisits = try container.decodeIfPresent([MemoryRevisit].self, forKey: .revisits) ?? []
+        lifeMarks = []
         privacyBoundary = try container.decodeIfPresent(PrivacyBoundary.self, forKey: .privacyBoundary) ?? PrivacyBoundary()
         latestExportSummary = try container.decodeIfPresent(NativeExportSummary.self, forKey: .latestExportSummary)
         latestExportError = try container.decodeIfPresent(String.self, forKey: .latestExportError)
         vaultRevision = 0
+        reconcileLifeMarks()
     }
 
     public static func seeded(now: Date = Date()) -> NativeShellStore {
@@ -634,6 +679,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         guard let echo = SliceFactory.yesterdayEcho(from: slices, revisits: revisits, now: now) else { return nil }
         let revisit = SliceFactory.revisit(echo, reflection: reflection, now: now)
         revisits.append(revisit)
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .now
         return revisit
@@ -646,9 +692,25 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             media: media
         )
         slices.insert(slice, at: 0)
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .slices
         return slice
+    }
+
+    public func lifeMarkEvidence(for markID: String) -> LifeMarkEvidenceDetail? {
+        guard let mark = lifeMarks.first(where: { $0.id == markID }) else { return nil }
+        let sliceByID = Dictionary(uniqueKeysWithValues: slices.map { ($0.id, $0) })
+        let mediaByID = slices.compactMap(\.media).reduce(into: [UUID: MediaAnchor]()) {
+            if $0[$1.id] == nil { $0[$1.id] = $1 }
+        }
+        let revisitByID = Dictionary(uniqueKeysWithValues: revisits.map { ($0.id, $0) })
+        return LifeMarkEvidenceDetail(
+            mark: mark,
+            slices: mark.evidence.sliceIDs.compactMap { sliceByID[$0] },
+            mediaAnchors: mark.evidence.mediaAnchorIDs.compactMap { mediaByID[$0] },
+            revisits: mark.evidence.revisitIDs.compactMap { revisitByID[$0] }
+        )
     }
 
     @discardableResult
@@ -663,6 +725,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             now: now
         )
         slices.insert(slice, at: 0)
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .now
         return slice
@@ -690,6 +753,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             sources: provenance
         )
         slices.insert(slice, at: 0)
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .slices
         return slice
@@ -715,6 +779,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             guard next != slices[index] else { return false }
             slices[index] = next
         }
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .now
         return true
@@ -753,6 +818,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
     public mutating func attachMedia(_ media: MediaAnchor, to sliceID: UUID) -> Bool {
         guard let index = slices.firstIndex(where: { $0.id == sliceID }) else { return false }
         slices[index] = SliceFactory.attach(media, to: slices[index])
+        reconcileLifeMarks()
         markVaultChanged()
         return true
     }
@@ -766,6 +832,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         if !slices[index].sources.contains("用户移除影像") {
             slices[index].sources.append("用户移除影像")
         }
+        reconcileLifeMarks()
         markVaultChanged()
         return media
     }
@@ -776,6 +843,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         let slice = slices.remove(at: index)
         let relatedRevisits = revisits.filter { $0.sliceID == id }
         revisits.removeAll { $0.sliceID == id }
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .slices
         return NativeDeletedMemorySlice(slice: slice, index: index, revisits: relatedRevisits)
@@ -788,6 +856,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
         for revisit in deleted.revisits where !revisits.contains(where: { $0.id == revisit.id }) {
             revisits.append(revisit)
         }
+        reconcileLifeMarks()
         markVaultChanged()
         selectedRoute = .slices
         return true
@@ -830,6 +899,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             slices: slices,
             chapters: [chapter],
             revisits: revisits,
+            lifeMarks: lifeMarks,
             deletionReceipt: deletionReceipt,
             thumbnailDirectory: thumbnailDirectory
         )
@@ -860,6 +930,7 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
             slices: request.slices,
             chapters: request.chapters,
             revisits: request.revisits,
+            lifeMarks: request.lifeMarks,
             deletionReceipt: request.deletionReceipt,
             thumbnailDataByAnchorID: thumbnailDataByAnchorID
         )
@@ -887,6 +958,80 @@ public struct NativeShellStore: Codable, Equatable, Sendable {
 
     private mutating func markVaultChanged() {
         vaultRevision &+= 1
+    }
+
+    private mutating func reconcileLifeMarks() {
+        let chronologicalSlices = slices.sorted {
+            if $0.capturedAt == $1.capturedAt {
+                return $0.id.uuidString < $1.id.uuidString
+            }
+            return $0.capturedAt < $1.capturedAt
+        }
+        var candidates: [LifeMark] = []
+
+        if let firstSlice = chronologicalSlices.first {
+            candidates.append(
+                LifeMark(
+                    kind: .firstLeaf,
+                    unlockedAt: firstSlice.capturedAt,
+                    evidence: LifeMarkEvidence(sliceIDs: [firstSlice.id])
+                )
+            )
+        }
+
+        if let mediaSlice = chronologicalSlices.first(where: { $0.media != nil }),
+           let media = mediaSlice.media {
+            candidates.append(
+                LifeMark(
+                    kind: .mediaAnchor,
+                    unlockedAt: mediaSlice.capturedAt,
+                    evidence: LifeMarkEvidence(
+                        sliceIDs: [mediaSlice.id],
+                        mediaAnchorIDs: [media.id]
+                    )
+                )
+            )
+        }
+
+        if let revisit = revisits.sorted(by: {
+            if $0.revisitedAt == $1.revisitedAt {
+                return $0.id.uuidString < $1.id.uuidString
+            }
+            return $0.revisitedAt < $1.revisitedAt
+        }).first,
+           slices.contains(where: { $0.id == revisit.sliceID }) {
+            candidates.append(
+                LifeMark(
+                    kind: .timeLayer,
+                    unlockedAt: revisit.revisitedAt,
+                    evidence: LifeMarkEvidence(
+                        sliceIDs: [revisit.sliceID],
+                        revisitIDs: [revisit.id]
+                    )
+                )
+            )
+        }
+
+        if chronologicalSlices.count >= 3 {
+            let firstThree = Array(chronologicalSlices.prefix(3))
+            candidates.append(
+                LifeMark(
+                    kind: .threeMoments,
+                    unlockedAt: firstThree.map(\.capturedAt).max() ?? firstThree[0].capturedAt,
+                    evidence: LifeMarkEvidence(sliceIDs: firstThree.map(\.id))
+                )
+            )
+        }
+
+        let existing = lifeMarks
+        lifeMarks = candidates.map { candidate in
+            existing.first {
+                $0.kind == candidate.kind && $0.evidence == candidate.evidence
+            } ?? candidate
+        }.sorted {
+            if $0.unlockedAt == $1.unlockedAt { return $0.id < $1.id }
+            return $0.unlockedAt < $1.unlockedAt
+        }
     }
 
     public func weeklyPreviewTitle() -> String {

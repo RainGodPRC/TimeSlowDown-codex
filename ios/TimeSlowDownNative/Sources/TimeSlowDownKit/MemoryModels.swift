@@ -214,6 +214,68 @@ public struct MemoryRevisit: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public enum LifeMarkKind: String, Codable, CaseIterable, Equatable, Sendable {
+    case firstLeaf
+    case mediaAnchor
+    case timeLayer
+    case threeMoments
+}
+
+public struct LifeMarkEvidence: Codable, Equatable, Sendable {
+    public var sliceIDs: [UUID]
+    public var mediaAnchorIDs: [UUID]
+    public var revisitIDs: [UUID]
+
+    public init(
+        sliceIDs: [UUID] = [],
+        mediaAnchorIDs: [UUID] = [],
+        revisitIDs: [UUID] = []
+    ) {
+        self.sliceIDs = sliceIDs
+        self.mediaAnchorIDs = mediaAnchorIDs
+        self.revisitIDs = revisitIDs
+    }
+}
+
+public struct LifeMark: Codable, Equatable, Identifiable, Sendable {
+    public var kind: LifeMarkKind
+    public var unlockedAt: Date
+    public var evidence: LifeMarkEvidence
+
+    public var id: String { kind.rawValue }
+
+    public init(kind: LifeMarkKind, unlockedAt: Date, evidence: LifeMarkEvidence) {
+        self.kind = kind
+        self.unlockedAt = unlockedAt
+        self.evidence = evidence
+    }
+}
+
+public struct LifeMarkEvidenceDetail: Equatable, Sendable {
+    public var mark: LifeMark
+    public var slices: [MemorySlice]
+    public var mediaAnchors: [MediaAnchor]
+    public var revisits: [MemoryRevisit]
+
+    public init(
+        mark: LifeMark,
+        slices: [MemorySlice],
+        mediaAnchors: [MediaAnchor],
+        revisits: [MemoryRevisit]
+    ) {
+        self.mark = mark
+        self.slices = slices
+        self.mediaAnchors = mediaAnchors
+        self.revisits = revisits
+    }
+
+    public var isComplete: Bool {
+        slices.map(\.id) == mark.evidence.sliceIDs &&
+        mediaAnchors.map(\.id) == mark.evidence.mediaAnchorIDs &&
+        revisits.map(\.id) == mark.evidence.revisitIDs
+    }
+}
+
 public struct YesterdayEcho: Codable, Equatable, Sendable {
     public var sliceID: UUID
     public var title: String

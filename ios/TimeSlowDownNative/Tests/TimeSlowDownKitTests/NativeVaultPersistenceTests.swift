@@ -34,7 +34,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(restored.store.slices.map(\.title), ["版本化仓库中的第一刻"])
     }
 
-    func testSchemaThreePersistsOnlyDomainPayloadAndResetsSessionState() throws {
+    func testSchemaFourPersistsOnlyDomainPayloadAndResetsSessionState() throws {
         let url = temporaryVaultURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         var store = NativeShellStore()
@@ -47,11 +47,12 @@ final class NativeVaultPersistenceTests: XCTestCase {
         let object = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
         )
-        XCTAssertEqual(object["schemaVersion"] as? Int, 3)
+        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
         XCTAssertNil(object["store"])
         let payload = try XCTUnwrap(object["payload"] as? [String: Any])
         XCTAssertNotNil(payload["slices"])
         XCTAssertNotNil(payload["revisits"])
+        XCTAssertNotNil(payload["lifeMarks"])
         XCTAssertNotNil(payload["privacyBoundary"])
         XCTAssertNil(payload["selectedRoute"])
         XCTAssertNil(payload["latestExportSummary"])
@@ -120,6 +121,158 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(store.vaultRevision, 1)
         XCTAssertTrue(slice.sources.contains("首次体验"))
         XCTAssertTrue(slice.sources.contains("今日差异雷达"))
+    }
+
+    func testFirstCapturedSliceCreatesASourceBackedLifeMark() throws {
+        let capturedAt = Date(timeIntervalSince1970: 1_783_684_800)
+        var store = NativeShellStore()
+
+        let slice = try XCTUnwrap(
+            store.captureFirstMemory(
+                title: "晚饭时爸爸讲起年轻时的故事",
+                sources: ["今日差异雷达"],
+                now: capturedAt
+            )
+        )
+
+        let mark = try XCTUnwrap(store.lifeMarks.first(where: { $0.kind == .firstLeaf }))
+        XCTAssertEqual(mark.unlockedAt, capturedAt)
+        XCTAssertEqual(mark.evidence.sliceIDs, [slice.id])
+        XCTAssertTrue(mark.evidence.mediaAnchorIDs.isEmpty)
+        XCTAssertTrue(mark.evidence.revisitIDs.isEmpty)
+
+        let detail = try XCTUnwrap(store.lifeMarkEvidence(for: mark.id))
+        XCTAssertEqual(detail.slices, [slice])
+        XCTAssertTrue(detail.isComplete)
+    }
+
+    func testLifeMarkLedgerBindsMediaRevisitAndThreeMomentEvidence() throws {
+        let firstDate = Date(timeIntervalSince1970: 1_783_684_800)
+        let media = MediaAnchor(
+            id: UUID(uuidString: "B3A42E2F-ADE4-41D4-BE3B-000000000087")!,
+            kind: .image,
+            label: "雨后的路.jpg"
+        )
+        let first = MemorySlice(
+            id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000087")!,
+            title: "雨后的路",
+            body: "",
+            capturedAt: firstDate,
+            media: media
+        )
+        let second = MemorySlice(title: "和爸爸吃面", body: "", capturedAt: firstDate.addingTimeInterval(60))
+        let third = MemorySlice(title: "晚风变凉", body: "", capturedAt: firstDate.addingTimeInterval(120))
+        let revisit = MemoryRevisit(
+            id: UUID(uuidString: "C3A42E2F-ADE4-41D4-BE3B-000000000087")!,
+            sliceID: first.id,
+            revisitedAt: firstDate.addingTimeInterval(180),
+            reflection: "现在想起，最清楚的是路灯下的水光。"
+        )
+
+        let store = NativeShellStore(slices: [third, second, first], revisits: [revisit])
+
+        XCTAssertEqual(Set(store.lifeMarks.map(\.kind)), Set(LifeMarkKind.allCases))
+        let mediaMark = try XCTUnwrap(store.lifeMarks.first(where: { $0.kind == .mediaAnchor }))
+        XCTAssertEqual(mediaMark.evidence.sliceIDs, [first.id])
+        XCTAssertEqual(mediaMark.evidence.mediaAnchorIDs, [media.id])
+        let revisitMark = try XCTUnwrap(store.lifeMarks.first(where: { $0.kind == .timeLayer }))
+        XCTAssertEqual(revisitMark.evidence.sliceIDs, [first.id])
+        XCTAssertEqual(revisitMark.evidence.revisitIDs, [revisit.id])
+        let threeMomentMark = try XCTUnwrap(store.lifeMarks.first(where: { $0.kind == .threeMoments }))
+        XCTAssertEqual(threeMomentMark.evidence.sliceIDs, [first.id, second.id, third.id])
+        XCTAssertTrue(store.lifeMarks.allSatisfy { store.lifeMarkEvidence(for: $0.id)?.isComplete == true })
+    }
+
+    func testSchemaFourPersistsTheLifeMarkLedger() throws {
+        let url = temporaryVaultURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let capturedAt = Date(timeIntervalSince1970: 1_783_684_800)
+        var store = NativeShellStore()
+        let slice = try XCTUnwrap(store.captureQuickMark(title: "被保存下来的第一刻", now: capturedAt))
+
+        try NativeShellPersistence.save(store, to: url)
+
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        let payload = try XCTUnwrap(object["payload"] as? [String: Any])
+        let marks = try XCTUnwrap(payload["lifeMarks"] as? [[String: Any]])
+        XCTAssertEqual(marks.count, 1)
+        XCTAssertEqual(marks.first?["kind"] as? String, LifeMarkKind.firstLeaf.rawValue)
+
+        let restored = try NativeShellPersistence.loadRecovering(from: url)
+        let mark = try XCTUnwrap(restored.store.lifeMarks.first)
+        XCTAssertEqual(mark.unlockedAt, capturedAt)
+        XCTAssertEqual(mark.evidence.sliceIDs, [slice.id])
+        XCTAssertEqual(restored.source, .restored)
+    }
+
+    func testSchemaThreeMigratesInPlaceAndBackfillsSourceBackedLifeMarks() throws {
+        let url = temporaryVaultURL()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let slice = MemorySlice(
+            id: UUID(uuidString: "A3A42E2F-ADE4-41D4-BE3B-000000000083")!,
+            title: "v3 仓库中的第一片叶",
+            body: "",
+            capturedAt: createdAt
+        )
+        let payload = TestNativeVaultPayloadV3(
+            slices: [slice],
+            revisits: [],
+            privacyBoundary: PrivacyBoundary()
+        )
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys]
+        let envelope = TestNativeVaultEnvelopeV3(
+            schemaVersion: 3,
+            createdAt: createdAt,
+            updatedAt: createdAt,
+            payloadChecksum: testChecksum(try encoder.encode(payload)),
+            payload: payload
+        )
+        try encoder.encode(envelope).write(to: url, options: .atomic)
+
+        let migrated = try NativeShellPersistence.loadRecovering(from: url)
+
+        XCTAssertEqual(migrated.source, .migratedVersioned(3))
+        XCTAssertEqual(migrated.store.slices, [slice])
+        XCTAssertEqual(migrated.store.lifeMarks.first?.kind, .firstLeaf)
+        XCTAssertEqual(migrated.store.lifeMarks.first?.evidence.sliceIDs, [slice.id])
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any]
+        )
+        XCTAssertEqual(object["schemaVersion"] as? Int, 4)
+        XCTAssertNotNil((object["payload"] as? [String: Any])?["lifeMarks"])
+    }
+
+    func testDeletingAndUndoingASourceNeverLeavesOrphanedLifeMarkEvidence() throws {
+        let firstDate = Date(timeIntervalSince1970: 1_783_684_800)
+        let media = MediaAnchor(kind: .image, label: "park.jpg")
+        let first = MemorySlice(title: "第一刻", body: "", capturedAt: firstDate, media: media)
+        let second = MemorySlice(title: "第二刻", body: "", capturedAt: firstDate.addingTimeInterval(60))
+        let third = MemorySlice(title: "第三刻", body: "", capturedAt: firstDate.addingTimeInterval(120))
+        let revisit = MemoryRevisit(
+            sliceID: first.id,
+            revisitedAt: firstDate.addingTimeInterval(180),
+            reflection: "现在再看"
+        )
+        var store = NativeShellStore(slices: [third, second, first], revisits: [revisit])
+        let originalMarks = store.lifeMarks
+
+        let deleted = try XCTUnwrap(store.deleteSlice(id: first.id))
+
+        XCTAssertFalse(store.lifeMarks.flatMap(\.evidence.sliceIDs).contains(first.id))
+        XCTAssertFalse(store.lifeMarks.flatMap(\.evidence.mediaAnchorIDs).contains(media.id))
+        XCTAssertFalse(store.lifeMarks.flatMap(\.evidence.revisitIDs).contains(revisit.id))
+        XCTAssertTrue(store.lifeMarks.allSatisfy { store.lifeMarkEvidence(for: $0.id)?.isComplete == true })
+
+        XCTAssertTrue(store.restoreDeletedSlice(deleted))
+        XCTAssertEqual(store.lifeMarks, originalMarks)
+        XCTAssertTrue(store.lifeMarks.allSatisfy { store.lifeMarkEvidence(for: $0.id)?.isComplete == true })
     }
 
     func testOnboardingCompletionPersistsOutsideTheMemoryVault() throws {
@@ -206,7 +359,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertNotNil(object["payloadChecksum"] as? String)
     }
 
-    func testLoadMigratesSchemaTwoEnvelopeToDomainOnlySchemaThree() throws {
+    func testLoadMigratesSchemaTwoEnvelopeToDomainOnlySchemaFour() throws {
         let url = temporaryVaultURL()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -235,10 +388,11 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertNil(migrated.store.latestExportError)
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        let schemaThreeEnvelope = try decoder.decode(NativeVaultEnvelope.self, from: Data(contentsOf: url))
-        XCTAssertEqual(schemaThreeEnvelope.schemaVersion, 3)
-        XCTAssertEqual(schemaThreeEnvelope.createdAt, createdAt)
-        XCTAssertEqual(schemaThreeEnvelope.payload.slices.map(\.title), ["v2 仓库中的真实记忆"])
+        let schemaFourEnvelope = try decoder.decode(NativeVaultEnvelope.self, from: Data(contentsOf: url))
+        XCTAssertEqual(schemaFourEnvelope.schemaVersion, 4)
+        XCTAssertEqual(schemaFourEnvelope.createdAt, createdAt)
+        XCTAssertEqual(schemaFourEnvelope.payload.slices.map(\.title), ["v2 仓库中的真实记忆"])
+        XCTAssertEqual(schemaFourEnvelope.payload.lifeMarks.map(\.kind), [.firstLeaf])
     }
 
     func testCorruptPrimaryRestoresThePreviousLastKnownGoodVault() throws {
@@ -473,7 +627,7 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: artifact.fileURL.path))
         XCTAssertEqual(artifact.fileName, request.plan.fileName)
         XCTAssertGreaterThan(artifact.fileSizeBytes, 22)
-        XCTAssertGreaterThanOrEqual(artifact.entries.count, 6)
+        XCTAssertGreaterThanOrEqual(artifact.entries.count, 7)
         XCTAssertTrue(artifact.isMemorySafeDefault)
         let handle = try FileHandle(forReadingFrom: artifact.fileURL)
         defer { try? handle.close() }
@@ -481,6 +635,25 @@ final class NativeVaultPersistenceTests: XCTestCase {
         try handle.seek(toOffset: UInt64(artifact.fileSizeBytes - 22))
         XCTAssertEqual(try handle.read(upToCount: 4), Data([0x50, 0x4B, 0x05, 0x06]))
         XCTAssertEqual(NativeExportSummary.from(artifact).fileSizeBytes, artifact.fileSizeBytes)
+    }
+
+    func testMemoryExportCarriesTheSourceBackedLifeMarkLedger() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-life-mark-export-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var store = NativeShellStore()
+        _ = store.captureQuickMark(title: "这枚印记也属于我")
+
+        let request = store.memoryExportRequest()
+        let artifact = try await NativeMemoryExportFileBuilder.export(
+            request,
+            to: directory,
+            availableCapacityBytes: 10_000_000
+        )
+
+        XCTAssertEqual(request.lifeMarks, store.lifeMarks)
+        XCTAssertTrue(artifact.entries.map(\.path).contains("memories/life-marks.json"))
+        XCTAssertTrue(artifact.isMemorySafeDefault)
     }
 
     func testFileExportRejectsInsufficientSpaceWithoutLeavingPartialFiles() async throws {
@@ -745,6 +918,20 @@ private struct TestNativeVaultEnvelopeV2: Codable {
     var updatedAt: Date
     var payloadChecksum: String
     var store: NativeShellStore
+}
+
+private struct TestNativeVaultPayloadV3: Codable {
+    var slices: [MemorySlice]
+    var revisits: [MemoryRevisit]
+    var privacyBoundary: PrivacyBoundary
+}
+
+private struct TestNativeVaultEnvelopeV3: Codable {
+    var schemaVersion: Int
+    var createdAt: Date
+    var updatedAt: Date
+    var payloadChecksum: String
+    var payload: TestNativeVaultPayloadV3
 }
 
 private func testChecksum(_ data: Data) -> String {

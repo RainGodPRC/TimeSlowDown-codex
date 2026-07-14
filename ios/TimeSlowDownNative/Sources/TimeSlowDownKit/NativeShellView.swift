@@ -2092,27 +2092,7 @@ private struct NativeEmptyDestination: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeAchievementView: View {
     @Binding var store: NativeShellStore
-
-    private var unlocked: [NativeAchievement] {
-        var items: [NativeAchievement] = []
-        if !store.slices.isEmpty {
-            items.append(.init(id: "first-leaf", title: "第一片叶", note: "留下第一个瞬间", symbol: "leaf.fill", color: TSDPalette.moss))
-        }
-        if store.slices.contains(where: \.hasMediaAnchor) {
-            items.append(.init(id: "media-anchor", title: "现场还在", note: "为记忆留下影像锚点", symbol: "photo.fill", color: TSDPalette.amber))
-        }
-        if !store.revisits.isEmpty {
-            items.append(.init(id: "time-layer", title: "时间层叠", note: "让今天与过去相遇", symbol: "clock.arrow.2.circlepath", color: TSDPalette.rose))
-        }
-        let progress = SliceFactory.weeklyStoryProgress(
-            from: store.slices,
-            claimedSliceIDs: Array(store.slices.prefix(3)).map(\.id)
-        )
-        if progress.readyCount == progress.target {
-            items.append(.init(id: "weekly-story", title: "一周成章", note: "三个瞬间长成了故事", symbol: "book.closed.fill", color: TSDPalette.mossDeep))
-        }
-        return items
-    }
+    @State private var selectedMark: LifeMark?
 
     var body: some View {
         NavigationStack {
@@ -2129,12 +2109,25 @@ private struct NativeAchievementView: View {
                                 .foregroundStyle(TSDPalette.inkSoft)
                         }
 
-                        if !unlocked.isEmpty {
+                        if !store.lifeMarks.isEmpty {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
-                                ForEach(unlocked) { achievement in
-                                    NativeAchievementCard(achievement: achievement)
+                                ForEach(store.lifeMarks.sorted(by: { $0.unlockedAt > $1.unlockedAt })) { mark in
+                                    Button {
+                                        selectedMark = mark
+                                    } label: {
+                                        NativeLifeMarkCard(mark: mark)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("lifeMark.card.\(mark.id)")
                                 }
                             }
+                        } else {
+                            Text("第一枚印记会从你的第一张真实切片自然长出来。")
+                                .font(.subheadline)
+                                .foregroundStyle(TSDPalette.inkSoft)
+                                .padding(16)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                         }
 
                         VStack(alignment: .leading, spacing: 10) {
@@ -2154,45 +2147,185 @@ private struct NativeAchievementView: View {
                 }
             }
             .navigationTitle("印记")
+            .sheet(item: $selectedMark) { mark in
+                NativeLifeMarkDetailView(store: $store, markID: mark.id)
+            }
         }
     }
 }
 
-private struct NativeAchievement: Identifiable {
-    var id: String
+private struct NativeLifeMarkPresentation {
     var title: String
     var note: String
     var symbol: String
     var color: Color
 }
 
+private extension LifeMarkKind {
+    var presentation: NativeLifeMarkPresentation {
+        switch self {
+        case .firstLeaf:
+            NativeLifeMarkPresentation(
+                title: "第一片叶",
+                note: "留下第一个瞬间",
+                symbol: "leaf.fill",
+                color: TSDPalette.moss
+            )
+        case .mediaAnchor:
+            NativeLifeMarkPresentation(
+                title: "现场还在",
+                note: "为记忆留下影像锚点",
+                symbol: "photo.fill",
+                color: TSDPalette.amber
+            )
+        case .timeLayer:
+            NativeLifeMarkPresentation(
+                title: "时间层叠",
+                note: "让今天与过去相遇",
+                symbol: "clock.arrow.2.circlepath",
+                color: TSDPalette.rose
+            )
+        case .threeMoments:
+            NativeLifeMarkPresentation(
+                title: "三刻成景",
+                note: "三个真实瞬间开始彼此照亮",
+                symbol: "sparkles.rectangle.stack.fill",
+                color: TSDPalette.mossDeep
+            )
+        }
+    }
+}
+
 @available(iOS 17.0, macOS 14.0, *)
-private struct NativeAchievementCard: View {
-    var achievement: NativeAchievement
+private struct NativeLifeMarkCard: View {
+    var mark: LifeMark
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月d日"
+        return formatter
+    }()
+
+    private var presentation: NativeLifeMarkPresentation { mark.kind.presentation }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(achievement.color.opacity(0.14))
-                Image(systemName: achievement.symbol)
+                    .fill(presentation.color.opacity(0.14))
+                Image(systemName: presentation.symbol)
                     .font(.title2)
-                    .foregroundStyle(achievement.color)
+                    .foregroundStyle(presentation.color)
             }
             .frame(width: 52, height: 52)
-            Text(achievement.title)
+            Text(presentation.title)
                 .font(.headline)
                 .foregroundStyle(TSDPalette.ink)
-            Text(achievement.note)
+            Text(presentation.note)
                 .font(.caption)
                 .foregroundStyle(TSDPalette.inkSoft)
                 .lineLimit(2)
+            Label(Self.dateFormatter.string(from: mark.unlockedAt), systemImage: "link")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(presentation.color)
         }
-        .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 172, alignment: .topLeading)
         .padding(16)
         .background(TSDPalette.paper, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("已获得印记：\(achievement.title)，\(achievement.note)")
+        .accessibilityLabel("已获得印记：\(presentation.title)，\(presentation.note)，可打开真实来源")
+    }
+}
+
+@available(iOS 17.0, macOS 14.0, *)
+private struct NativeLifeMarkDetailView: View {
+    @Binding var store: NativeShellStore
+    var markID: String
+    @Environment(\.dismiss) private var dismiss
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.dateFormat = "yyyy年M月d日 · HH:mm"
+        return formatter
+    }()
+
+    private var detail: LifeMarkEvidenceDetail? {
+        store.lifeMarkEvidence(for: markID)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                if let detail {
+                    let presentation = detail.mark.kind.presentation
+                    VStack(alignment: .leading, spacing: 18) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                    .fill(presentation.color.opacity(0.14))
+                                Image(systemName: presentation.symbol)
+                                    .font(.largeTitle)
+                                    .foregroundStyle(presentation.color)
+                            }
+                            .frame(width: 76, height: 76)
+                            Text(presentation.title)
+                                .font(.largeTitle.bold())
+                                .foregroundStyle(TSDPalette.ink)
+                            Text(presentation.note)
+                                .font(.title3)
+                                .foregroundStyle(TSDPalette.inkSoft)
+                            Text(Self.dateFormatter.string(from: detail.mark.unlockedAt))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(presentation.color)
+                        }
+
+                        VStack(alignment: .leading, spacing: 7) {
+                            Label("来源可追溯", systemImage: "checkmark.seal.fill")
+                                .font(.headline)
+                                .foregroundStyle(TSDPalette.moss)
+                            Text("\(detail.slices.count) 张切片 · \(detail.mediaAnchors.count) 个影像 · \(detail.revisits.count) 次回望")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(TSDPalette.ink)
+                            Text("印记只引用你的真实内容；原文、影像和回望不会由系统补写。")
+                                .font(.caption)
+                                .foregroundStyle(TSDPalette.inkSoft)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(TSDPalette.sage.opacity(0.24), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+
+                        ForEach(detail.slices) { slice in
+                            NativeMeadowSourceCard(
+                                slice: slice,
+                                revisits: detail.revisits.filter { $0.sliceID == slice.id }
+                            )
+                        }
+                    }
+                    .padding(18)
+                    .padding(.bottom, 24)
+                } else {
+                    ContentUnavailableView(
+                        "来源已经改变",
+                        systemImage: "link.badge.plus",
+                        description: Text("关闭后，印记展馆会按当前记忆重新整理来源。")
+                    )
+                    .padding(24)
+                }
+            }
+            .background(TSDPalette.canvas)
+            .navigationTitle("印记来源")
+            .tsdInlineNavigationTitle()
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .accessibilityIdentifier("lifeMark.detail.\(markID)")
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 }
 

@@ -108,6 +108,49 @@ final class TimeSlowDownUITests: XCTestCase {
         XCTAssertTrue(app.buttons["onboarding.skip"].exists)
     }
 
+    func testLifeMarkOpensItsPersistedSourceEvidence() {
+        let app = launchApp(fixture: "seeded")
+        app.tabBars.buttons["印记"].tap()
+
+        let mark = app.buttons["lifeMark.card.firstLeaf"]
+        XCTAssertTrue(mark.waitForExistence(timeout: 5))
+        mark.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["lifeMark.detail.firstLeaf"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["测试切片：雨后散步"].exists)
+        XCTAssertTrue(app.staticTexts["1 张切片 · 0 个影像 · 0 次回望"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Life Mark source detail"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    func testLifeMarkSourceRemainsReadableAtAccessibilityTextSize() {
+        let app = launchApp(
+            fixture: "seeded",
+            preferredContentSizeCategory: "UICTContentSizeCategoryAccessibilityXXL"
+        )
+        app.tabBars.buttons["印记"].tap()
+
+        let mark = app.buttons["lifeMark.card.firstLeaf"]
+        XCTAssertTrue(mark.waitForExistence(timeout: 5))
+        mark.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["lifeMark.detail.firstLeaf"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["1 张切片 · 0 个影像 · 0 次回望"].exists)
+        XCTAssertNotEqual(app.state, .notRunning)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Life Mark source detail Accessibility XXL"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func launchApp(
         fixture: String,
         preferredContentSizeCategory: String? = nil

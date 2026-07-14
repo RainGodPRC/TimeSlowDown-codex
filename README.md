@@ -77,6 +77,7 @@ Current demo focus:
 - Native build v77 imports selected videos through a file representation, extracts a protected JPEG poster with AVFoundation, and discards the raw video handoff without loading it into app memory or retaining it in the memory vault
 - Native build v78 serializes debounced persistence with background flush, imports photo/video thumbnails through file representations, disables the unsafe legacy byte bridge, and includes available protected thumbnails in the default portable ZIP without exporting raw originals
 - Native build v79 replaces the native Meadow placeholder with source-backed semantic zoom across week, month, year, and decade, plus a plain chronological river and drill-down to original words, media, people, meaning, and revisit layers
+- Native build v87 persists a schema-v4 Life Marks provenance ledger, opens every unlocked mark into its real slice/media/revisit evidence, removes orphaned evidence on source deletion, restores it on undo, and carries the ledger in the default memory ZIP without adding totals, rankings, streaks, or unexplained rewards
 - Mobile UI polish: clearer CTA hierarchy, softer card surfaces, tactile buttons, right-side Memory Camera FAB, and app-like bottom navigation
 - Top-app DNA: Bento home cards, Journal-style media timeline, photo wall, and map-style media switching inspired by the strengths of Day One, Diarly, Craft, and Apple Journal
 - Production privacy center: data lifecycle, permission ladder, processing boundaries, and copyable privacy report
@@ -96,4 +97,4 @@ python3 -m json.tool TimeSlowDownApp/Assets.xcassets/AccentColor.colorset/Conten
 xmllint --noout TimeSlowDownApp/Base.lproj/LaunchScreen.storyboard
 ```
 
-Current native limitation: this machine has Swift CLI but not full Xcode, so the repository can verify SwiftPM, plist/project syntax, and static Xcode handoff contracts here; archive, signing, simulator, and TestFlight must run on a full Xcode installation with an Apple Developer team.
+Current native limitation: this machine can run full Xcode Simulator builds and XCUITest, but signed-device Photos/Files/Keychain validation, archive signing, TestFlight upload, and App Store Connect submission still require an Apple Developer team and release credentials.
