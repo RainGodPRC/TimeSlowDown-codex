@@ -117,6 +117,33 @@ final class TimeSlowDownUITests: XCTestCase {
         XCTAssertNotEqual(app.state, .notRunning)
     }
 
+    func testBetaLearningBaselineStoresOnlyCountsAndScaleAnswers() {
+        let app = launchApp(fixture: "seeded")
+        app.tabBars.buttons["我的"].tap()
+
+        let betaCard = app.buttons["betaLearning.open"]
+        XCTAssertTrue(betaCard.waitForExistence(timeout: 5))
+        betaCard.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["betaLearning.privacyBoundary"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.steppers["betaLearning.assessment.moments"].exists)
+        XCTAssertTrue(app.steppers["betaLearning.assessment.detail"].exists)
+        XCTAssertTrue(app.steppers["betaLearning.assessment.blur"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "Beta learning Day 0 privacy-safe assessment"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        app.buttons["betaLearning.baseline.save"].tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["betaLearning.waiting"]
+                .waitForExistence(timeout: 3)
+        )
+        XCTAssertFalse(app.buttons["betaLearning.baseline.save"].exists)
+    }
+
     func testFirstRunCreatesASourceBackedMemoryBeforeEnteringTheApp() {
         let app = launchApp(fixture: "onboarding")
 

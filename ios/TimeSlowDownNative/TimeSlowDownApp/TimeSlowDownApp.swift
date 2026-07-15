@@ -89,6 +89,8 @@ struct TimeSlowDownApp: App {
                     persistenceURL: nil,
                     onboardingMode: uiTestRequiresOnboarding ? .required : .completed,
                     onboardingURL: nil,
+                    betaLearning: BetaLearningState(),
+                    betaLearningURL: nil,
                     diagnostics: diagnostics
                 )
             } else {

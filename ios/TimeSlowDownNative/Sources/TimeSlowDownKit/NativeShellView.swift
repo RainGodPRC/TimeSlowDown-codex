@@ -88,11 +88,16 @@ public struct TSDDiagnosticsFile: Transferable, Equatable, Sendable {
 @available(iOS 17.0, macOS 14.0, *)
 public struct TSDNativeShellView: View {
     @State private var store: NativeShellStore
+    @State private var betaLearning: BetaLearningState
+    @State private var observedSliceIDs: Set<UUID>
+    @State private var observedRecallInteractionIDs: Set<UUID>
     @State private var persistenceMessage: String?
     @State private var persistenceEnabled: Bool
+    @State private var betaLearningPersistenceEnabled: Bool
     @State private var isOnboardingPresented: Bool
     @Environment(\.scenePhase) private var scenePhase
     private let persistenceCoordinator: NativeShellPersistenceCoordinator?
+    private let betaLearningCoordinator: BetaLearningPersistenceCoordinator?
     private let onboardingURL: URL?
     private let diagnostics: NativeRuntimeDiagnostics
 
@@ -101,6 +106,8 @@ public struct TSDNativeShellView: View {
         persistenceURL: URL? = NativeShellPersistence.defaultURL,
         onboardingMode: NativeOnboardingMode = .automatic,
         onboardingURL: URL? = NativeOnboardingPersistence.defaultURL,
+        betaLearning: BetaLearningState? = nil,
+        betaLearningURL: URL? = BetaLearningPersistence.defaultURL,
         diagnostics: NativeRuntimeDiagnostics = .shared
     ) {
         let loadStartedAt = ContinuousClock.now
@@ -144,11 +151,40 @@ public struct TSDNativeShellView: View {
             vaultSource: vaultSource,
             savedState: savedOnboarding
         )
+        var resolvedBetaLearning = betaLearning ?? BetaLearningState()
+        var canPersistBetaLearning = betaLearningURL != nil
+        if betaLearning == nil, let betaLearningURL {
+            do {
+                resolvedBetaLearning = try BetaLearningPersistence.load(from: betaLearningURL)
+                    ?? BetaLearningState()
+            } catch {
+                canPersistBetaLearning = false
+                if message == nil {
+                    message = "Beta 学习状态暂时无法读取；记忆内容不受影响，本次不会覆盖原文件。"
+                }
+            }
+        }
+        let appOpenState: BetaLearningCoarseState = resolvedBetaLearning.ledger
+            .count(of: .appOpened) == 0 ? .firstUse : .returning
+        resolvedBetaLearning.record(BetaLearningEvent(
+            kind: .appOpened,
+            state: appOpenState
+        ))
+        resolvedBetaLearning.record(BetaLearningEvent(
+            kind: Self.learningEvent(for: resolvedStore.selectedRoute)
+        ))
         self._store = State(initialValue: resolvedStore)
+        self._betaLearning = State(initialValue: resolvedBetaLearning)
+        self._observedSliceIDs = State(initialValue: Set(resolvedStore.slices.map(\.id)))
+        self._observedRecallInteractionIDs = State(
+            initialValue: Set(resolvedStore.recallInteractions.map(\.id))
+        )
         self._persistenceMessage = State(initialValue: message)
         self._persistenceEnabled = State(initialValue: canPersist)
+        self._betaLearningPersistenceEnabled = State(initialValue: canPersistBetaLearning)
         self._isOnboardingPresented = State(initialValue: shouldPresentOnboarding)
         self.persistenceCoordinator = persistenceURL.map { NativeShellPersistenceCoordinator(url: $0) }
+        self.betaLearningCoordinator = betaLearningURL.map { BetaLearningPersistenceCoordinator(url: $0) }
         self.onboardingURL = onboardingURL
         self.diagnostics = diagnostics
         if let loadReceipt {
@@ -158,7 +194,9 @@ public struct TSDNativeShellView: View {
 
     public var body: some View {
         TabView(selection: $store.selectedRoute) {
-            NativeNowView(store: $store)
+            NativeNowView(store: $store) { event in
+                betaLearning.record(event)
+            }
                 .tabItem { Label(NativeShellRoute.now.title, systemImage: "sparkles") }
                 .tag(NativeShellRoute.now)
 
@@ -174,7 +212,11 @@ public struct TSDNativeShellView: View {
                 .tabItem { Label(NativeShellRoute.launch.title, systemImage: "seal") }
                 .tag(NativeShellRoute.launch)
 
-            NativeAccountView(store: $store, diagnostics: diagnostics)
+            NativeAccountView(
+                store: $store,
+                betaLearning: $betaLearning,
+                diagnostics: diagnostics
+            )
                 .tabItem { Label(NativeShellRoute.account.title, systemImage: "person.crop.circle") }
                 .tag(NativeShellRoute.account)
         }
@@ -218,6 +260,24 @@ public struct TSDNativeShellView: View {
                 persistenceMessage = "这次改动尚未保存到本机，请稍后重试。"
             }
         }
+        .task(id: betaLearning.revision) {
+            guard betaLearningPersistenceEnabled, let betaLearningCoordinator else { return }
+            let snapshot = betaLearning
+            do {
+                try await betaLearningCoordinator.saveDebounced(snapshot)
+            } catch is CancellationError {
+                return
+            } catch {
+                betaLearningPersistenceEnabled = false
+                persistenceMessage = "Beta 学习状态尚未保存；记忆内容不受影响。"
+            }
+        }
+        .onChange(of: store.selectedRoute) { _, route in
+            betaLearning.record(BetaLearningEvent(kind: Self.learningEvent(for: route)))
+        }
+        .onChange(of: store.vaultRevision) { _, _ in
+            capturePrivacySafeLearningChanges()
+        }
         .onChange(of: scenePhase) { _, phase in
             guard phase != .active,
                   persistenceEnabled,
@@ -246,6 +306,40 @@ public struct TSDNativeShellView: View {
                 }
             }
         }
+    }
+
+    private static func learningEvent(for route: NativeShellRoute) -> BetaLearningEventKind {
+        switch route {
+        case .now: .nowOpened
+        case .slices: .timelineOpened
+        case .meadow: .meadowOpened
+        case .launch: .achievementsOpened
+        case .account: .accountOpened
+        }
+    }
+
+    private func capturePrivacySafeLearningChanges() {
+        let currentIDs = Set(store.slices.map(\.id))
+        let addedIDs = currentIDs.subtracting(observedSliceIDs)
+        for slice in store.slices where addedIDs.contains(slice.id) {
+            betaLearning.record(BetaLearningEvent(kind: .memoryCompleted))
+            if slice.hasMediaAnchor {
+                betaLearning.record(BetaLearningEvent(kind: .mediaMemoryCompleted))
+            }
+        }
+        observedSliceIDs.formUnion(currentIDs)
+
+        let currentRecallIDs = Set(store.recallInteractions.map(\.id))
+        let addedRecallIDs = currentRecallIDs.subtracting(observedRecallInteractionIDs)
+        for interaction in store.recallInteractions where addedRecallIDs.contains(interaction.id) {
+            betaLearning.record(BetaLearningEvent(
+                kind: interaction.outcome == .revisited
+                    ? .activeRecallCompleted
+                    : .activeRecallSkipped,
+                occurredAt: interaction.occurredAt
+            ))
+        }
+        observedRecallInteractionIDs.formUnion(currentRecallIDs)
     }
 
     private func completeOnboarding(_ outcome: NativeOnboardingOutcome) {
@@ -571,6 +665,7 @@ private struct NativePersistenceBanner: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeNowView: View {
     @Binding var store: NativeShellStore
+    var onLearningEvent: (BetaLearningEvent) -> Void
     @State private var activeSheet: NativeNowSheet?
     @State private var mediaIssue: String?
 
@@ -604,7 +699,10 @@ private struct NativeNowView: View {
                                     mediaIssue = "影像没有安全保存，请重新选择。"
                                 }
                             },
-                            onWrite: { activeSheet = .quickMark },
+                            onWrite: {
+                                onLearningEvent(BetaLearningEvent(kind: .quickMarkStarted))
+                                activeSheet = .quickMark
+                            },
                             mediaIssue: mediaIssue
                         )
 
@@ -614,14 +712,20 @@ private struct NativeNowView: View {
                             if let activeRecall {
                                 NativeActiveRecallCard(
                                     candidate: activeRecall,
-                                    onRevisit: { activeSheet = .revisit }
+                                    onRevisit: {
+                                        onLearningEvent(BetaLearningEvent(kind: .activeRecallOpened))
+                                        activeSheet = .revisit
+                                    }
                                 )
                             }
 
                             NativeWeeklyStoryCard(
                                 progress: weeklyProgress,
                                 concealedSliceID: activeRecall?.id,
-                                onOpen: { activeSheet = .weekend }
+                                onOpen: {
+                                    onLearningEvent(BetaLearningEvent(kind: .weeklyReviewOpened))
+                                    activeSheet = .weekend
+                                }
                             )
                         }
 
@@ -644,7 +748,7 @@ private struct NativeNowView: View {
             .sheet(item: $activeSheet) { sheet in
                 switch sheet {
                 case .quickMark:
-                    NativeQuickMarkComposer(store: $store)
+                    NativeQuickMarkComposer(store: $store, onLearningEvent: onLearningEvent)
                 case .revisit:
                     if let activeRecall {
                         NativeActiveRecallComposer(store: $store, candidate: activeRecall)
@@ -729,7 +833,7 @@ private enum NativeNowSheet: String, Identifiable {
     var id: String { rawValue }
 }
 
-private enum TSDPalette {
+enum TSDPalette {
     static let canvas = Color(red: 0.96, green: 0.95, blue: 0.91)
     static let paper = Color(red: 1.00, green: 0.99, blue: 0.96)
     static let moss = Color(red: 0.19, green: 0.36, blue: 0.25)
@@ -954,9 +1058,11 @@ private struct NativeWeeklyStoryCard: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeQuickMarkComposer: View {
     @Binding var store: NativeShellStore
+    var onLearningEvent: (BetaLearningEvent) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var title = ""
     @State private var note = ""
+    @State private var startedAt = Date()
 
     var body: some View {
         NavigationStack {
@@ -981,7 +1087,15 @@ private struct NativeQuickMarkComposer: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("留下") {
-                        if store.captureQuickMark(title: title, body: note) != nil { dismiss() }
+                        if store.captureQuickMark(title: title, body: note) != nil {
+                            onLearningEvent(BetaLearningEvent(
+                                kind: .quickMarkCompleted,
+                                durationBucket: BetaLearningDurationBucket(
+                                    seconds: Date().timeIntervalSince(startedAt)
+                                )
+                            ))
+                            dismiss()
+                        }
                     }
                     .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityIdentifier("quickMark.save")
@@ -2729,6 +2843,7 @@ private struct NativeMysteryAchievement: View {
 @available(iOS 17.0, macOS 14.0, *)
 private struct NativeAccountView: View {
     @Binding var store: NativeShellStore
+    @Binding var betaLearning: BetaLearningState
     var diagnostics: NativeRuntimeDiagnostics
     @State private var exportFile: TSDExportZIPFile?
     @State private var isFileExporterPresented = false
@@ -2738,6 +2853,7 @@ private struct NativeAccountView: View {
     @State private var diagnosticsFile: TSDDiagnosticsFile?
     @State private var isDiagnosticsExporterPresented = false
     @State private var diagnosticsMessage: String?
+    @State private var isBetaLearningPresented = false
 
     var body: some View {
         NavigationStack {
@@ -2745,6 +2861,9 @@ private struct NativeAccountView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("账号是钥匙，不是牢笼。")
                         .font(.title.weight(.bold))
+                    NativeBetaLearningCard(state: betaLearning) {
+                        isBetaLearningPresented = true
+                    }
                     Label("不上传原始影像", systemImage: store.privacyBoundary.allowsRawMediaUpload ? "xmark.circle" : "checkmark.circle")
                     Label("不读取通讯录/GPS/人脸", systemImage: store.privacyBoundary.isAppStoreSafeDefault ? "checkmark.circle" : "exclamationmark.triangle")
                     Label("订阅不得扣留导出", systemImage: store.privacyBoundary.subscriptionCanBlockExport ? "xmark.circle" : "checkmark.circle")
@@ -2816,6 +2935,12 @@ private struct NativeAccountView: View {
             }
             .accessibilityIdentifier("account.scroll")
             .navigationTitle("我的")
+            .sheet(isPresented: $isBetaLearningPresented) {
+                NativeBetaLearningCenter(
+                    store: $store,
+                    state: $betaLearning
+                )
+            }
             .fileExporter(
                 isPresented: $isFileExporterPresented,
                 item: exportFile,

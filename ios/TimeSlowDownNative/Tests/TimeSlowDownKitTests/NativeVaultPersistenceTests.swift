@@ -1312,6 +1312,166 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertFalse(text.contains("PRIVATE ABSOLUTE PATH"))
         XCTAssertFalse(text.contains("/Users/alice"))
     }
+
+    func testBetaLearningPersistenceIsStructurallyUnableToStoreMemoryContent() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-beta-learning-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("beta-learning.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var state = BetaLearningState()
+        state.record(BetaLearningEvent(
+            kind: .quickMarkCompleted,
+            occurredAt: Date(timeIntervalSince1970: 1_700_000_000),
+            durationBucket: .underThirtySeconds,
+            count: 1,
+            state: .firstUse
+        ))
+        state.completeBaseline(
+            BetaMemoryAssessment(specificMomentCount: 4, detailScore: 3, blurScore: 4),
+            now: Date(timeIntervalSince1970: 1_700_000_100)
+        )
+
+        try BetaLearningPersistence.save(
+            state,
+            to: url,
+            now: Date(timeIntervalSince1970: 1_700_000_200)
+        )
+        let data = try Data(contentsOf: url)
+        let text = String(decoding: data, as: UTF8.self)
+        let restored = try XCTUnwrap(BetaLearningPersistence.load(from: url))
+
+        XCTAssertEqual(restored, state)
+        XCTAssertTrue(restored.isPrivacySafe)
+        XCTAssertFalse(text.contains("title"))
+        XCTAssertFalse(text.contains("body"))
+        XCTAssertFalse(text.contains("people"))
+        XCTAssertFalse(text.contains("fileName"))
+        XCTAssertFalse(text.contains("thumbnail"))
+        XCTAssertFalse(text.contains("sliceID"))
+        XCTAssertFalse(text.contains("PRIVATE-MEMORY-CANARY"))
+    }
+
+    func testFourteenDayExperimentSeparatesFreeAndTimelineAssistedRecall() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let dayZero = Date(timeIntervalSince1970: 1_700_000_000)
+        let dayThirteen = calendar.date(byAdding: .day, value: 13, to: dayZero)!
+        let dayFourteen = calendar.date(byAdding: .day, value: 14, to: dayZero)!
+        var state = BetaLearningState()
+
+        state.completeBaseline(
+            BetaMemoryAssessment(specificMomentCount: 3, detailScore: 2, blurScore: 5),
+            now: dayZero
+        )
+        XCTAssertEqual(
+            state.experiment.phase(now: dayThirteen, calendar: calendar),
+            .waiting(daysRemaining: 1)
+        )
+        XCTAssertEqual(
+            state.experiment.phase(now: dayFourteen, calendar: calendar),
+            .finalFreeRecall
+        )
+
+        state.completeFinalFreeRecall(
+            BetaMemoryAssessment(specificMomentCount: 6, detailScore: 4, blurScore: 3),
+            now: dayFourteen,
+            calendar: calendar
+        )
+        XCTAssertEqual(
+            state.experiment.phase(now: dayFourteen, calendar: calendar),
+            .timelineAssistedRecall
+        )
+        state.markFinalTimelineOpened(now: dayFourteen)
+        state.completeExperiment(
+            assistedAdditionalMomentCount: 4,
+            assistedBlurScore: 2,
+            now: dayFourteen
+        )
+
+        XCTAssertEqual(state.experiment.phase(now: dayFourteen, calendar: calendar), .completed)
+        XCTAssertEqual(state.experiment.totalFinalMomentCount, 10)
+        XCTAssertEqual(state.ledger.count(of: .experimentBaselineCompleted), 1)
+        XCTAssertEqual(state.ledger.count(of: .experimentFinalFreeRecallCompleted), 1)
+        XCTAssertEqual(state.ledger.count(of: .experimentTimelineOpened), 1)
+        XCTAssertEqual(state.ledger.count(of: .experimentCompleted), 1)
+    }
+
+    func testGentleReminderPlanNeverSchedulesMoreThanOnePromptPerDay() {
+        let preferences = BetaReminderPreferences(
+            isEnabled: true,
+            dailyHour: 21,
+            dailyMinute: 15,
+            includesWeekendCompletion: true,
+            includesGentleRevisit: true,
+            authorization: .granted
+        )
+
+        let emptyPlan = GentleReminderSchedule.plan(
+            preferences: preferences,
+            hasMemories: false
+        )
+        let populatedPlan = GentleReminderSchedule.plan(
+            preferences: preferences,
+            hasMemories: true
+        )
+
+        XCTAssertEqual(emptyPlan.count, 7)
+        XCTAssertEqual(Set(emptyPlan.map(\.weekday)).count, 7)
+        XCTAssertFalse(emptyPlan.contains(where: { $0.kind == .memoryRevisit }))
+        XCTAssertEqual(populatedPlan.count, 7)
+        XCTAssertEqual(Set(populatedPlan.map(\.weekday)).count, 7)
+        XCTAssertEqual(populatedPlan.filter { $0.kind == .weekendCompletion }.count, 1)
+        XCTAssertEqual(populatedPlan.filter { $0.kind == .memoryRevisit }.count, 1)
+        XCTAssertTrue(populatedPlan.allSatisfy { $0.hour == 21 && $0.minute == 15 })
+        XCTAssertTrue(populatedPlan.allSatisfy {
+            $0.id.hasPrefix(GentleReminderSchedule.identifierPrefix)
+        })
+    }
+
+    func testBetaLearningLedgerIsBoundedAndKeepsOnlyCoarseEvents() {
+        var ledger = BetaLearningLedger()
+        for count in 0..<(BetaLearningLedger.maximumEventCount + 25) {
+            ledger.append(BetaLearningEvent(
+                kind: .appOpened,
+                occurredAt: Date(timeIntervalSince1970: TimeInterval(count)),
+                count: count
+            ))
+        }
+
+        XCTAssertEqual(ledger.events.count, BetaLearningLedger.maximumEventCount)
+        XCTAssertEqual(ledger.events.first?.count, 25)
+        XCTAssertEqual(ledger.events.last?.count, BetaLearningLedger.maximumEventCount + 24)
+        XCTAssertTrue(ledger.isPrivacySafe)
+    }
+
+    func testFutureBetaLearningSchemaIsRefusedWithoutOverwritingIt() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("tsd-beta-future-\(UUID().uuidString)", isDirectory: true)
+        let url = directory.appendingPathComponent("beta-learning.json")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try BetaLearningPersistence.save(BetaLearningState(), to: url)
+        let originalData = try Data(contentsOf: url)
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: originalData) as? [String: Any]
+        )
+        object["schemaVersion"] = BetaLearningState.currentSchemaVersion + 1
+        let futureData = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        try futureData.write(to: url, options: .atomic)
+
+        XCTAssertThrowsError(try BetaLearningPersistence.load(from: url)) { error in
+            XCTAssertEqual(
+                error as? BetaLearningPersistenceError,
+                .unsupportedSchema(BetaLearningState.currentSchemaVersion + 1)
+            )
+        }
+        XCTAssertThrowsError(try BetaLearningPersistence.save(BetaLearningState(), to: url)) { error in
+            XCTAssertEqual(
+                error as? BetaLearningPersistenceError,
+                .unsupportedSchema(BetaLearningState.currentSchemaVersion + 1)
+            )
+        }
+        XCTAssertEqual(try Data(contentsOf: url), futureData)
+    }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(
