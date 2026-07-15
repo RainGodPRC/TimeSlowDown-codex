@@ -88,6 +88,7 @@ public struct MemoryTimelineDay: Equatable, Identifiable, Sendable {
     public var slices: [MemorySlice]
     public var mediaAnchorCount: Int
     public var revisitCount: Int
+    public var revisitCountsBySliceID: [UUID: Int]
     public var prominentSliceID: UUID?
 
     public init(
@@ -96,6 +97,7 @@ public struct MemoryTimelineDay: Equatable, Identifiable, Sendable {
         slices: [MemorySlice],
         mediaAnchorCount: Int,
         revisitCount: Int,
+        revisitCountsBySliceID: [UUID: Int],
         prominentSliceID: UUID?
     ) {
         self.id = id
@@ -103,7 +105,12 @@ public struct MemoryTimelineDay: Equatable, Identifiable, Sendable {
         self.slices = slices
         self.mediaAnchorCount = mediaAnchorCount
         self.revisitCount = revisitCount
+        self.revisitCountsBySliceID = revisitCountsBySliceID
         self.prominentSliceID = prominentSliceID
+    }
+
+    public func revisitCount(for sliceID: UUID) -> Int {
+        revisitCountsBySliceID[sliceID, default: 0]
     }
 }
 
@@ -154,10 +161,18 @@ public struct MemoryTimelineSnapshot: Equatable, Sendable {
     }
 
     public var isSourceBacked: Bool {
-        let projectedSlices = months.flatMap(\.days).flatMap(\.slices)
+        let projectedDays = months.flatMap(\.days)
+        let projectedSlices = projectedDays.flatMap(\.slices)
+        let perSliceRevisitsAreConsistent = projectedDays.allSatisfy { day in
+            let sliceIDs = Set(day.slices.map(\.id))
+            return Set(day.revisitCountsBySliceID.keys) == sliceIDs &&
+                day.revisitCountsBySliceID.values.allSatisfy { $0 >= 0 } &&
+                day.revisitCountsBySliceID.values.reduce(0, +) == day.revisitCount
+        }
         return projectedSlices.count == sliceCount &&
             projectedSlices.map(\.id) == sourceSliceIDs &&
             Set(sourceSliceIDs).count == sliceCount &&
+            perSliceRevisitsAreConsistent &&
             months.reduce(0) { $0 + $1.sliceCount } == sliceCount &&
             months.reduce(0) { $0 + $1.mediaAnchorCount } == mediaAnchorCount &&
             months.reduce(0) { $0 + $1.revisitCount } == revisitCount
@@ -176,14 +191,16 @@ public enum MemoryTimelineFactory {
             calendar.startOfDay(for: slice.capturedAt)
         }.map { dayStart, daySlices in
             let orderedSlices = daySlices.sorted(by: isNewer)
+            let revisitCountsBySliceID = orderedSlices.reduce(into: [UUID: Int]()) { counts, slice in
+                counts[slice.id] = revisitsBySlice[slice.id, default: []].count
+            }
             return MemoryTimelineDay(
                 id: dayIdentifier(for: dayStart, calendar: calendar),
                 date: dayStart,
                 slices: orderedSlices,
                 mediaAnchorCount: orderedSlices.filter(\.hasMediaAnchor).count,
-                revisitCount: orderedSlices.reduce(0) {
-                    $0 + revisitsBySlice[$1.id, default: []].count
-                },
+                revisitCount: revisitCountsBySliceID.values.reduce(0, +),
+                revisitCountsBySliceID: revisitCountsBySliceID,
                 prominentSliceID: orderedSlices.first(where: \.hasMediaAnchor)?.id ?? orderedSlices.first?.id
             )
         }.sorted { lhs, rhs in
@@ -215,9 +232,7 @@ public enum MemoryTimelineFactory {
             months: months,
             sliceCount: sortedSlices.count,
             mediaAnchorCount: sortedSlices.filter(\.hasMediaAnchor).count,
-            revisitCount: sortedSlices.reduce(0) {
-                $0 + revisitsBySlice[$1.id, default: []].count
-            },
+            revisitCount: days.reduce(0) { $0 + $1.revisitCount },
             sourceSliceIDs: months.flatMap(\.days).flatMap(\.slices).map(\.id)
         )
     }

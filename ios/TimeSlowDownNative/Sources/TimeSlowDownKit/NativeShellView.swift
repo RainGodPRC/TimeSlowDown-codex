@@ -1544,7 +1544,7 @@ private struct NativeTimelineDayGroup: View {
                     } label: {
                         NativeTimelineSliceCard(
                             slice: slice,
-                            revisitCount: store.revisits.filter { $0.sliceID == slice.id }.count,
+                            revisitCount: day.revisitCount(for: slice.id),
                             isProminent: day.prominentSliceID == slice.id
                         )
                         .accessibilityElement(children: .combine)

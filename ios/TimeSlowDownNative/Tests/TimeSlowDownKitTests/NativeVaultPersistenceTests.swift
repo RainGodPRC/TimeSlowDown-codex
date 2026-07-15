@@ -466,6 +466,15 @@ final class NativeVaultPersistenceTests: XCTestCase {
         XCTAssertEqual(snapshot.mediaAnchorCount, 1)
         XCTAssertEqual(snapshot.revisitCount, 1)
         XCTAssertTrue(snapshot.isSourceBacked)
+        let julyDay = try XCTUnwrap(snapshot.months.first?.days.first)
+        XCTAssertEqual(julyDay.revisitCount(for: julyMorning.id), 0)
+        XCTAssertEqual(julyDay.revisitCount(for: julyEvening.id), 0)
+        let juneDay = try XCTUnwrap(snapshot.months.last?.days.first)
+        XCTAssertEqual(juneDay.revisitCount(for: june.id), 1)
+
+        var corruptedSnapshot = snapshot
+        corruptedSnapshot.months[1].days[0].revisitCountsBySliceID[june.id] = 0
+        XCTAssertFalse(corruptedSnapshot.isSourceBacked)
         XCTAssertEqual(
             snapshot,
             MemoryTimelineFactory.snapshot(
@@ -474,6 +483,71 @@ final class NativeVaultPersistenceTests: XCTestCase {
                 calendar: calendar
             )
         )
+    }
+
+    func testMemoryTimelineTenYearBaseline() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let anchor = try XCTUnwrap(calendar.date(from: DateComponents(
+            calendar: calendar,
+            timeZone: calendar.timeZone,
+            year: 2030,
+            month: 1,
+            day: 1,
+            hour: 12
+        )))
+        let slices = (0..<3_650).map { offset in
+            MemorySlice(
+                id: UUID(uuidString: String(
+                    format: "00000000-0000-0000-0000-%012llX",
+                    UInt64(offset + 1)
+                ))!,
+                title: "第 \(offset + 1) 天",
+                body: "十年时间轴性能基线。",
+                capturedAt: calendar.date(byAdding: .day, value: -offset, to: anchor)!,
+                media: offset.isMultiple(of: 7)
+                    ? MediaAnchor(kind: .image, label: "day-\(offset + 1).jpg")
+                    : nil
+            )
+        }
+        let revisits = slices.flatMap { slice in
+            [
+                MemoryRevisit(sliceID: slice.id, revisitedAt: anchor),
+                MemoryRevisit(sliceID: slice.id, revisitedAt: anchor.addingTimeInterval(60))
+            ]
+        }
+
+        let factoryStart = CFAbsoluteTimeGetCurrent()
+        let snapshot = MemoryTimelineFactory.snapshot(
+            from: slices.reversed(),
+            revisits: revisits.reversed(),
+            calendar: calendar
+        )
+        let factoryMilliseconds = (CFAbsoluteTimeGetCurrent() - factoryStart) * 1_000
+
+        let lookupStart = CFAbsoluteTimeGetCurrent()
+        let projectedLookupChecksum = snapshot.months
+            .flatMap(\.days)
+            .reduce(0) { count, day in
+                count + day.slices.reduce(0) { sliceCount, slice in
+                    sliceCount + day.revisitCount(for: slice.id)
+                }
+            }
+        let projectedLookupMilliseconds = (CFAbsoluteTimeGetCurrent() - lookupStart) * 1_000
+
+        print(String(
+            format: "TSD_TIMELINE_V90 factory_ms=%.3f projected_lookup_ms=%.3f checksum=%d",
+            factoryMilliseconds,
+            projectedLookupMilliseconds,
+            projectedLookupChecksum
+        ))
+        XCTAssertEqual(snapshot.months.flatMap(\.days).count, 3_650)
+        XCTAssertEqual(snapshot.sliceCount, 3_650)
+        XCTAssertEqual(snapshot.revisitCount, 7_300)
+        XCTAssertEqual(projectedLookupChecksum, 7_300)
+        XCTAssertTrue(snapshot.isSourceBacked)
+        XCTAssertLessThan(factoryMilliseconds, 5_000)
+        XCTAssertLessThan(projectedLookupMilliseconds, 1_000)
     }
 
     func testActiveRecallCadenceCompletionAndSkipRemainNonPunitive() throws {
